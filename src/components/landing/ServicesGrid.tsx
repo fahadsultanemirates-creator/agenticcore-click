@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { services } from "../../data/services";
+import { Reveal } from "../Reveal";
 
 export function ServicesGrid() {
   return (
@@ -15,44 +16,45 @@ export function ServicesGrid() {
         </div>
 
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
-          {services.map((service) => (
-            <div
-              key={service.id}
-              className={`group relative flex flex-col gap-3 rounded-2xl border-2 p-5 transition-all ${
-                service.comingSoon
-                  ? "border-dashed border-ink/20 bg-white/40"
-                  : "border-ink bg-white hover:-translate-y-1 hover:shadow-pop-sm"
-              }`}
-            >
+          {services.map((service, i) => (
+            <Reveal key={service.id} delay={(i % 4) * 80} className="h-full">
               <div
-                className={`flex h-11 w-11 items-center justify-center rounded-xl ${
+                className={`group relative flex h-full flex-col gap-3 rounded-2xl border-2 p-5 transition-all duration-200 ${
                   service.comingSoon
-                    ? "bg-ink/10"
-                    : "bg-gradient-to-br from-pink-500 to-orange-500"
+                    ? "border-dashed border-ink/20 bg-white/40"
+                    : `bg-white hover:-translate-y-1 hover:shadow-pop-sm ${i % 2 === 0 ? "border-pink-400" : "border-orange-400"}`
                 }`}
               >
-                <service.icon
-                  className={`h-5 w-5 ${service.comingSoon ? "text-ink-faint" : "text-white"}`}
-                  strokeWidth={2.25}
-                />
+                <div
+                  className={`flex h-11 w-11 items-center justify-center rounded-xl transition-transform duration-200 group-hover:scale-105 ${
+                    service.comingSoon
+                      ? "bg-ink/10"
+                      : "bg-gradient-to-br from-pink-500 to-orange-500"
+                  }`}
+                >
+                  <service.icon
+                    className={`h-5 w-5 ${service.comingSoon ? "text-ink-faint" : "text-white"}`}
+                    strokeWidth={2.25}
+                  />
+                </div>
+                <div>
+                  <p className="font-display text-base font-semibold text-ink">
+                    {service.label}
+                  </p>
+                  <p className="mt-0.5 text-sm text-ink-soft">{service.tagline}</p>
+                </div>
+                {!service.comingSoon && (
+                  <p className="mt-auto text-xs font-medium text-ink-faint">
+                    {service.eta} &middot; {service.price}
+                  </p>
+                )}
+                {service.comingSoon && (
+                  <span className="mt-auto w-fit rounded-full bg-ink/10 px-2.5 py-1 text-[11px] font-semibold tracking-wide text-ink-faint uppercase">
+                    Soon
+                  </span>
+                )}
               </div>
-              <div>
-                <p className="font-display text-base font-semibold text-ink">
-                  {service.label}
-                </p>
-                <p className="mt-0.5 text-sm text-ink-soft">{service.tagline}</p>
-              </div>
-              {!service.comingSoon && (
-                <p className="mt-auto text-xs font-medium text-ink-faint">
-                  {service.eta} &middot; {service.price}
-                </p>
-              )}
-              {service.comingSoon && (
-                <span className="mt-auto w-fit rounded-full bg-ink/10 px-2.5 py-1 text-[11px] font-semibold tracking-wide text-ink-faint uppercase">
-                  Soon
-                </span>
-              )}
-            </div>
+            </Reveal>
           ))}
         </div>
 
@@ -63,7 +65,7 @@ export function ServicesGrid() {
         <div className="mt-10 flex justify-center">
           <Link
             to="/dashboard"
-            className="rounded-full bg-ink px-6 py-3 text-sm font-semibold text-cream shadow-pop-sm transition-transform hover:-translate-y-0.5"
+            className="rounded-full bg-gradient-to-r from-pink-500 to-orange-500 px-6 py-3 text-sm font-semibold text-cream shadow-pop-orange-sm transition-transform hover:-translate-y-0.5"
           >
             Explore the dashboard mockup
           </Link>

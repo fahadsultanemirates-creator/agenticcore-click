@@ -22,8 +22,9 @@ export function Sidebar({ activeId, onSelect }: Props) {
           Services
         </p>
         <ul className="flex flex-col gap-1">
-          {services.map((service) => {
+          {services.map((service, i) => {
             const active = service.id === activeId;
+            const accent = i % 2 === 0 ? "pink" : "orange";
             return (
               <li key={service.id}>
                 <button
@@ -31,7 +32,7 @@ export function Sidebar({ activeId, onSelect }: Props) {
                   disabled={service.comingSoon}
                   onClick={() => onSelect(service)}
                   title={service.label}
-                  className={`flex w-full items-center justify-center gap-3 rounded-xl px-2 py-2.5 text-left text-sm font-medium transition-colors md:justify-start md:px-3 ${
+                  className={`group flex w-full items-center justify-center gap-2.5 rounded-xl px-2 py-2 text-left text-sm font-medium transition-all duration-200 md:justify-start md:px-2.5 ${
                     active
                       ? "bg-gradient-to-r from-pink-500 to-orange-500 text-white shadow-pop-sm"
                       : service.comingSoon
@@ -39,10 +40,30 @@ export function Sidebar({ activeId, onSelect }: Props) {
                         : "text-ink-soft hover:bg-cream-dim"
                   }`}
                 >
-                  <service.icon
-                    className={`h-4.5 w-4.5 shrink-0 ${active ? "text-white" : service.comingSoon ? "text-ink-faint" : "text-ink-soft"}`}
-                    strokeWidth={2.25}
-                  />
+                  <span
+                    className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-transform duration-200 ${
+                      active
+                        ? ""
+                        : service.comingSoon
+                          ? "bg-ink/5"
+                          : accent === "pink"
+                            ? "bg-pink-50 group-hover:scale-105"
+                            : "bg-orange-50 group-hover:scale-105"
+                    }`}
+                  >
+                    <service.icon
+                      className={`h-4.5 w-4.5 ${
+                        active
+                          ? "text-white"
+                          : service.comingSoon
+                            ? "text-ink-faint"
+                            : accent === "pink"
+                              ? "text-pink-500"
+                              : "text-orange-500"
+                      }`}
+                      strokeWidth={2.25}
+                    />
+                  </span>
                   <span className="hidden flex-1 truncate md:inline">{service.label}</span>
                   {service.comingSoon && (
                     <span className="hidden rounded-full bg-ink/10 px-2 py-0.5 text-[10px] font-semibold tracking-wide uppercase md:inline-block">

@@ -1,3 +1,5 @@
+import { Reveal } from "../Reveal";
+
 const faqs = [
   {
     q: "Is this actually AI-generated, or a template?",
@@ -25,19 +27,22 @@ export function Faq() {
       </h2>
 
       <div className="mt-10 flex flex-col gap-3">
-        {faqs.map((item) => (
-          <details
-            key={item.q}
-            className="group rounded-2xl border-2 border-ink bg-white p-5 open:shadow-pop-sm"
-          >
-            <summary className="flex cursor-pointer list-none items-center justify-between font-display text-lg font-medium text-ink marker:content-none">
-              {item.q}
-              <span className="ml-4 shrink-0 rounded-full bg-cream-dim px-2.5 py-1 text-sm text-ink-faint transition-transform group-open:rotate-45">
-                +
-              </span>
-            </summary>
-            <p className="mt-3 text-ink-soft">{item.a}</p>
-          </details>
+        {faqs.map((item, i) => (
+          <Reveal key={item.q} delay={i * 60}>
+            <details
+              className={`group w-full rounded-2xl border-2 bg-white p-5 transition-shadow open:shadow-pop-sm ${
+                i % 2 === 0 ? "border-pink-300" : "border-orange-300"
+              }`}
+            >
+              <summary className="flex cursor-pointer list-none items-center justify-between font-display text-lg font-medium text-ink marker:content-none">
+                {item.q}
+                <span className="ml-4 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-pink-500 to-orange-500 text-sm font-semibold text-white transition-transform group-open:rotate-45">
+                  +
+                </span>
+              </summary>
+              <p className="mt-3 text-ink-soft">{item.a}</p>
+            </details>
+          </Reveal>
         ))}
       </div>
     </section>

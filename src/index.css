@@ -13,26 +13,30 @@
 
   --color-pink-50: #fff0f5;
   --color-pink-100: #ffdce8;
-  --color-pink-200: #ffc0d8;
-  --color-pink-300: #ff9ec0;
-  --color-pink-400: #ff6ba0;
-  --color-pink-500: #ff3e7d;
-  --color-pink-600: #e82e68;
-  --color-pink-700: #c21e54;
+  --color-pink-200: #ffbdd9;
+  --color-pink-300: #ff8ab4;
+  --color-pink-400: #ff4d8d;
+  --color-pink-500: #ff1465;
+  --color-pink-600: #e4004f;
+  --color-pink-700: #b80040;
   --color-pink-900: #5c1030;
 
   --color-orange-50: #fff4ea;
   --color-orange-100: #ffe3c7;
-  --color-orange-200: #ffcd9c;
-  --color-orange-300: #ffb877;
-  --color-orange-400: #ffa155;
-  --color-orange-500: #ff8a3d;
-  --color-orange-600: #f2701a;
-  --color-orange-700: #cc5710;
+  --color-orange-200: #ffc998;
+  --color-orange-300: #ffab6b;
+  --color-orange-400: #ff8730;
+  --color-orange-500: #ff6a00;
+  --color-orange-600: #e85c00;
+  --color-orange-700: #bf4b00;
   --color-orange-900: #6b2c08;
 
   --shadow-pop: 0 10px 0 0 var(--color-ink);
   --shadow-pop-sm: 0 5px 0 0 var(--color-ink);
+  --shadow-pop-pink: 0 8px 0 0 var(--color-pink-700);
+  --shadow-pop-pink-sm: 0 4px 0 0 var(--color-pink-700);
+  --shadow-pop-orange: 0 8px 0 0 var(--color-orange-700);
+  --shadow-pop-orange-sm: 0 4px 0 0 var(--color-orange-700);
 }
 
 html {
@@ -43,11 +47,18 @@ body {
   background-color: var(--color-cream);
   color: var(--color-ink);
   font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 ::selection {
   background-color: var(--color-pink-300);
   color: var(--color-ink);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-pink-500);
+  outline-offset: 2px;
 }
 
 .text-gradient {
@@ -60,4 +71,43 @@ body {
 .bg-noise {
   background-image: radial-gradient(var(--color-ink) 0.6px, transparent 0.6px);
   background-size: 16px 16px;
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-up {
+  animation: fade-up 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes blob-float {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  50% {
+    transform: translate(24px, -18px);
+  }
+}
+
+.animate-blob {
+  animation: blob-float 11s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  .animate-fade-up,
+  .animate-blob {
+    animation: none;
+  }
 }

@@ -9,8 +9,8 @@ type Props = {
 
 export function Sidebar({ activeId, onSelect }: Props) {
   return (
-    <aside className="flex h-full w-16 shrink-0 flex-col border-r border-ink/10 bg-white md:w-64">
-      <div className="border-b border-ink/10 px-3 py-5 md:px-5">
+    <aside className="flex h-full w-16 shrink-0 flex-col border-r border-border bg-surface md:w-64">
+      <div className="border-b border-border px-3 py-5 md:px-5">
         <Link to="/" className="flex justify-center md:justify-start">
           <Logo compact className="md:hidden" />
           <Logo className="hidden md:flex" />
@@ -18,13 +18,12 @@ export function Sidebar({ activeId, onSelect }: Props) {
       </div>
 
       <nav className="flex-1 overflow-y-auto px-2 py-4 md:px-3">
-        <p className="hidden px-2 pb-2 text-xs font-semibold tracking-wide text-ink-faint uppercase md:block">
+        <p className="hidden px-2 pb-2 text-xs font-semibold tracking-wide text-fg-faint uppercase md:block">
           Services
         </p>
         <ul className="flex flex-col gap-1">
-          {services.map((service, i) => {
+          {services.map((service) => {
             const active = service.id === activeId;
-            const accent = i % 2 === 0 ? "pink" : "orange";
             return (
               <li key={service.id}>
                 <button
@@ -34,10 +33,10 @@ export function Sidebar({ activeId, onSelect }: Props) {
                   title={service.label}
                   className={`group flex w-full items-center justify-center gap-2.5 rounded-xl px-2 py-2 text-left text-sm font-medium transition-all duration-200 md:justify-start md:px-2.5 ${
                     active
-                      ? "bg-gradient-to-r from-pink-500 to-orange-500 text-white shadow-pop-sm"
+                      ? "bg-yellow-400 text-void"
                       : service.comingSoon
-                        ? "cursor-not-allowed text-ink-faint"
-                        : "text-ink-soft hover:bg-cream-dim"
+                        ? "cursor-not-allowed text-fg-faint"
+                        : "text-fg-muted hover:bg-surface-2"
                   }`}
                 >
                   <span
@@ -45,28 +44,20 @@ export function Sidebar({ activeId, onSelect }: Props) {
                       active
                         ? ""
                         : service.comingSoon
-                          ? "bg-ink/5"
-                          : accent === "pink"
-                            ? "bg-pink-50 group-hover:scale-105"
-                            : "bg-orange-50 group-hover:scale-105"
+                          ? "bg-fg-faint/10"
+                          : "bg-yellow-400/10 group-hover:scale-105 group-hover:bg-yellow-400/20"
                     }`}
                   >
                     <service.icon
                       className={`h-4.5 w-4.5 ${
-                        active
-                          ? "text-white"
-                          : service.comingSoon
-                            ? "text-ink-faint"
-                            : accent === "pink"
-                              ? "text-pink-500"
-                              : "text-orange-500"
+                        active ? "text-void" : service.comingSoon ? "text-fg-faint" : "text-yellow-400"
                       }`}
                       strokeWidth={2.25}
                     />
                   </span>
                   <span className="hidden flex-1 truncate md:inline">{service.label}</span>
                   {service.comingSoon && (
-                    <span className="hidden rounded-full bg-ink/10 px-2 py-0.5 text-[10px] font-semibold tracking-wide uppercase md:inline-block">
+                    <span className="hidden rounded-full bg-fg-faint/10 px-2 py-0.5 text-[10px] font-semibold tracking-wide uppercase md:inline-block">
                       Soon
                     </span>
                   )}
@@ -77,8 +68,8 @@ export function Sidebar({ activeId, onSelect }: Props) {
         </ul>
       </nav>
 
-      <div className="border-t border-ink/10 p-2 md:p-4">
-        <div className="rounded-xl border border-dashed border-ink/20 bg-cream-dim px-1 py-2.5 text-center text-xs font-medium text-ink-faint md:px-3">
+      <div className="border-t border-border p-2 md:p-4">
+        <div className="rounded-xl border border-dashed border-border bg-void px-1 py-2.5 text-center text-xs font-medium text-fg-faint md:px-3">
           <span className="md:hidden" aria-label="Design preview — nothing here is live yet">
             🚧
           </span>

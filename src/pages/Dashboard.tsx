@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { BriefPanel } from "../components/dashboard/BriefPanel";
+import { ForjeAssistant } from "../components/dashboard/ForjeAssistant";
 import { ResultPreview } from "../components/dashboard/ResultPreview";
 import { Sidebar } from "../components/dashboard/Sidebar";
 import { TopBar } from "../components/dashboard/TopBar";
@@ -32,7 +33,7 @@ export function Dashboard() {
   };
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-cream">
+    <div className="flex h-screen flex-col overflow-hidden bg-void">
       <div className="flex flex-1 overflow-hidden">
         <Sidebar activeId={activeService.id} onSelect={handleSelect} />
 
@@ -51,6 +52,8 @@ export function Dashboard() {
           </div>
         </div>
       </div>
+
+      <ForjeAssistant />
     </div>
   );
 }

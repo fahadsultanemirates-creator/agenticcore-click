@@ -14,8 +14,8 @@ export function Nav() {
 
   return (
     <header
-      className={`sticky top-0 z-50 border-b bg-cream/80 backdrop-blur transition-shadow duration-300 ${
-        scrolled ? "border-ink/10 shadow-sm" : "border-transparent"
+      className={`sticky top-0 z-50 border-b bg-void/85 backdrop-blur transition-colors duration-300 ${
+        scrolled ? "border-border" : "border-transparent"
       }`}
     >
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-4 sm:px-6">
@@ -24,24 +24,24 @@ export function Nav() {
           <Logo className="hidden sm:flex" />
         </Link>
 
-        <nav className="hidden items-center gap-8 font-medium text-ink-soft md:flex">
-          <a href="#how-it-works" className="group relative transition-colors hover:text-ink">
+        <nav className="hidden items-center gap-8 font-medium text-fg-muted md:flex">
+          <a href="#how-it-works" className="group relative transition-colors hover:text-fg">
             How it works
-            <span className="absolute -bottom-1 left-0 h-0.5 w-0 bg-gradient-to-r from-pink-500 to-orange-500 transition-all duration-200 group-hover:w-full" />
+            <span className="absolute -bottom-1 left-0 h-0.5 w-0 bg-yellow-400 transition-all duration-200 group-hover:w-full" />
           </a>
-          <a href="#services" className="group relative transition-colors hover:text-ink">
+          <a href="#services" className="group relative transition-colors hover:text-fg">
             Services
-            <span className="absolute -bottom-1 left-0 h-0.5 w-0 bg-gradient-to-r from-pink-500 to-orange-500 transition-all duration-200 group-hover:w-full" />
+            <span className="absolute -bottom-1 left-0 h-0.5 w-0 bg-yellow-400 transition-all duration-200 group-hover:w-full" />
           </a>
-          <a href="#faq" className="group relative transition-colors hover:text-ink">
+          <a href="#faq" className="group relative transition-colors hover:text-fg">
             FAQ
-            <span className="absolute -bottom-1 left-0 h-0.5 w-0 bg-gradient-to-r from-pink-500 to-orange-500 transition-all duration-200 group-hover:w-full" />
+            <span className="absolute -bottom-1 left-0 h-0.5 w-0 bg-yellow-400 transition-all duration-200 group-hover:w-full" />
           </a>
         </nav>
 
         <Link
           to="/dashboard"
-          className="shrink-0 rounded-full bg-gradient-to-r from-pink-500 to-orange-500 px-4 py-2.5 text-sm font-semibold text-cream shadow-pop-pink-sm transition-transform hover:-translate-y-0.5 active:translate-y-0 active:shadow-none sm:px-5"
+          className="shrink-0 rounded-full bg-yellow-400 px-4 py-2.5 text-sm font-semibold text-void shadow-glow-yellow transition-transform hover:-translate-y-0.5 active:translate-y-0 sm:px-5"
         >
           <span className="sm:hidden">Preview</span>
           <span className="hidden sm:inline">Preview the dashboard</span>

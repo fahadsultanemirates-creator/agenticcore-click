@@ -22,25 +22,21 @@ const faqs = [
 export function Faq() {
   return (
     <section id="faq" className="mx-auto max-w-3xl px-6 py-20 md:py-28">
-      <h2 className="text-center font-display text-4xl font-semibold tracking-tight text-ink sm:text-5xl">
+      <h2 className="text-center font-display text-4xl font-semibold tracking-tight text-fg sm:text-5xl">
         Quick questions
       </h2>
 
       <div className="mt-10 flex flex-col gap-3">
         {faqs.map((item, i) => (
           <Reveal key={item.q} delay={i * 60}>
-            <details
-              className={`group w-full rounded-2xl border-2 bg-white p-5 transition-shadow open:shadow-pop-sm ${
-                i % 2 === 0 ? "border-pink-300" : "border-orange-300"
-              }`}
-            >
-              <summary className="flex cursor-pointer list-none items-center justify-between font-display text-lg font-medium text-ink marker:content-none">
+            <details className="group w-full rounded-2xl border border-border bg-surface p-5 transition-colors open:border-yellow-400/40">
+              <summary className="flex cursor-pointer list-none items-center justify-between font-display text-lg font-medium text-fg marker:content-none">
                 {item.q}
-                <span className="ml-4 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-pink-500 to-orange-500 text-sm font-semibold text-white transition-transform group-open:rotate-45">
+                <span className="ml-4 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-yellow-400 text-sm font-semibold text-void transition-transform group-open:rotate-45">
                   +
                 </span>
               </summary>
-              <p className="mt-3 text-ink-soft">{item.a}</p>
+              <p className="mt-3 text-fg-muted">{item.a}</p>
             </details>
           </Reveal>
         ))}

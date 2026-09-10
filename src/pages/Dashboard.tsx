@@ -1,17 +1,28 @@
 import { useEffect, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
+import { ChatLauncher } from "../components/ChatLauncher";
+import { BillingSection } from "../components/dashboard/BillingSection";
 import { BriefPanel } from "../components/dashboard/BriefPanel";
-import { ForjeAssistant } from "../components/dashboard/ForjeAssistant";
+import { DashboardShell } from "../components/dashboard/DashboardShell";
+import { DeliverablesSection } from "../components/dashboard/DeliverablesSection";
+import { PortfolioSection } from "../components/dashboard/PortfolioSection";
 import { ResultPreview } from "../components/dashboard/ResultPreview";
-import { Sidebar } from "../components/dashboard/Sidebar";
-import { TopBar } from "../components/dashboard/TopBar";
 import { services, type Service } from "../data/services";
 
 type Status = "idle" | "generating" | "done";
 
-const defaultService = services.find((s) => !s.comingSoon) ?? services[0];
+// "website" has its own dedicated intake page, so it's never the inline default.
+const defaultService =
+  services.find((s) => !s.comingSoon && s.id !== "website") ?? services[0];
 
 export function Dashboard() {
-  const [activeService, setActiveService] = useState<Service>(defaultService);
+  const navigate = useNavigate();
+  const location = useLocation();
+  const initialId = (location.state as { serviceId?: string } | null)?.serviceId;
+  const initialService =
+    services.find((s) => s.id === initialId && !s.comingSoon) ?? defaultService;
+
+  const [activeService, setActiveService] = useState<Service>(initialService);
   const [brief, setBrief] = useState("");
   const [status, setStatus] = useState<Status>("idle");
 
@@ -22,6 +33,10 @@ export function Dashboard() {
   }, [status]);
 
   const handleSelect = (service: Service) => {
+    if (service.id === "website") {
+      navigate("/dashboard/website");
+      return;
+    }
     setActiveService(service);
     setBrief("");
     setStatus("idle");
@@ -33,27 +48,24 @@ export function Dashboard() {
   };
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-void">
-      <div className="flex flex-1 overflow-hidden">
-        <Sidebar activeId={activeService.id} onSelect={handleSelect} />
-
-        <div className="flex flex-1 flex-col overflow-hidden">
-          <TopBar service={activeService} />
-
-          <div className="grid flex-1 overflow-y-auto lg:grid-cols-2">
-            <BriefPanel
-              service={activeService}
-              brief={brief}
-              onBriefChange={setBrief}
-              onGenerate={handleGenerate}
-              status={status}
-            />
-            <ResultPreview service={activeService} status={status} />
-          </div>
-        </div>
+    <DashboardShell activeId={activeService.id} onSelectService={handleSelect} topBarService={activeService}>
+      <div className="grid min-h-[calc(100vh-73px)] lg:grid-cols-2">
+        <BriefPanel
+          key={activeService.id}
+          service={activeService}
+          brief={brief}
+          onBriefChange={setBrief}
+          onGenerate={handleGenerate}
+          status={status}
+        />
+        <ResultPreview service={activeService} status={status} />
       </div>
 
-      <ForjeAssistant />
-    </div>
+      <DeliverablesSection />
+      <BillingSection />
+      <PortfolioSection />
+
+      <ChatLauncher />
+    </DashboardShell>
   );
 }

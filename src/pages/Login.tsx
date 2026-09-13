@@ -11,16 +11,24 @@ export function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
   const from = (location.state as { from?: string } | null)?.from ?? "/dashboard";
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!email.trim() || !password.trim()) {
       setError("Enter an email and password to continue.");
       return;
     }
-    login(email.trim(), password);
+    setError("");
+    setSubmitting(true);
+    const { error: loginError } = await login(email.trim(), password);
+    setSubmitting(false);
+    if (loginError) {
+      setError(loginError);
+      return;
+    }
     navigate(from, { replace: true });
   };
 
@@ -34,7 +42,7 @@ export function Login() {
         <div className="rounded-2xl border border-border bg-surface p-7">
           <h1 className="font-display text-2xl font-semibold text-fg">Welcome back</h1>
           <p className="mt-1.5 text-sm text-fg-muted">
-            Log in to your dashboard. (Mock auth — any email/password works for this preview.)
+            Log in to your dashboard.
           </p>
 
           <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-4">
@@ -63,9 +71,10 @@ export function Login() {
 
             <button
               type="submit"
-              className="mt-2 inline-flex items-center justify-center gap-2 rounded-full bg-yellow-400 px-5 py-3 text-sm font-semibold text-void shadow-glow-yellow transition-transform hover:-translate-y-0.5"
+              disabled={submitting}
+              className="mt-2 inline-flex items-center justify-center gap-2 rounded-full bg-yellow-400 px-5 py-3 text-sm font-semibold text-void shadow-glow-yellow transition-transform hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              Log in
+              {submitting ? "Logging in..." : "Log in"}
               <ArrowRight className="h-4 w-4" />
             </button>
           </form>

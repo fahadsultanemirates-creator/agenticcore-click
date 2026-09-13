@@ -11,14 +11,26 @@ export function Signup() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!email.trim() || !password.trim()) {
       setError("Enter an email and password to continue.");
       return;
     }
-    signup(name.trim(), email.trim(), password);
+    if (password.length < 6) {
+      setError("Password must be at least 6 characters.");
+      return;
+    }
+    setError("");
+    setSubmitting(true);
+    const { error: signupError } = await signup(name.trim(), email.trim(), password);
+    setSubmitting(false);
+    if (signupError) {
+      setError(signupError);
+      return;
+    }
     navigate("/dashboard", { replace: true });
   };
 
@@ -32,7 +44,7 @@ export function Signup() {
         <div className="rounded-2xl border border-border bg-surface p-7">
           <h1 className="font-display text-2xl font-semibold text-fg">Create your account</h1>
           <p className="mt-1.5 text-sm text-fg-muted">
-            Get your own dashboard. (Mock auth — any email/password works for this preview.)
+            Get your own dashboard.
           </p>
 
           <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-4">
@@ -71,9 +83,10 @@ export function Signup() {
 
             <button
               type="submit"
-              className="mt-2 inline-flex items-center justify-center gap-2 rounded-full bg-yellow-400 px-5 py-3 text-sm font-semibold text-void shadow-glow-yellow transition-transform hover:-translate-y-0.5"
+              disabled={submitting}
+              className="mt-2 inline-flex items-center justify-center gap-2 rounded-full bg-yellow-400 px-5 py-3 text-sm font-semibold text-void shadow-glow-yellow transition-transform hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              Create account
+              {submitting ? "Creating account..." : "Create account"}
               <ArrowRight className="h-4 w-4" />
             </button>
           </form>

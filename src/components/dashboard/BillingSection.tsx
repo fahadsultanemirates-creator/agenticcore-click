@@ -1,6 +1,7 @@
-import { Check, Copy, CreditCard, QrCode, Sparkles, Wallet } from "lucide-react";
+import { Check, Copy, CreditCard, Loader2, QrCode, Sparkles, Wallet } from "lucide-react";
 import { useState } from "react";
 import { flagshipPackage, walletPackages } from "../../data/packages";
+import { supabase } from "../../lib/supabase";
 import { UsdtIcon } from "../icons/UsdtIcon";
 
 type Method = "card" | "usdt" | "payram";
@@ -11,6 +12,27 @@ export function BillingSection() {
   const [selectedWallet, setSelectedWallet] = useState("wallet-10");
   const [method, setMethod] = useState<Method>("card");
   const [copied, setCopied] = useState(false);
+  const [payramLoading, setPayramLoading] = useState(false);
+  const [payramError, setPayramError] = useState("");
+
+  const handlePayramContinue = async () => {
+    setPayramError("");
+    setPayramLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke<{ url: string }>("payram-create-payment", {
+        body: { tier: selectedWallet },
+      });
+      if (error || !data?.url) {
+        setPayramError("Could not start the payment. Please try again.");
+        return;
+      }
+      window.location.href = data.url;
+    } catch {
+      setPayramError("Could not reach the payment provider. Please try again.");
+    } finally {
+      setPayramLoading(false);
+    }
+  };
 
   const handleCopy = async () => {
     try {
@@ -101,7 +123,7 @@ export function BillingSection() {
         <div className="mt-8 rounded-2xl border border-border bg-surface p-6">
           <p className="font-display text-lg font-semibold text-fg">Payment method</p>
           <p className="mt-1 text-sm text-fg-muted">
-            UI preview only — no payment provider is connected yet.
+            PayRam is live. Card and USDT are still preview-only for now.
           </p>
 
           <div className="mt-4 flex flex-wrap gap-2">
@@ -182,13 +204,21 @@ export function BillingSection() {
           {method === "payram" && (
             <div className="mt-5 rounded-xl border border-dashed border-yellow-400/30 bg-void p-5">
               <p className="text-sm text-fg-muted">
-                You'll be redirected to PayRam to complete this payment securely.
+                You'll be redirected to PayRam to add{" "}
+                <span className="font-semibold text-fg">
+                  {walletPackages.find((p) => p.id === selectedWallet)?.price}
+                </span>{" "}
+                to your wallet.
               </p>
+              {payramError && <p className="mt-2 text-sm text-yellow-400">{payramError}</p>}
               <button
                 type="button"
-                className="mt-3 flex items-center gap-2 rounded-full bg-yellow-400 px-4 py-2 text-sm font-semibold text-void transition-transform hover:-translate-y-0.5"
+                onClick={handlePayramContinue}
+                disabled={payramLoading}
+                className="mt-3 flex items-center gap-2 rounded-full bg-yellow-400 px-4 py-2 text-sm font-semibold text-void transition-transform hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                <Wallet className="h-4 w-4" /> Continue to PayRam
+                {payramLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wallet className="h-4 w-4" />}
+                {payramLoading ? "Starting payment..." : "Continue to PayRam"}
               </button>
             </div>
           )}

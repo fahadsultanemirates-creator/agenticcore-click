@@ -134,7 +134,31 @@ export async function handleRequest(req: Request): Promise<Response> {
     return jsonResponse({ error: 'Payment provider returned an unexpected response.' }, 502);
   }
 
-  return jsonResponse({ url: paymentUrl, amountUsd, invoiceId });
+  // PayRam's own reference_id (distinct from our invoiceId) is what its
+  // GET /api/v1/payment/reference/{reference_id} status endpoint needs --
+  // .click polls that directly rather than depending on .agency's relay.
+  // Prefer the field on the response body; fall back to parsing it off
+  // the payment URL's query string, since that's confirmed present there
+  // either way.
+  let referenceId: string | null = payramData?.reference_id ?? null;
+  if (!referenceId) {
+    try {
+      referenceId = new URL(paymentUrl).searchParams.get('reference_id');
+    } catch {
+      referenceId = null;
+    }
+  }
+
+  const { error: updateError } = await supabaseAdmin
+    .from('wallet_topups')
+    .update({ reference_id: referenceId })
+    .eq('invoice_id', invoiceId);
+
+  if (updateError) {
+    console.error('payram-create-payment: failed to save reference_id', updateError);
+  }
+
+  return jsonResponse({ url: paymentUrl, amountUsd, invoiceId, referenceId });
 }
 
 Deno.serve(handleRequest);

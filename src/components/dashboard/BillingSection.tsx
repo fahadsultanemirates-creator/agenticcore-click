@@ -19,15 +19,28 @@ export function BillingSection() {
     setPayramError("");
     setPayramLoading(true);
     try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData.session?.access_token;
+      if (!accessToken) {
+        setPayramError("Your session expired — please log in again.");
+        return;
+      }
+
+      // Explicit Authorization header rather than relying on invoke()'s
+      // implicit session wiring, since that path silently produced no
+      // request at all when this was debugged.
       const { data, error } = await supabase.functions.invoke<{ url: string }>("payram-create-payment", {
         body: { tier: selectedWallet },
+        headers: { Authorization: `Bearer ${accessToken}` },
       });
       if (error || !data?.url) {
+        console.error("payram-create-payment failed:", error);
         setPayramError("Could not start the payment. Please try again.");
         return;
       }
       window.location.href = data.url;
-    } catch {
+    } catch (err) {
+      console.error("payram-create-payment threw:", err);
       setPayramError("Could not reach the payment provider. Please try again.");
     } finally {
       setPayramLoading(false);

@@ -1,176 +1,77 @@
 import {
   Clapperboard,
-  CreditCard,
+  FileSignature,
   FileText,
   Globe,
   Image,
-  Mail,
-  Newspaper,
-  PenLine,
+  Palette,
   Share2,
-  Shapes,
-  ShoppingBag,
-  Sparkles,
-  UserRound,
   type LucideIcon,
 } from "lucide-react";
 
-export type Service = {
+export type ServiceMeta = {
   id: string;
   label: string;
   tagline: string;
   icon: LucideIcon;
-  eta: string;
-  price: string;
-  prompt: string;
-  placeholder: string;
-  chips: string[];
-  comingSoon?: boolean;
+  route: string;
 };
 
-export const services: Service[] = [
+// Final list — 7 services, each its own dedicated dashboard page.
+export const services: ServiceMeta[] = [
   {
     id: "website",
     label: "Website",
-    tagline: "A real site, live by lunch.",
+    tagline: "A real site, live fast.",
     icon: Globe,
-    eta: "~20 min",
-    price: "from $20",
-    prompt: "What kind of website do you need?",
-    placeholder: "e.g. A one-page site for my dog-walking business in Austin, warm and friendly vibe...",
-    chips: ["Portfolio", "Local service business", "Online store", "Consulting site"],
+    route: "/dashboard/website",
   },
   {
-    id: "logo",
-    label: "Logo",
-    tagline: "A mark worth putting on a truck.",
-    icon: Shapes,
-    eta: "~10 min",
-    price: "from $12",
-    prompt: "What's your business, and what's the vibe?",
-    placeholder: "e.g. \"Pixel & Pine\" — a cozy woodworking studio. Playful but handmade-feeling...",
-    chips: ["Minimal wordmark", "Bold icon + text", "Vintage badge", "Modern & geometric"],
+    id: "pdf",
+    label: "PDF & Documents",
+    tagline: "Presentations, brochures, flyers & more.",
+    icon: FileText,
+    route: "/dashboard/pdf",
   },
   {
     id: "image",
     label: "Image",
-    tagline: "Custom art, zero stock-photo cringe.",
+    tagline: "Custom art, avatars & business visuals.",
     icon: Image,
-    eta: "~5 min",
-    price: "from $8",
-    prompt: "What image do you want us to create?",
-    placeholder: "e.g. A cheerful flat-illustration hero image of a coffee cart for my homepage...",
-    chips: ["Hero illustration", "Social post graphic", "Product mockup", "Icon set"],
+    route: "/dashboard/image",
   },
   {
     id: "video",
     label: "Video",
-    tagline: "Short, punchy, done today.",
+    tagline: "Short avatar clips to full promos.",
     icon: Clapperboard,
-    eta: "~20 min",
-    price: "from $25",
-    prompt: "What's the video for?",
-    placeholder: "e.g. A 15-second Instagram teaser announcing my bakery's grand opening...",
-    chips: ["Social teaser", "Product demo", "Intro reel", "Ad spot"],
+    route: "/dashboard/video",
   },
   {
-    id: "avatar",
-    label: "Avatar",
-    tagline: "You, but camera-ready.",
-    icon: UserRound,
-    eta: "~5 min",
-    price: "from $6",
-    prompt: "Tell us about the avatar you need.",
-    placeholder: "e.g. A friendly, professional headshot-style avatar for LinkedIn, warm tones...",
-    chips: ["Professional headshot", "Cartoon style", "Brand mascot", "Team set"],
-  },
-  {
-    id: "brochure",
-    label: "Business Brochure",
-    tagline: "The PDF you actually hand out.",
-    icon: FileText,
-    eta: "~15 min",
-    price: "from $15",
-    prompt: "What should the brochure cover?",
-    placeholder: "e.g. A tri-fold brochure for my landscaping business — services, pricing, contact...",
-    chips: ["Tri-fold", "One-pager", "Service menu", "Price sheet"],
-  },
-  {
-    id: "business-card",
-    label: "Business Card",
-    tagline: "First impressions, printed.",
-    icon: CreditCard,
-    eta: "~5 min",
-    price: "from $8",
-    prompt: "What should the card say and feel like?",
-    placeholder: "e.g. Clean, modern card for a freelance photographer — name, phone, Instagram...",
-    chips: ["Minimal", "Bold color block", "Classic & elegant", "Playful"],
-  },
-  {
-    id: "social-kit",
-    label: "Social Media Kit",
-    tagline: "A week of posts, ready to schedule.",
+    id: "social",
+    label: "Social Media",
+    tagline: "Posts, profile kits & captions.",
     icon: Share2,
-    eta: "~15 min",
-    price: "from $18",
-    prompt: "What should your social kit cover?",
-    placeholder: "e.g. A week of Instagram posts for my bakery's grand opening — bright, fun...",
-    chips: ["Launch announcement", "Weekly content pack", "Story templates", "Profile refresh"],
+    route: "/dashboard/social",
   },
   {
-    id: "flyer",
-    label: "Flyer / Poster",
-    tagline: "Something to print and pin up.",
-    icon: Newspaper,
-    eta: "~10 min",
-    price: "from $10",
-    prompt: "What's the flyer or poster for?",
-    placeholder: "e.g. An A5 flyer for a weekend pop-up sale — bold, eye-catching...",
-    chips: ["Event flyer", "Sale poster", "Menu insert", "Community notice"],
+    id: "documents",
+    label: "Business Documents",
+    tagline: "Invoices, contracts, proposals.",
+    icon: FileSignature,
+    route: "/dashboard/documents",
   },
   {
-    id: "email-template",
-    label: "Email Template",
-    tagline: "Newsletters that don't look like spam.",
-    icon: Mail,
-    eta: "~10 min",
-    price: "from $10",
-    prompt: "What's this email template for?",
-    placeholder: "e.g. A monthly newsletter template for my studio — clean, on-brand...",
-    chips: ["Welcome email", "Monthly newsletter", "Promo blast", "Order confirmation"],
-  },
-  {
-    id: "product-catalog",
-    label: "Product Catalog",
-    tagline: "Your lineup, laid out properly.",
-    icon: ShoppingBag,
-    eta: "~15 min",
-    price: "from $16",
-    prompt: "What should the catalog include?",
-    placeholder: "e.g. A one-page catalog for my candle line — 8 products, prices, scents...",
-    chips: ["Price list", "Lookbook style", "Menu format", "Wholesale sheet"],
-  },
-  {
-    id: "ad-copy",
-    label: "Marketing Copy",
-    tagline: "Words that actually convert.",
-    icon: PenLine,
-    eta: "~5 min",
-    price: "from $8",
-    prompt: "What do you need copy for?",
-    placeholder: "e.g. Ad copy for a Facebook campaign promoting my new yoga class...",
-    chips: ["Ad copy", "Product descriptions", "Landing page copy", "Email subject lines"],
-  },
-  {
-    id: "more",
-    label: "More soon",
-    tagline: "Even more services on the way.",
-    icon: Sparkles,
-    eta: "—",
-    price: "—",
-    prompt: "",
-    placeholder: "",
-    chips: [],
-    comingSoon: true,
+    id: "brand-kit",
+    label: "Brand & Marketing Kit",
+    tagline: "Identity, price lists, QR cards.",
+    icon: Palette,
+    route: "/dashboard/brand-kit",
   },
 ];
+
+export function getService(id: string): ServiceMeta {
+  const service = services.find((s) => s.id === id);
+  if (!service) throw new Error(`Unknown service id: ${id}`);
+  return service;
+}

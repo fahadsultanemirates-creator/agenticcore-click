@@ -37,7 +37,9 @@ export function DeliverablesSection() {
                       <p className="truncate font-display text-base font-semibold text-fg">
                         {service.label}
                       </p>
-                      <p className="text-xs text-fg-faint">{order.requestedAt}</p>
+                      <p className="text-xs text-fg-faint">
+                        {order.publicId} &middot; {order.requestedAt}
+                      </p>
                     </div>
                   </div>
                   <p className="text-sm text-fg-muted">{order.summary}</p>

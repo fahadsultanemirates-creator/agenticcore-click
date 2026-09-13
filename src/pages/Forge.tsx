@@ -5,21 +5,21 @@ import { Logo } from "../components/Logo";
 const conversation = [
   {
     from: "forge" as const,
-    text: "Hi, I'm Forge 👋 I help turn what's in your head into tasks on your dashboard — briefs, revisions, reminders, whatever needs doing next.",
+    text: "Hi, I'm Forge 👋 Tell me what your business needs — a website, a logo, a whole Full Business Setup — and I'll ask what I need to know, then hand it straight to the team to build.",
   },
   {
     from: "user" as const,
-    text: "I need a logo brief ready by tomorrow and a reminder to review the website draft.",
+    text: "I want the $20 Full Business Setup for my bakery — I'll attach our menu and a couple of photos.",
   },
   {
     from: "forge" as const,
-    text: "Got it. Once I'm wired up, I'll create both of those as tasks and drop them into your Portfolio & history so nothing slips. For now this is a preview of how that conversation will feel.",
+    text: "Perfect — a website, images, logo options, socials and more, all in one go. Once I'm wired up, I'll take it from here: gather what's missing, file it as a task, and pass it to the team once your wallet or package payment is confirmed. For now this is a preview of how that conversation will feel.",
   },
 ];
 
 const suggestions = [
-  "Turn this brief into a task",
-  "Remind me about a revision",
+  "Set up my full business for $20",
+  "Attach my logo for a website brief",
   "What's still in progress?",
   "Help me plan next week's orders",
 ];

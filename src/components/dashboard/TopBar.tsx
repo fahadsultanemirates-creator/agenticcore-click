@@ -1,9 +1,13 @@
 import { LogOut } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
-import type { Service } from "../../data/services";
 
-export function TopBar({ service }: { service: Service }) {
+type Props = {
+  crumb: string;
+  title: string;
+};
+
+export function TopBar({ crumb, title }: Props) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
 
@@ -17,8 +21,8 @@ export function TopBar({ service }: { service: Service }) {
   return (
     <header className="flex items-center justify-between gap-3 border-b border-border bg-surface px-4 py-4 sm:px-6">
       <div className="min-w-0">
-        <p className="truncate text-xs font-medium text-fg-faint">Dashboard / {service.label}</p>
-        <h1 className="truncate font-display text-lg font-semibold text-fg">{service.tagline}</h1>
+        <p className="truncate text-xs font-medium text-fg-faint">{crumb}</p>
+        <h1 className="truncate font-display text-lg font-semibold text-fg">{title}</h1>
       </div>
 
       <div className="flex shrink-0 items-center gap-2 sm:gap-3">

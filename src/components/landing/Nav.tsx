@@ -33,6 +33,10 @@ export function Nav() {
             Services
             <span className="absolute -bottom-1 left-0 h-0.5 w-0 bg-yellow-400 transition-all duration-200 group-hover:w-full" />
           </a>
+          <a href="#packages" className="group relative transition-colors hover:text-fg">
+            Packages
+            <span className="absolute -bottom-1 left-0 h-0.5 w-0 bg-yellow-400 transition-all duration-200 group-hover:w-full" />
+          </a>
           <a href="#faq" className="group relative transition-colors hover:text-fg">
             FAQ
             <span className="absolute -bottom-1 left-0 h-0.5 w-0 bg-yellow-400 transition-all duration-200 group-hover:w-full" />

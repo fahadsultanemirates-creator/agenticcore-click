@@ -1,6 +1,6 @@
-import { Check, Copy, CreditCard, QrCode, Wallet } from "lucide-react";
+import { Check, Copy, CreditCard, QrCode, Sparkles, Wallet } from "lucide-react";
 import { useState } from "react";
-import { plans } from "../../data/plans";
+import { flagshipPackage, walletPackages } from "../../data/packages";
 import { UsdtIcon } from "../icons/UsdtIcon";
 
 type Method = "card" | "usdt" | "payram";
@@ -8,7 +8,7 @@ type Method = "card" | "usdt" | "payram";
 const DUMMY_ADDRESS = "TQrY8...mock...9fZk (TRC20)";
 
 export function BillingSection() {
-  const [selectedPlan, setSelectedPlan] = useState("starter");
+  const [selectedWallet, setSelectedWallet] = useState("wallet-10");
   const [method, setMethod] = useState<Method>("card");
   const [copied, setCopied] = useState(false);
 
@@ -28,47 +28,70 @@ export function BillingSection() {
         <div className="mb-6">
           <h2 className="font-display text-2xl font-semibold text-fg">Billing</h2>
           <p className="mt-1 text-sm text-fg-muted">
-            Placeholder plans and payment options — nothing here charges anything yet.
+            No credit system — every service keeps its own real price. Wallet tiers just add a
+            discount on top. Placeholder numbers until launch.
           </p>
         </div>
 
+        <div className="mb-8 overflow-hidden rounded-2xl border-2 border-yellow-400 bg-gradient-to-br from-yellow-400/10 to-transparent p-6">
+          <span className="mb-3 inline-flex w-fit items-center gap-1.5 rounded-full bg-yellow-400 px-2.5 py-1 text-[11px] font-semibold tracking-wide text-void uppercase">
+            <Sparkles className="h-3 w-3" /> Most popular
+          </span>
+          <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+            <div>
+              <p className="font-display text-2xl font-semibold text-fg">{flagshipPackage.name}</p>
+              <p className="mt-1 text-sm text-fg-muted">{flagshipPackage.tagline}</p>
+            </div>
+            <p className="font-display text-4xl font-semibold text-fg">{flagshipPackage.price}</p>
+          </div>
+          <ul className="mt-4 grid gap-2 sm:grid-cols-2">
+            {flagshipPackage.contents.map((item) => (
+              <li key={item} className="flex items-start gap-2 text-sm text-fg-muted">
+                <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-yellow-400" />
+                {item}
+              </li>
+            ))}
+          </ul>
+          <button
+            type="button"
+            className="mt-5 rounded-full bg-yellow-400 px-6 py-3 text-sm font-semibold text-void shadow-glow-yellow transition-transform hover:-translate-y-0.5"
+          >
+            Get the Full Business Setup
+          </button>
+        </div>
+
+        <p className="mb-3 text-sm font-semibold text-fg">Wallet top-up tiers</p>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {plans.map((plan) => {
-            const active = plan.id === selectedPlan;
+          {walletPackages.map((pkg) => {
+            const active = pkg.id === selectedWallet;
             return (
               <div
-                key={plan.id}
+                key={pkg.id}
                 className={`flex flex-col rounded-2xl border p-5 transition-colors ${
                   active ? "border-yellow-400 bg-surface" : "border-border bg-surface"
                 }`}
               >
-                {plan.highlighted && (
-                  <span className="mb-3 w-fit rounded-full bg-yellow-400/10 px-2.5 py-1 text-[11px] font-semibold tracking-wide text-yellow-400 uppercase">
-                    Most popular
-                  </span>
-                )}
-                <p className="font-display text-lg font-semibold text-fg">{plan.name}</p>
-                <p className="mt-1 flex items-baseline gap-1">
-                  <span className="font-display text-3xl font-semibold text-fg">{plan.price}</span>
-                  <span className="text-sm text-fg-faint">{plan.cadence}</span>
-                </p>
-                <p className="mt-2 text-sm text-fg-muted">{plan.blurb}</p>
+                <p className="font-display text-3xl font-semibold text-fg">{pkg.price}</p>
+                <p className="mt-1 text-sm text-fg-muted">to your wallet</p>
                 <ul className="mt-4 flex flex-col gap-2">
-                  {plan.features.map((f) => (
-                    <li key={f} className="flex items-start gap-2 text-sm text-fg-muted">
-                      <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-yellow-400" />
-                      {f}
-                    </li>
-                  ))}
+                  <li className="flex items-start gap-2 text-sm text-fg-muted">
+                    <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-yellow-400" />
+                    {pkg.firstTimeDiscount}% off, first order
+                  </li>
+                  <li className="flex items-start gap-2 text-sm text-fg-muted">
+                    <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-yellow-400" />
+                    {pkg.routineDiscount}% off, every order after
+                  </li>
                 </ul>
+                {pkg.note && <p className="mt-3 text-xs text-fg-faint">{pkg.note}</p>}
                 <button
                   type="button"
-                  onClick={() => setSelectedPlan(plan.id)}
+                  onClick={() => setSelectedWallet(pkg.id)}
                   className={`mt-5 rounded-full px-4 py-2.5 text-sm font-semibold transition-transform hover:-translate-y-0.5 ${
                     active ? "bg-yellow-400 text-void" : "border-2 border-border text-fg-muted hover:border-yellow-400/50"
                   }`}
                 >
-                  {active ? "Current selection" : "Choose plan"}
+                  {active ? "Selected" : "Add to wallet"}
                 </button>
               </div>
             );

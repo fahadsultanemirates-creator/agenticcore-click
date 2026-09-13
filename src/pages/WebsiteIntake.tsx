@@ -1,10 +1,7 @@
-import { CheckCircle2, Sparkles, Upload } from "lucide-react";
-import { useState, type FormEvent, type ReactNode } from "react";
-import { useNavigate } from "react-router-dom";
+import { Check, Upload } from "lucide-react";
+import { useState, type FormEvent } from "react";
 import { DashboardShell } from "../components/dashboard/DashboardShell";
-import { services, type Service } from "../data/services";
-
-const websiteService = services.find((s) => s.id === "website") as Service;
+import { ChipToggle, Field, inputClass, SectionCard, ServicePageHeader, SubmitBar, SubmittedNote } from "../components/dashboard/form";
 
 const PAGE_SECTIONS = [
   "About",
@@ -17,26 +14,32 @@ const PAGE_SECTIONS = [
   "FAQ",
 ];
 
-function Field({ label, optional = true, children }: { label: string; optional?: boolean; children: ReactNode }) {
-  return (
-    <label className="flex min-w-0 flex-col gap-1.5">
-      <span className="text-xs font-semibold tracking-wide text-fg-muted uppercase">
-        {label} {optional && <span className="text-fg-faint normal-case">(optional)</span>}
-      </span>
-      {children}
-    </label>
-  );
-}
-
-const inputClass =
-  "w-full min-w-0 rounded-xl border-2 border-border bg-void px-3.5 py-2.5 text-fg placeholder:text-fg-faint focus:border-yellow-400 focus:outline-none";
+const TIERS = [
+  {
+    id: "small",
+    label: "2–4 pages",
+    price: "$49",
+    blurb: "A focused site — home, about, services/contact.",
+  },
+  {
+    id: "large",
+    label: "4–10 pages",
+    price: "$99",
+    blurb: "Room for a full sitemap — galleries, multiple services, blog.",
+  },
+] as const;
 
 export function WebsiteIntake() {
-  const navigate = useNavigate();
   const [businessName, setBusinessName] = useState("");
   const [logoChoice, setLogoChoice] = useState<"upload" | "generate">("generate");
   const [sections, setSections] = useState<string[]>(["About", "Services", "Contact form"]);
+  const [tier, setTier] = useState<(typeof TIERS)[number]["id"] | null>(null);
+  const [categoryDelegate, setCategoryDelegate] = useState(false);
+  const [colorsDelegate, setColorsDelegate] = useState(false);
+  const [servicesDelegate, setServicesDelegate] = useState(false);
+  const [sectionsDelegate, setSectionsDelegate] = useState(false);
   const [nameError, setNameError] = useState(false);
+  const [tierError, setTierError] = useState(false);
   const [submitted, setSubmitted] = useState(false);
 
   const toggleSection = (section: string) => {
@@ -45,50 +48,43 @@ export function WebsiteIntake() {
     );
   };
 
-  const handleSelect = (service: Service) => {
-    if (service.id === "website") return;
-    navigate("/dashboard", { state: { serviceId: service.id } });
-  };
-
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
+    let ok = true;
     if (!businessName.trim()) {
       setNameError(true);
-      return;
+      ok = false;
     }
+    if (!tier) {
+      setTierError(true);
+      ok = false;
+    }
+    if (!ok) return;
     setNameError(false);
+    setTierError(false);
     setSubmitted(true);
   };
 
   return (
-    <DashboardShell activeId="website" onSelectService={handleSelect} topBarService={websiteService}>
+    <DashboardShell crumb="Dashboard / Website" title="A real site, live fast.">
       <div className="mx-auto max-w-3xl px-6 py-10 sm:px-10">
-        <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-yellow-400">
-          <Sparkles className="h-4 w-4" />
-          {websiteService.eta} &middot; {websiteService.price}
-        </div>
-        <h1 className="font-display text-3xl font-semibold text-fg sm:text-4xl">
-          Let's build your website
-        </h1>
-        <p className="mt-2 text-fg-muted">
-          Only your business name is required — skip anything else and we'll fill in
-          sensible defaults.
-        </p>
+        <ServicePageHeader
+          eta="~20 min"
+          price="from $49"
+          title="Let's build your website"
+          subtitle="Only your business name and a page-count tier are required — skip anything else and tick “you decide” where it applies."
+        />
 
         {submitted && (
-          <div className="mt-6 flex items-start gap-3 rounded-2xl border border-yellow-400/40 bg-yellow-400/10 p-4">
-            <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-yellow-400" />
-            <p className="text-sm text-fg">
-              Thanks — we've got your brief for <strong>{businessName}</strong>. This is a
-              preview: nothing was actually sent or generated yet.
-            </p>
-          </div>
+          <SubmittedNote>
+            Thanks — we've got your brief for <strong>{businessName}</strong>. This is a
+            preview: nothing was actually sent or generated yet.
+          </SubmittedNote>
         )}
 
         <form onSubmit={handleSubmit} className="mt-8 flex flex-col gap-8">
-          <div className="rounded-2xl border border-border bg-surface p-6">
-            <h2 className="font-display text-lg font-semibold text-fg">The basics</h2>
-            <div className="mt-4 grid min-w-0 gap-4 sm:grid-cols-2">
+          <SectionCard title="The basics">
+            <div className="grid min-w-0 gap-4 sm:grid-cols-2">
               <label className="flex min-w-0 flex-col gap-1.5 sm:col-span-2">
                 <span className="text-xs font-semibold tracking-wide text-fg-muted uppercase">
                   Business / company name <span className="text-yellow-400">*</span>
@@ -113,7 +109,7 @@ export function WebsiteIntake() {
                 <input placeholder="e.g. Handmade furniture, built to last" className={inputClass} />
               </Field>
 
-              <Field label="Category">
+              <Field label="Category" delegate={{ checked: categoryDelegate, onChange: setCategoryDelegate }}>
                 <select className={inputClass}>
                   <option value="">Choose a category...</option>
                   <option>Retail / e-commerce</option>
@@ -126,7 +122,7 @@ export function WebsiteIntake() {
                 </select>
               </Field>
 
-              <Field label="Colors / style vibe" >
+              <Field label="Colors / style vibe" delegate={{ checked: colorsDelegate, onChange: setColorsDelegate }}>
                 <input placeholder="e.g. Warm, earthy, handmade-feeling" className={inputClass} />
               </Field>
 
@@ -134,11 +130,10 @@ export function WebsiteIntake() {
                 <input placeholder="A site whose look you like" className={inputClass} />
               </Field>
             </div>
-          </div>
+          </SectionCard>
 
-          <div className="rounded-2xl border border-border bg-surface p-6">
-            <h2 className="font-display text-lg font-semibold text-fg">Logo</h2>
-            <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+          <SectionCard title="Logo">
+            <div className="flex flex-col gap-3 sm:flex-row">
               <button
                 type="button"
                 onClick={() => setLogoChoice("generate")}
@@ -161,63 +156,61 @@ export function WebsiteIntake() {
               </button>
             </div>
             {logoChoice === "upload" && (
-              <label className="mt-4 flex cursor-pointer items-center justify-center gap-2 rounded-xl border-2 border-dashed border-border bg-void px-4 py-6 text-sm text-fg-faint transition-colors hover:border-yellow-400/50">
+              <label className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border-2 border-dashed border-border bg-void px-4 py-6 text-sm text-fg-faint transition-colors hover:border-yellow-400/50">
                 <Upload className="h-4 w-4" />
                 Click to choose a file (not uploaded anywhere yet)
                 <input type="file" className="hidden" />
               </label>
             )}
-          </div>
+          </SectionCard>
 
-          <div className="rounded-2xl border border-border bg-surface p-6">
-            <h2 className="font-display text-lg font-semibold text-fg">Content</h2>
-            <div className="mt-4 flex flex-col gap-4">
-              <Field label="Services offered">
-                <textarea
-                  rows={3}
-                  placeholder="List what you offer, one per line or comma-separated"
-                  className={`${inputClass} resize-none`}
-                />
-              </Field>
+          <SectionCard title="Content">
+            <Field label="Services offered" delegate={{ checked: servicesDelegate, onChange: setServicesDelegate }}>
+              <textarea
+                rows={3}
+                placeholder="List what you offer, one per line or comma-separated"
+                className={`${inputClass} resize-none`}
+              />
+            </Field>
 
-              <div>
+            <div>
+              <div className="flex items-center justify-between gap-2">
                 <span className="text-xs font-semibold tracking-wide text-fg-muted uppercase">
                   Desired page sections
                 </span>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {PAGE_SECTIONS.map((section) => {
-                    const active = sections.includes(section);
-                    return (
-                      <button
-                        key={section}
-                        type="button"
-                        onClick={() => toggleSection(section)}
-                        className={`rounded-full border-2 px-3.5 py-1.5 text-sm font-medium transition-colors ${
-                          active
-                            ? "border-yellow-400 bg-yellow-400 text-void"
-                            : "border-border text-fg-muted hover:border-yellow-400/50"
-                        }`}
-                      >
-                        {section}
-                      </button>
-                    );
-                  })}
-                </div>
+                <label className="flex shrink-0 cursor-pointer items-center gap-1.5 text-xs font-medium text-fg-faint">
+                  <input
+                    type="checkbox"
+                    checked={sectionsDelegate}
+                    onChange={(e) => setSectionsDelegate(e.target.checked)}
+                    className="accent-yellow-400"
+                  />
+                  You decide
+                </label>
               </div>
-
-              <Field label="Anything else we should know">
-                <textarea
-                  rows={3}
-                  placeholder="Anything that doesn't fit above"
-                  className={`${inputClass} resize-none`}
-                />
-              </Field>
+              <div className={`mt-2 flex flex-wrap gap-2 ${sectionsDelegate ? "pointer-events-none opacity-40" : ""}`}>
+                {PAGE_SECTIONS.map((section) => (
+                  <ChipToggle
+                    key={section}
+                    label={section}
+                    active={sections.includes(section)}
+                    onClick={() => toggleSection(section)}
+                  />
+                ))}
+              </div>
             </div>
-          </div>
 
-          <div className="rounded-2xl border border-border bg-surface p-6">
-            <h2 className="font-display text-lg font-semibold text-fg">Contact & socials</h2>
-            <div className="mt-4 grid min-w-0 gap-4 sm:grid-cols-2">
+            <Field label="Anything else we should know">
+              <textarea
+                rows={3}
+                placeholder="Anything that doesn't fit above"
+                className={`${inputClass} resize-none`}
+              />
+            </Field>
+          </SectionCard>
+
+          <SectionCard title="Contact & socials">
+            <div className="grid min-w-0 gap-4 sm:grid-cols-2">
               <Field label="Contact details">
                 <input placeholder="Phone, address, hours..." className={inputClass} />
               </Field>
@@ -230,8 +223,46 @@ export function WebsiteIntake() {
               <Field label="Facebook / other social">
                 <input placeholder="Link or handle" className={inputClass} />
               </Field>
+              <Field label="Telegram">
+                <input placeholder="@yourbusiness or invite link" className={inputClass} />
+              </Field>
+              <Field label="WhatsApp">
+                <input placeholder="Number or wa.me link" className={inputClass} />
+              </Field>
             </div>
-          </div>
+            <p className="text-xs text-fg-faint">
+              Whatever you fill in here becomes live contact buttons on the finished site.
+            </p>
+          </SectionCard>
+
+          <SectionCard title="Choose your size">
+            <div className="grid gap-3 sm:grid-cols-2">
+              {TIERS.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => {
+                    setTier(t.id);
+                    setTierError(false);
+                  }}
+                  className={`rounded-xl border-2 p-4 text-left transition-colors ${
+                    tier === t.id ? "border-yellow-400 bg-yellow-400/5" : "border-border"
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <p className="font-semibold text-fg">{t.label}</p>
+                    {tier === t.id && <Check className="h-4 w-4 text-yellow-400" />}
+                  </div>
+                  <p className="mt-1 font-display text-2xl font-semibold text-fg">{t.price}</p>
+                  <p className="mt-1 text-sm text-fg-muted">{t.blurb}</p>
+                </button>
+              ))}
+            </div>
+            {tierError && (
+              <span className="text-xs text-yellow-400">Pick a size to see your price.</span>
+            )}
+            <p className="text-xs text-fg-faint">Placeholder pricing — final numbers land before launch.</p>
+          </SectionCard>
 
           <div className="rounded-2xl border border-dashed border-border bg-void p-6">
             <h2 className="font-display text-base font-semibold text-fg">A few things worth knowing</h2>
@@ -253,16 +284,7 @@ export function WebsiteIntake() {
             </ul>
           </div>
 
-          <button
-            type="submit"
-            className="inline-flex w-fit items-center gap-2 rounded-full bg-yellow-400 px-7 py-3.5 text-base font-semibold text-void shadow-glow-yellow transition-transform hover:-translate-y-0.5"
-          >
-            Send brief
-            <Sparkles className="h-4 w-4" />
-          </button>
-          <p className="-mt-4 text-xs text-fg-faint">
-            Mockup only — this simulates the flow, no request is actually sent anywhere.
-          </p>
+          <SubmitBar />
         </form>
       </div>
     </DashboardShell>

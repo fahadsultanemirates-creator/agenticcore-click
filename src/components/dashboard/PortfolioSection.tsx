@@ -31,6 +31,7 @@ export function PortfolioSection() {
             <table className="w-full min-w-[520px] text-left text-sm">
               <thead>
                 <tr className="border-b border-border text-xs font-semibold tracking-wide text-fg-faint uppercase">
+                  <th className="px-5 py-3">Task ID</th>
                   <th className="px-5 py-3">Service</th>
                   <th className="px-5 py-3">Summary</th>
                   <th className="px-5 py-3">Requested</th>
@@ -43,6 +44,7 @@ export function PortfolioSection() {
                   if (!service) return null;
                   return (
                     <tr key={order.id} className="border-b border-border last:border-0">
+                      <td className="px-5 py-3.5 font-mono text-xs text-fg-faint">{order.publicId}</td>
                       <td className="px-5 py-3.5">
                         <div className="flex items-center gap-2.5">
                           <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-yellow-400/10">

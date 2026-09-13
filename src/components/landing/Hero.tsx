@@ -32,9 +32,9 @@ export function Hero() {
           </h1>
 
           <p className="mx-auto mt-6 max-w-xl text-lg text-fg-muted md:text-xl">
-            Website, logo, brochure, business card — the whole starter kit.
-            Tell us what you need in a sentence or two. We hand back the
-            real thing, not a template.
+            Website, documents, social media, video, brand kit — the whole
+            starter kit. Tell us what you need, one service at a time. We
+            hand back the real thing, not a template.
           </p>
 
           <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
@@ -54,7 +54,7 @@ export function Hero() {
           </div>
 
           <p className="mt-4 text-xs text-fg-faint">
-            $20 / 20&nbsp;min is the pitch we're building toward — final pricing &amp; timing coming soon.
+            $20 is our Full Business Setup package — every other service keeps its own price. Placeholder numbers until launch.
           </p>
         </div>
 
@@ -80,7 +80,7 @@ function BrowserPreview() {
       </div>
       <div className="grid grid-cols-[auto_1fr] gap-2 overflow-hidden rounded-xl border border-border bg-void">
         <div className="hidden w-36 flex-col gap-1.5 border-r border-border p-3 sm:flex">
-          {["Website", "Logo", "Image", "Video"].map((label, i) => (
+          {["Website", "PDF & Docs", "Image", "Video"].map((label, i) => (
             <div
               key={label}
               className={`rounded-lg px-2.5 py-2 text-left text-xs font-medium ${

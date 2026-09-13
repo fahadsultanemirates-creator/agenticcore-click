@@ -1,21 +1,19 @@
 import type { ReactNode } from "react";
-import type { Service } from "../../data/services";
 import { Sidebar } from "./Sidebar";
 import { TopBar } from "./TopBar";
 
 type Props = {
-  activeId: string;
-  onSelectService: (service: Service) => void;
-  topBarService: Service;
+  crumb: string;
+  title: string;
   children: ReactNode;
 };
 
-export function DashboardShell({ activeId, onSelectService, topBarService, children }: Props) {
+export function DashboardShell({ crumb, title, children }: Props) {
   return (
     <div className="flex h-screen overflow-hidden bg-void">
-      <Sidebar activeId={activeId} onSelect={onSelectService} />
+      <Sidebar />
       <div className="flex flex-1 flex-col overflow-hidden">
-        <TopBar service={topBarService} />
+        <TopBar crumb={crumb} title={title} />
         <div className="flex-1 overflow-y-auto">{children}</div>
       </div>
     </div>

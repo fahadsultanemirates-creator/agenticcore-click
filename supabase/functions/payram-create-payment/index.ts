@@ -10,10 +10,16 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const PAYRAM_API_KEY = Deno.env.get('PAYRAM_API_KEY')!;
 const PAYRAM_BASE_URL = Deno.env.get('PAYRAM_BASE_URL')!;
 
+// Must list every header the Supabase SDK actually sends (x-client-info
+// included -- it's attached to every request automatically), or browsers
+// silently refuse to send the real request after preflight, even though
+// the OPTIONS response itself still comes back 200. See
+// @supabase/supabase-js's own cors.ts, which documents this exact list.
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS'
+  'Access-Control-Allow-Headers':
+    'authorization, x-client-info, apikey, content-type, x-retry-count, traceparent, tracestate, baggage',
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
 };
 
 // Mirrors src/data/packages.ts -- kept in sync by hand since the

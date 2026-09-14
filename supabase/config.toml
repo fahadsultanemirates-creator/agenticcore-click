@@ -4,3 +4,8 @@
 # own payram-webhook/telegram-webhook (see their config.toml).
 [functions.payram-webhook]
 verify_jwt = false
+
+# telegram-webhook is authenticated via X-Telegram-Bot-Api-Secret-Token,
+# not a Supabase JWT -- Telegram never sends one.
+[functions.telegram-webhook]
+verify_jwt = false

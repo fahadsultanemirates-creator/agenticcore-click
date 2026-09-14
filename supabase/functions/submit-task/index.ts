@@ -100,6 +100,51 @@ function calculatePriceUsd(type: string, payload: Record<string, unknown>): numb
   }
 }
 
+// A video payload may name a specific avatar/voice (catalog pick or the
+// caller's own custom one) instead of relying on the house default --
+// verified against the DB here, before any charge, so a client can never
+// smuggle in someone else's custom avatar_id/talking_photo_id/voice_id by
+// hand-crafting the payload. Absent avatarProviderId/voiceProviderId is
+// fine (falls back to the house default in worker-video).
+async function validateVideoCharacterChoice(callerId: string, payload: Record<string, unknown>): Promise<string | null> {
+  if (payload.avatarStyle === 'none') return null;
+
+  const checks: { source: unknown; providerId: unknown; kind: 'avatar' | 'voice'; label: string }[] = [
+    { source: payload.avatarSource, providerId: payload.avatarProviderId, kind: 'avatar', label: 'avatar' },
+    { source: payload.voiceSource, providerId: payload.voiceProviderId, kind: 'voice', label: 'voice' }
+  ];
+
+  for (const check of checks) {
+    if (!check.providerId) continue;
+    if (typeof check.providerId !== 'string') return `Invalid ${check.label} selection.`;
+
+    if (check.source === 'custom') {
+      const { data } = await supabaseAdmin
+        .from('client_avatars')
+        .select('id')
+        .eq('user_id', callerId)
+        .eq('kind', check.kind)
+        .eq('provider_id', check.providerId)
+        .eq('status', 'ready')
+        .maybeSingle();
+      if (!data) return `Selected ${check.label} isn't ready or doesn't belong to you.`;
+    } else if (check.source === 'catalog') {
+      const { data } = await supabaseAdmin
+        .from('catalog_options')
+        .select('id')
+        .eq('kind', check.kind)
+        .eq('provider_id', check.providerId)
+        .eq('active', true)
+        .maybeSingle();
+      if (!data) return `Selected ${check.label} is no longer available.`;
+    } else {
+      return `Invalid ${check.label} selection.`;
+    }
+  }
+
+  return null;
+}
+
 async function generatePublicId(): Promise<string> {
   const { count } = await supabaseAdmin.from('tasks').select('*', { count: 'exact', head: true });
   const base = (count ?? 0) + 1;
@@ -159,6 +204,13 @@ export async function handleRequest(req: Request): Promise<Response> {
   const priceUsd = calculatePriceUsd(type, payload);
   if (priceUsd === null) {
     return jsonResponse({ error: 'Could not price this request — check the selected options.' }, 400);
+  }
+
+  if (type === 'video') {
+    const characterError = await validateVideoCharacterChoice(caller.id, payload);
+    if (characterError) {
+      return jsonResponse({ error: characterError }, 400);
+    }
   }
 
   const { data: debited, error: debitError } = await supabaseAdmin.rpc('deduct_wallet_balance', {

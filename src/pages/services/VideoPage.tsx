@@ -2,6 +2,7 @@ import { Check } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { DashboardShell } from "../../components/dashboard/DashboardShell";
 import { ErrorNote, inputClass, SectionCard, ServicePageHeader, SubmitBar, SubmittedNote, UploadDropzone } from "../../components/dashboard/form";
+import { AvatarPicker, VoicePicker, type CharacterChoice } from "../../components/dashboard/CharacterPicker";
 import { submitTask } from "../../lib/submitTask";
 
 type Length = "short" | "long";
@@ -39,6 +40,8 @@ export function VideoPage() {
   const [resolution, setResolution] = useState<Resolution>("1080p");
   const [noAvatarMode, setNoAvatarMode] = useState<NoAvatarMode>("full");
   const [duration, setDuration] = useState("30s");
+  const [avatarChoice, setAvatarChoice] = useState<CharacterChoice | null>(null);
+  const [voiceChoice, setVoiceChoice] = useState<CharacterChoice | null>(null);
   const [description, setDescription] = useState("");
   const [descError, setDescError] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -71,6 +74,11 @@ export function VideoPage() {
       noAvatarMode,
       duration: length === "long" ? duration : undefined,
       description: description.trim(),
+      avatarSource: avatarStyle !== "none" ? avatarChoice?.source : undefined,
+      avatarProviderId: avatarStyle !== "none" ? avatarChoice?.providerId : undefined,
+      avatarType: avatarStyle !== "none" ? avatarChoice?.avatarType : undefined,
+      voiceSource: avatarStyle !== "none" ? voiceChoice?.source : undefined,
+      voiceProviderId: avatarStyle !== "none" ? voiceChoice?.providerId : undefined,
     });
     setSubmitting(false);
 
@@ -215,6 +223,24 @@ export function VideoPage() {
 
             <p className="text-xs text-fg-faint">Charged from your wallet balance once you submit.</p>
           </SectionCard>
+
+          {avatarStyle !== "none" && (
+            <>
+              <SectionCard title="Choose an avatar">
+                <p className="text-xs text-fg-faint">
+                  Pick from our library, or upload your own photo — it's free to create and stays saved for future videos.
+                </p>
+                <AvatarPicker value={avatarChoice} onChange={setAvatarChoice} />
+              </SectionCard>
+
+              <SectionCard title="Choose a voice">
+                <p className="text-xs text-fg-faint">
+                  Pick from our library, or clone your own voice — free to create, saved for future videos.
+                </p>
+                <VoicePicker value={voiceChoice} onChange={setVoiceChoice} />
+              </SectionCard>
+            </>
+          )}
 
           <SectionCard title="The brief">
             <label className="flex min-w-0 flex-col gap-1.5">

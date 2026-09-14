@@ -9,6 +9,7 @@
 // doesn't send a Supabase JWT.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { listAvatars, listVoices } from '../_shared/heygen.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -28,6 +29,11 @@ const FILES_PATTERN = /^\/files(?:@\S+)?\s+(AC-CLICK-\d{4})\b/i;
 const DELIVER_PATTERN = /^\/deliver(?:@\S+)?\s+(AC-CLICK-\d{4})\s+(\S+)$/i;
 const QUEUE_PATTERN = /^\/queue(?:@\S+)?$/i;
 const HELP_PATTERN = /^\/(start|help)(?:@\S+)?$/i;
+const AVATARS_PATTERN = /^\/avatars(?:@\S+)?(?:\s+(\S+))?$/i;
+const VOICES_PATTERN = /^\/voices(?:@\S+)?(?:\s+(\S+))?$/i;
+const ADDAVATAR_PATTERN = /^\/addavatar(?:@\S+)?\s+(\S+)\s+([\s\S]+)$/i;
+const ADDVOICE_PATTERN = /^\/addvoice(?:@\S+)?\s+(\S+)\s+([\s\S]+)$/i;
+const CATALOG_LIST_LIMIT = 15;
 
 const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
@@ -258,6 +264,71 @@ async function handleFilesCommand(chatId: number, publicId: string): Promise<voi
   await sendTelegramMessage(chatId, `Files for ${publicId}:\n\n${lines.join('\n')}`);
 }
 
+// Browse HeyGen's live catalog to pick candidates for /addavatar --
+// picking a good avatar needs a human actually looking at the preview
+// image/video, so this just surfaces the raw options rather than
+// guessing which ones look professional.
+async function handleAvatarsCommand(chatId: number, genderFilter?: string): Promise<void> {
+  try {
+    let avatars = await listAvatars();
+    if (genderFilter) avatars = avatars.filter((a) => a.gender?.toLowerCase() === genderFilter.toLowerCase());
+
+    if (avatars.length === 0) {
+      await sendTelegramMessage(chatId, 'No avatars found.');
+      return;
+    }
+
+    const lines = avatars
+      .slice(0, CATALOG_LIST_LIMIT)
+      .map((a) => `${a.name} (${a.gender ?? '?'})\nid: ${a.providerId}\npreview: ${a.previewImageUrl ?? a.previewVideoUrl ?? 'none'}`);
+
+    await sendTelegramMessage(
+      chatId,
+      `HeyGen avatars (showing ${Math.min(avatars.length, CATALOG_LIST_LIMIT)} of ${avatars.length}):\n\n${lines.join('\n\n')}\n\nUse /addavatar <id> <name> to add one to the picker.`
+    );
+  } catch (err) {
+    console.error('telegram-webhook: /avatars failed', err);
+    await sendTelegramMessage(chatId, 'Could not load HeyGen avatars right now.');
+  }
+}
+
+async function handleVoicesCommand(chatId: number, filter?: string): Promise<void> {
+  try {
+    let voices = await listVoices();
+    if (filter) {
+      const needle = filter.toLowerCase();
+      voices = voices.filter((v) => v.language?.toLowerCase().includes(needle) || v.gender?.toLowerCase() === needle);
+    }
+
+    if (voices.length === 0) {
+      await sendTelegramMessage(chatId, 'No voices found.');
+      return;
+    }
+
+    const lines = voices
+      .slice(0, CATALOG_LIST_LIMIT)
+      .map((v) => `${v.name} (${v.language ?? '?'}, ${v.gender ?? '?'})\nid: ${v.providerId}\npreview: ${v.previewAudioUrl ?? 'none'}`);
+
+    await sendTelegramMessage(
+      chatId,
+      `HeyGen voices (showing ${Math.min(voices.length, CATALOG_LIST_LIMIT)} of ${voices.length}):\n\n${lines.join('\n\n')}\n\nUse /addvoice <id> <name> to add one to the picker.`
+    );
+  } catch (err) {
+    console.error('telegram-webhook: /voices failed', err);
+    await sendTelegramMessage(chatId, 'Could not load HeyGen voices right now.');
+  }
+}
+
+async function handleAddCatalogCommand(chatId: number, kind: 'avatar' | 'voice', providerId: string, name: string): Promise<void> {
+  const { error } = await supabaseAdmin.from('catalog_options').insert({ kind, provider_id: providerId, name });
+  if (error) {
+    console.error(`telegram-webhook: /add${kind} failed`, error);
+    await sendTelegramMessage(chatId, `Could not add that ${kind}.`);
+    return;
+  }
+  await sendTelegramMessage(chatId, `Added "${name}" (${providerId}) to the ${kind} picker.`);
+}
+
 export async function handleRequest(req: Request): Promise<Response> {
   if (req.method !== 'POST') {
     return new Response('Method not allowed', { status: 405 });
@@ -307,6 +378,10 @@ export async function handleRequest(req: Request): Promise<Response> {
           '/revise <task id> <note> — re-queue a delivered task for revision',
           '/files <task id> — list a task\'s deliverable files',
           '/deliver <task id> <url> — manually attach a file and mark delivered (for anything not yet automated, e.g. no-avatar video)',
+          '/avatars [gender] — browse HeyGen\'s avatar catalog',
+          '/voices [language|gender] — browse HeyGen\'s voice catalog',
+          '/addavatar <id> <name> — add an avatar to the client-facing picker',
+          '/addvoice <id> <name> — add a voice to the client-facing picker',
           '',
           `Valid types: ${[...TASK_TYPES].join(', ')}`
         ].join('\n')
@@ -340,6 +415,30 @@ export async function handleRequest(req: Request): Promise<Response> {
     const deliverMatch = trimmed.match(DELIVER_PATTERN);
     if (deliverMatch) {
       await handleDeliverCommand(chatId, deliverMatch[1].toUpperCase(), deliverMatch[2]);
+      return new Response('ok');
+    }
+
+    const addAvatarMatch = trimmed.match(ADDAVATAR_PATTERN);
+    if (addAvatarMatch) {
+      await handleAddCatalogCommand(chatId, 'avatar', addAvatarMatch[1], addAvatarMatch[2].trim());
+      return new Response('ok');
+    }
+
+    const addVoiceMatch = trimmed.match(ADDVOICE_PATTERN);
+    if (addVoiceMatch) {
+      await handleAddCatalogCommand(chatId, 'voice', addVoiceMatch[1], addVoiceMatch[2].trim());
+      return new Response('ok');
+    }
+
+    const avatarsMatch = trimmed.match(AVATARS_PATTERN);
+    if (avatarsMatch) {
+      await handleAvatarsCommand(chatId, avatarsMatch[1]);
+      return new Response('ok');
+    }
+
+    const voicesMatch = trimmed.match(VOICES_PATTERN);
+    if (voicesMatch) {
+      await handleVoicesCommand(chatId, voicesMatch[1]);
       return new Response('ok');
     }
 

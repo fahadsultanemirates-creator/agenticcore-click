@@ -11,10 +11,26 @@
 
 import { supabaseAdmin } from '../_shared/storage.ts';
 import { grokChat } from '../_shared/grok.ts';
-import { submitHeygenVideo, type VideoDimension } from '../_shared/heygen.ts';
+import { submitHeygenVideo, DEFAULT_AVATAR, DEFAULT_VOICE_ID, type VideoDimension, type CharacterChoice } from '../_shared/heygen.ts';
 import { notifyOwner } from '../_shared/telegram.ts';
 import { logEvent, markNeedsInfo, markFailed, setProviderJob } from '../_shared/task.ts';
 import { jsonResponse } from '../_shared/cors.ts';
+
+// submit-task already verified ownership of any custom/catalog pick
+// (see validateVideoCharacterChoice) -- this just falls back to the house
+// default when the client didn't choose anything specific.
+function resolveCharacter(payload: Record<string, unknown>): CharacterChoice {
+  const providerId = payload.avatarProviderId;
+  const characterType = payload.avatarType;
+  if (typeof providerId === 'string' && (characterType === 'avatar' || characterType === 'talking_photo')) {
+    return { type: characterType, providerId };
+  }
+  return DEFAULT_AVATAR;
+}
+
+function resolveVoiceId(payload: Record<string, unknown>): string {
+  return typeof payload.voiceProviderId === 'string' ? payload.voiceProviderId : DEFAULT_VOICE_ID;
+}
 
 function dimensionFor(payload: Record<string, unknown>): VideoDimension {
   if (payload.length === 'long') return { width: 1920, height: 1080 };
@@ -71,21 +87,24 @@ export async function handleRequest(req: Request): Promise<Response> {
   }
 
   try {
-    if (['standard', 'premium', 'elite'].includes(payload.avatarStyle as string)) {
-      // All three tiers currently render through the same house avatar/voice
-      // pipeline -- pricing differentiates by resolution/duration, not by
-      // generation quality yet. Logged so this gap is visible, not silent.
+    const character = resolveCharacter(payload);
+    const voiceId = resolveVoiceId(payload);
+
+    if (character === DEFAULT_AVATAR && ['standard', 'premium', 'elite'].includes(payload.avatarStyle as string)) {
+      // Client didn't pick a specific avatar -- all three tiers fall back to
+      // the same house avatar/voice, so pricing differentiates by
+      // resolution/duration only for this task. Logged so it's visible.
       await logEvent(taskId, 'avatar_tier_note', 'worker', {
-        note: 'standard/premium/elite currently use the same HeyGen avatar/voice.'
+        note: 'No avatar/voice selected -- fell back to the shared house default.'
       });
     }
 
     const script = await generateScript(payload);
     const dimension = dimensionFor(payload);
-    const videoId = await submitHeygenVideo(script, dimension);
+    const videoId = await submitHeygenVideo(script, dimension, character, voiceId);
 
     await setProviderJob(taskId, videoId);
-    await logEvent(taskId, 'video_submitted', 'worker', { videoId, dimension, script });
+    await logEvent(taskId, 'video_submitted', 'worker', { videoId, dimension, character, voiceId, script });
 
     return jsonResponse({ ok: true, videoId });
   } catch (err) {

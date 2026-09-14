@@ -434,6 +434,7 @@ export async function handleRequest(req: Request): Promise<Response> {
   if (!chatId) return new Response('ok');
 
   const fromId = message?.from?.id;
+  console.log('telegram-webhook: incoming from', fromId, 'chat', chatId);
   if (!isOwner(fromId)) {
     // Purely an owner control channel -- not a public assistant (that's
     // Forge, on the dashboard). Reply once so a stray sender isn't left

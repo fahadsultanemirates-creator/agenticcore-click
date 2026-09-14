@@ -119,7 +119,7 @@ async function handleQueueCommand(): Promise<string> {
   return `Queue (website tasks always ahead of owner tasks):\n\n${lines.join('\n')}`;
 }
 
-async function handleNewCommand(chatId: number, type: string, brief: string): Promise<string> {
+async function handleNewCommand(chatId: number, type: string, brief: string, referenceFiles?: string[]): Promise<string> {
   const normalizedType = type.toLowerCase();
   if (!TASK_TYPES.has(normalizedType)) {
     return `Unknown type "${type}". Use one of: ${[...TASK_TYPES].join(', ')}`;
@@ -135,7 +135,7 @@ async function handleNewCommand(chatId: number, type: string, brief: string): Pr
       status: 'queued',
       wallet_confirmed: true,
       owner_channel_id: String(chatId),
-      payload: { brief }
+      payload: referenceFiles && referenceFiles.length > 0 ? { brief, referenceFiles } : { brief }
     })
     .select('id')
     .single();
@@ -387,7 +387,7 @@ async function routeMessage(chatId: number, text: string, attachmentUrls: string
     case 'help':
       return helpText();
     case 'new':
-      return handleNewCommand(chatId, parsed.type, parsed.brief);
+      return handleNewCommand(chatId, parsed.type, parsed.brief, parsed.referenceFiles);
     case 'revise':
       return handleReviseCommand(parsed.taskId.toUpperCase(), parsed.note);
     case 'files':

@@ -21,7 +21,7 @@ const SYSTEM_PROMPT = `You route messages (typed or voice-transcribed, in any la
 Determine the intent and extract its arguments. Valid intents and their exact argument shapes:
 {"intent":"queue"}
 {"intent":"help"}
-{"intent":"new","type":one of [${TASK_TYPES.join(', ')}],"brief":string}
+{"intent":"new","type":one of [${TASK_TYPES.join(', ')}],"brief":string,"referenceFiles":string[]|omit} -- if the conversation includes "[attached: <urls>]", copy those exact URLs into referenceFiles when creating a task that benefits from them (website/image/video/documents/brand-kit); never invent a URL
 {"intent":"revise","taskId":"AC-CLICK-####","note":string}
 {"intent":"files","taskId":"AC-CLICK-####"}
 {"intent":"deliver","taskId":"AC-CLICK-####","url":string}

@@ -80,7 +80,9 @@ THE FULL BUSINESS SETUP BUNDLE: if the client asks for the $20 "Full Business Se
 - 1x type "brand-kit", pick a sensible item (usually "Brand style guide one-pager")
 Do not compute a price for the bundle -- it's a flat $20 regardless of contents, handled by the backend.
 
-Never invent a task type outside the 7 listed above (business-report is owner-only, not available here). If the client's request doesn't map to a real service, say so honestly in "reply" and ask what they'd actually like, action "ask".`;
+Never invent a task type outside the 7 listed above (business-report is owner-only, not available here). If the client's request doesn't map to a real service, say so honestly in "reply" and ask what they'd actually like, action "ask".
+
+ATTACHMENTS: when the client's message contains "[attached files: <urls>]", those are real uploaded file URLs (a logo, photo, or reference document). Copy the exact URL(s) into payload.referenceFiles (an array of strings) on whichever task they're relevant to -- website (logo/brand photos), image (a reference to match), video (product shots), documents/brand-kit/pdf (an existing logo or brand asset). Never invent, guess, or alter a URL -- copy it byte-for-byte from what appears in the message, and never put a URL in "reply" itself (it's shown as an attachment chip already, not readable text).`;
 
 export async function handleRequest(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response(null, { headers: {} });
@@ -128,7 +130,7 @@ export async function handleRequest(req: Request): Promise<Response> {
     conversationId = created.id;
   }
 
-  const userContent = attachmentUrls.length > 0 ? `${message}\n\n[attached ${attachmentUrls.length} file(s)]` : message;
+  const userContent = attachmentUrls.length > 0 ? `${message}\n\n[attached files: ${attachmentUrls.join(', ')}]` : message;
 
   await supabaseAdmin.from('forge_messages').insert({
     conversation_id: conversationId,

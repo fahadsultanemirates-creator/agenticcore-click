@@ -111,7 +111,9 @@ export interface CatalogVoice {
 }
 
 export async function listVoices(): Promise<CatalogVoice[]> {
-  const resp = await fetch(`${HEYGEN_API}/v3/voices`, {
+  // Defaults to 20 results/page server-side -- 100 (its max) is plenty for
+  // browsing/curation without needing full cursor-based pagination here.
+  const resp = await fetch(`${HEYGEN_API}/v3/voices?limit=100`, {
     headers: { 'X-Api-Key': HEYGEN_API_KEY }
   });
   if (!resp.ok) {

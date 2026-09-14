@@ -1,7 +1,7 @@
 import { Info } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { DashboardShell } from "../../components/dashboard/DashboardShell";
-import { ErrorNote, inputClass, SectionCard, ServicePageHeader, SubmitBar, SubmittedNote } from "../../components/dashboard/form";
+import { ChipToggle, ErrorNote, inputClass, SectionCard, ServicePageHeader, SubmitBar, SubmittedNote } from "../../components/dashboard/form";
 import { submitTask } from "../../lib/submitTask";
 
 const DOC_TYPES = [
@@ -12,8 +12,15 @@ const DOC_TYPES = [
   { id: "contract", label: "Service agreement template", blurb: "A simple contract to formalize work." },
 ];
 
+const LANGUAGES = [
+  { id: "en", label: "English" },
+  { id: "ur", label: "Urdu" },
+  { id: "both", label: "Both (English + Urdu)" },
+] as const;
+
 export function BusinessDocumentsPage() {
   const [docType, setDocType] = useState("invoice");
+  const [language, setLanguage] = useState<(typeof LANGUAGES)[number]["id"]>("en");
   const [description, setDescription] = useState("");
   const [descError, setDescError] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -30,7 +37,7 @@ export function BusinessDocumentsPage() {
     setDescError(false);
     setSubmitError("");
     setSubmitting(true);
-    const result = await submitTask("documents", { docType, description: description.trim() });
+    const result = await submitTask("documents", { docType, description: description.trim(), language });
     setSubmitting(false);
 
     if (!result.ok) {
@@ -73,6 +80,14 @@ export function BusinessDocumentsPage() {
                   <p className="font-semibold text-fg">{type.label}</p>
                   <p className="mt-1 text-sm text-fg-muted">{type.blurb}</p>
                 </button>
+              ))}
+            </div>
+          </SectionCard>
+
+          <SectionCard title="Language">
+            <div className="flex flex-wrap gap-2">
+              {LANGUAGES.map((l) => (
+                <ChipToggle key={l.id} label={l.label} active={language === l.id} onClick={() => setLanguage(l.id)} />
               ))}
             </div>
           </SectionCard>

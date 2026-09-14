@@ -22,7 +22,8 @@ const WORKER_BY_TYPE: Record<string, string> = {
   documents: 'worker-pdf',
   'brand-kit': 'worker-pdf',
   social: 'worker-social',
-  video: 'worker-video'
+  video: 'worker-video',
+  'business-report': 'worker-business-report'
 };
 
 async function callWorker(functionName: string, taskId: string): Promise<void> {

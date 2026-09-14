@@ -39,7 +39,21 @@ function describeBrief(type: string, payload: Record<string, unknown>): string {
   return `Brand kit item: ${payload.item}\nBrief: ${payload.description}`;
 }
 
+// language: 'en' (default), 'ur', or 'both' -- for 'both', Grok produces
+// the same content twice, English sections first then Urdu, each section
+// tagged with which language it's in so renderDocumentPdf can switch font
+// and RTL direction per section within one document.
 async function generateDocSpec(type: string, payload: Record<string, unknown>): Promise<DocSpec> {
+  const language = (payload.language as string) === 'ur' || (payload.language as string) === 'both' ? (payload.language as 'ur' | 'both') : 'en';
+
+  const languageInstruction =
+    language === 'ur'
+      ? 'Write the entire document in Urdu.'
+      : language === 'both'
+        ? 'Produce the complete document TWICE: first every section in English, then every section again in Urdu ' +
+          '(same content, properly translated) -- tag each section with its language.'
+        : 'Write the entire document in English.';
+
   const raw = await grokChat(
     [
       {
@@ -47,13 +61,14 @@ async function generateDocSpec(type: string, payload: Record<string, unknown>): 
         content:
           'You are a professional business copywriter and document designer. Given a brief, produce the ' +
           'complete, ready-to-use content for the requested document (no placeholder/lorem ipsum text). ' +
+          `${languageInstruction} ` +
           'Respond with ONLY a JSON object of the exact shape ' +
-          '{"title": string, "subtitle": string | null, "sections": [{"heading": string, "body": string}]} ' +
+          '{"title": string, "subtitle": string | null, "sections": [{"heading": string, "body": string, "language": "en"|"ur"}]} ' +
           '-- no markdown fences, no commentary.'
       },
       { role: 'user', content: describeBrief(type, payload) }
     ],
-    { maxTokens: 4000 }
+    { maxTokens: 6000 }
   );
 
   const cleaned = raw.trim().replace(/^```(?:json)?\n?/i, '').replace(/```$/i, '').trim();
@@ -61,6 +76,7 @@ async function generateDocSpec(type: string, payload: Record<string, unknown>): 
   if (!parsed?.title || !Array.isArray(parsed?.sections)) {
     throw new Error('Grok returned an unexpected document shape');
   }
+  parsed.language = language === 'both' ? 'en' : language;
   return parsed as DocSpec;
 }
 

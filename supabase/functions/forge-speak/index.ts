@@ -4,6 +4,7 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { synthesizeSpeech } from '../_shared/voice.ts';
+import { jsonResponse, CORS_HEADERS } from '../_shared/cors.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!;
@@ -18,29 +19,29 @@ async function resolveCaller(authHeader: string): Promise<{ id: string } | null>
 }
 
 export async function handleRequest(req: Request): Promise<Response> {
-  if (req.method === 'OPTIONS') return new Response(null, { headers: {} });
-  if (req.method !== 'POST') return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405 });
+  if (req.method === 'OPTIONS') return new Response(null, { headers: CORS_HEADERS });
+  if (req.method !== 'POST') return jsonResponse({ error: 'Method not allowed' }, 405);
 
   const authHeader = req.headers.get('Authorization');
-  if (!authHeader) return new Response(JSON.stringify({ error: 'Missing Authorization header' }), { status: 401 });
-  if (!(await resolveCaller(authHeader))) return new Response(JSON.stringify({ error: 'Not authenticated' }), { status: 401 });
+  if (!authHeader) return jsonResponse({ error: 'Missing Authorization header' }, 401);
+  if (!(await resolveCaller(authHeader))) return jsonResponse({ error: 'Not authenticated' }, 401);
 
   let body: any;
   try {
     body = await req.json();
   } catch {
-    return new Response(JSON.stringify({ error: 'Invalid JSON body' }), { status: 400 });
+    return jsonResponse({ error: 'Invalid JSON body' }, 400);
   }
 
   const text = typeof body?.text === 'string' ? body.text.trim() : '';
-  if (!text) return new Response(JSON.stringify({ error: 'Missing text' }), { status: 400 });
+  if (!text) return jsonResponse({ error: 'Missing text' }, 400);
 
   try {
     const audio = await synthesizeSpeech(text.slice(0, 800), 'auto');
-    return new Response(audio, { headers: { 'Content-Type': 'audio/mpeg', 'Access-Control-Allow-Origin': '*' } });
+    return new Response(audio, { headers: { ...CORS_HEADERS, 'Content-Type': 'audio/mpeg' } });
   } catch (err) {
     console.error('forge-speak failed:', err);
-    return new Response(JSON.stringify({ error: 'Could not synthesize speech.' }), { status: 500 });
+    return jsonResponse({ error: 'Could not synthesize speech.' }, 500);
   }
 }
 

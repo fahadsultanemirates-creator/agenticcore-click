@@ -31,7 +31,8 @@ Determine the intent and extract its arguments. Valid intents and their exact ar
 {"intent":"addvoice","id":string,"name":string}
 {"intent":"report","url":string}
 {"intent":"ask","question":string} -- use this when you're missing something you need (a task ID, a URL, which type, etc.) instead of guessing. Keep the question short and in English (it gets translated/spoken to the owner automatically downstream) -- it will be asked, and the owner's next message will answer it.
-{"intent":"unknown"} -- only when nothing above fits even loosely.
+{"intent":"chat","reply":string} -- a greeting, small talk, a question about what you can do, or anything conversational that isn't asking you to actually do one of the actions above. Reply naturally and briefly, like a sharp assistant who knows this whole system -- not a canned "unrecognized command" message.
+{"intent":"unknown"} -- only when the owner is clearly asking for an action but you truly cannot tell which one, even loosely (chat/small talk is never "unknown" -- use "chat" for that).
 
 Respond with ONLY the matching JSON object, nothing else.`;
 

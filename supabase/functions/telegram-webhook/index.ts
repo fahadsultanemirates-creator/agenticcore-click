@@ -406,6 +406,8 @@ async function routeMessage(chatId: number, text: string, attachmentUrls: string
       return handleReportCommand(chatId, parsed.url);
     case 'ask':
       return parsed.question;
+    case 'chat':
+      return parsed.reply;
     default:
       return 'Unrecognized command. Send /help for the list.';
   }

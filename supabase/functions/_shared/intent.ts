@@ -15,4 +15,5 @@ export type BotIntent =
   | { intent: 'addvoice'; id: string; name: string }
   | { intent: 'report'; url: string }
   | { intent: 'ask'; question: string }
+  | { intent: 'chat'; reply: string }
   | { intent: 'unknown' };

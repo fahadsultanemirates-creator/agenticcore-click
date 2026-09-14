@@ -1,7 +1,8 @@
 import { Info } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { DashboardShell } from "../../components/dashboard/DashboardShell";
-import { inputClass, SectionCard, ServicePageHeader, SubmitBar, SubmittedNote } from "../../components/dashboard/form";
+import { ErrorNote, inputClass, SectionCard, ServicePageHeader, SubmitBar, SubmittedNote } from "../../components/dashboard/form";
+import { submitTask } from "../../lib/submitTask";
 
 const DOC_TYPES = [
   { id: "invoice", label: "Invoice / quotation template", blurb: "Your branding, ready to send." },
@@ -16,14 +17,27 @@ export function BusinessDocumentsPage() {
   const [description, setDescription] = useState("");
   const [descError, setDescError] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
+  const [publicId, setPublicId] = useState("");
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!description.trim()) {
       setDescError(true);
       return;
     }
     setDescError(false);
+    setSubmitError("");
+    setSubmitting(true);
+    const result = await submitTask("documents", { docType, description: description.trim() });
+    setSubmitting(false);
+
+    if (!result.ok) {
+      setSubmitError(result.error);
+      return;
+    }
+    setPublicId(result.publicId);
     setSubmitted(true);
   };
 
@@ -39,10 +53,10 @@ export function BusinessDocumentsPage() {
 
         {submitted && (
           <SubmittedNote>
-            Thanks — we've got your document brief. This is a preview: nothing was actually sent
-            or generated yet.
+            Thanks — task <strong>{publicId}</strong> is queued. We'll notify you once it's ready.
           </SubmittedNote>
         )}
+        {submitError && <ErrorNote>{submitError}</ErrorNote>}
 
         <form onSubmit={handleSubmit} className="mt-8 flex flex-col gap-8">
           <SectionCard title="Document type">
@@ -90,7 +104,7 @@ export function BusinessDocumentsPage() {
             </p>
           </div>
 
-          <SubmitBar />
+          <SubmitBar loading={submitting} />
         </form>
       </div>
     </DashboardShell>

@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { DashboardShell } from "../../components/dashboard/DashboardShell";
-import { ChipToggle, inputClass, SectionCard, ServicePageHeader, SubmitBar, SubmittedNote, UploadDropzone } from "../../components/dashboard/form";
+import { ChipToggle, ErrorNote, inputClass, SectionCard, ServicePageHeader, SubmitBar, SubmittedNote, UploadDropzone } from "../../components/dashboard/form";
+import { submitTask } from "../../lib/submitTask";
 
 const IMAGE_TYPES = ["Avatar", "Business visual", "Product shot", "Illustration", "Other"];
 
@@ -9,14 +10,27 @@ export function ImagePage() {
   const [description, setDescription] = useState("");
   const [descError, setDescError] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
+  const [publicId, setPublicId] = useState("");
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!description.trim()) {
       setDescError(true);
       return;
     }
     setDescError(false);
+    setSubmitError("");
+    setSubmitting(true);
+    const result = await submitTask("image", { imageType, description: description.trim() });
+    setSubmitting(false);
+
+    if (!result.ok) {
+      setSubmitError(result.error);
+      return;
+    }
+    setPublicId(result.publicId);
     setSubmitted(true);
   };
 
@@ -32,10 +46,11 @@ export function ImagePage() {
 
         {submitted && (
           <SubmittedNote>
-            Thanks — we've got your <strong>{imageType.toLowerCase()}</strong> brief. This is a
-            preview: nothing was actually sent or generated yet.
+            Thanks — task <strong>{publicId}</strong> is queued for your{" "}
+            <strong>{imageType.toLowerCase()}</strong>. We'll notify you once it's ready.
           </SubmittedNote>
         )}
+        {submitError && <ErrorNote>{submitError}</ErrorNote>}
 
         <form onSubmit={handleSubmit} className="mt-8 flex flex-col gap-8">
           <SectionCard title="Image type">
@@ -69,7 +84,7 @@ export function ImagePage() {
             <UploadDropzone label="Upload a reference photo or existing image (optional)" />
           </SectionCard>
 
-          <SubmitBar />
+          <SubmitBar loading={submitting} />
         </form>
       </div>
     </DashboardShell>

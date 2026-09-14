@@ -1,7 +1,8 @@
 import { Check, Upload } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { DashboardShell } from "../components/dashboard/DashboardShell";
-import { ChipToggle, Field, inputClass, SectionCard, ServicePageHeader, SubmitBar, SubmittedNote } from "../components/dashboard/form";
+import { ChipToggle, ErrorNote, Field, inputClass, SectionCard, ServicePageHeader, SubmitBar, SubmittedNote } from "../components/dashboard/form";
+import { submitTask } from "../lib/submitTask";
 
 const PAGE_SECTIONS = [
   "About",
@@ -41,6 +42,9 @@ export function WebsiteIntake() {
   const [nameError, setNameError] = useState(false);
   const [tierError, setTierError] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
+  const [publicId, setPublicId] = useState("");
 
   const toggleSection = (section: string) => {
     setSections((prev) =>
@@ -48,7 +52,7 @@ export function WebsiteIntake() {
     );
   };
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     let ok = true;
     if (!businessName.trim()) {
@@ -62,6 +66,37 @@ export function WebsiteIntake() {
     if (!ok) return;
     setNameError(false);
     setTierError(false);
+    setSubmitError("");
+
+    const formData = new FormData(e.currentTarget);
+    const payload = {
+      tier,
+      businessName: businessName.trim(),
+      logoChoice,
+      sections: sectionsDelegate ? "you decide" : sections,
+      description: formData.get("description") ?? "",
+      category: categoryDelegate ? "you decide" : (formData.get("category") ?? ""),
+      colors: colorsDelegate ? "you decide" : (formData.get("colors") ?? ""),
+      styleReferenceUrl: formData.get("styleReferenceUrl") ?? "",
+      services: servicesDelegate ? "you decide" : (formData.get("services") ?? ""),
+      notes: formData.get("notes") ?? "",
+      contactDetails: formData.get("contactDetails") ?? "",
+      businessEmail: formData.get("businessEmail") ?? "",
+      instagram: formData.get("instagram") ?? "",
+      facebook: formData.get("facebook") ?? "",
+      telegram: formData.get("telegram") ?? "",
+      whatsapp: formData.get("whatsapp") ?? "",
+    };
+
+    setSubmitting(true);
+    const result = await submitTask("website", payload);
+    setSubmitting(false);
+
+    if (!result.ok) {
+      setSubmitError(result.error);
+      return;
+    }
+    setPublicId(result.publicId);
     setSubmitted(true);
   };
 
@@ -77,10 +112,11 @@ export function WebsiteIntake() {
 
         {submitted && (
           <SubmittedNote>
-            Thanks — we've got your brief for <strong>{businessName}</strong>. This is a
-            preview: nothing was actually sent or generated yet.
+            Thanks — task <strong>{publicId}</strong> is queued for <strong>{businessName}</strong>.
+            We'll notify you once it's ready.
           </SubmittedNote>
         )}
+        {submitError && <ErrorNote>{submitError}</ErrorNote>}
 
         <form onSubmit={handleSubmit} className="mt-8 flex flex-col gap-8">
           <SectionCard title="The basics">
@@ -106,11 +142,11 @@ export function WebsiteIntake() {
               </label>
 
               <Field label="One-line description">
-                <input placeholder="e.g. Handmade furniture, built to last" className={inputClass} />
+                <input name="description" placeholder="e.g. Handmade furniture, built to last" className={inputClass} />
               </Field>
 
               <Field label="Category" delegate={{ checked: categoryDelegate, onChange: setCategoryDelegate }}>
-                <select className={inputClass}>
+                <select name="category" className={inputClass}>
                   <option value="">Choose a category...</option>
                   <option>Retail / e-commerce</option>
                   <option>Restaurant / food</option>
@@ -123,11 +159,11 @@ export function WebsiteIntake() {
               </Field>
 
               <Field label="Colors / style vibe" delegate={{ checked: colorsDelegate, onChange: setColorsDelegate }}>
-                <input placeholder="e.g. Warm, earthy, handmade-feeling" className={inputClass} />
+                <input name="colors" placeholder="e.g. Warm, earthy, handmade-feeling" className={inputClass} />
               </Field>
 
               <Field label="Style-reference URL">
-                <input placeholder="A site whose look you like" className={inputClass} />
+                <input name="styleReferenceUrl" placeholder="A site whose look you like" className={inputClass} />
               </Field>
             </div>
           </SectionCard>
@@ -167,6 +203,7 @@ export function WebsiteIntake() {
           <SectionCard title="Content">
             <Field label="Services offered" delegate={{ checked: servicesDelegate, onChange: setServicesDelegate }}>
               <textarea
+                name="services"
                 rows={3}
                 placeholder="List what you offer, one per line or comma-separated"
                 className={`${inputClass} resize-none`}
@@ -202,6 +239,7 @@ export function WebsiteIntake() {
 
             <Field label="Anything else we should know">
               <textarea
+                name="notes"
                 rows={3}
                 placeholder="Anything that doesn't fit above"
                 className={`${inputClass} resize-none`}
@@ -212,22 +250,22 @@ export function WebsiteIntake() {
           <SectionCard title="Contact & socials">
             <div className="grid min-w-0 gap-4 sm:grid-cols-2">
               <Field label="Contact details">
-                <input placeholder="Phone, address, hours..." className={inputClass} />
+                <input name="contactDetails" placeholder="Phone, address, hours..." className={inputClass} />
               </Field>
               <Field label="Business email">
-                <input type="email" placeholder="you@business.com" className={inputClass} />
+                <input name="businessEmail" type="email" placeholder="you@business.com" className={inputClass} />
               </Field>
               <Field label="Instagram">
-                <input placeholder="@yourbusiness" className={inputClass} />
+                <input name="instagram" placeholder="@yourbusiness" className={inputClass} />
               </Field>
               <Field label="Facebook / other social">
-                <input placeholder="Link or handle" className={inputClass} />
+                <input name="facebook" placeholder="Link or handle" className={inputClass} />
               </Field>
               <Field label="Telegram">
-                <input placeholder="@yourbusiness or invite link" className={inputClass} />
+                <input name="telegram" placeholder="@yourbusiness or invite link" className={inputClass} />
               </Field>
               <Field label="WhatsApp">
-                <input placeholder="Number or wa.me link" className={inputClass} />
+                <input name="whatsapp" placeholder="Number or wa.me link" className={inputClass} />
               </Field>
             </div>
             <p className="text-xs text-fg-faint">
@@ -261,7 +299,7 @@ export function WebsiteIntake() {
             {tierError && (
               <span className="text-xs text-yellow-400">Pick a size to see your price.</span>
             )}
-            <p className="text-xs text-fg-faint">Placeholder pricing — final numbers land before launch.</p>
+            <p className="text-xs text-fg-faint">Charged from your wallet balance once you submit.</p>
           </SectionCard>
 
           <div className="rounded-2xl border border-dashed border-border bg-void p-6">
@@ -284,7 +322,7 @@ export function WebsiteIntake() {
             </ul>
           </div>
 
-          <SubmitBar />
+          <SubmitBar loading={submitting} />
         </form>
       </div>
     </DashboardShell>

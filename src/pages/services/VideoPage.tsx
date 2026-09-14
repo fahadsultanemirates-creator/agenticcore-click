@@ -1,7 +1,8 @@
 import { Check } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { DashboardShell } from "../../components/dashboard/DashboardShell";
-import { inputClass, SectionCard, ServicePageHeader, SubmitBar, SubmittedNote, UploadDropzone } from "../../components/dashboard/form";
+import { ErrorNote, inputClass, SectionCard, ServicePageHeader, SubmitBar, SubmittedNote, UploadDropzone } from "../../components/dashboard/form";
+import { submitTask } from "../../lib/submitTask";
 
 type Length = "short" | "long";
 type AvatarStyle = "standard" | "premium" | "elite" | "none";
@@ -41,6 +42,9 @@ export function VideoPage() {
   const [description, setDescription] = useState("");
   const [descError, setDescError] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
+  const [publicId, setPublicId] = useState("");
 
   const price =
     length === "short"
@@ -51,13 +55,30 @@ export function VideoPage() {
         ? "from $50"
         : LONG_PRICES[avatarStyle];
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!description.trim()) {
       setDescError(true);
       return;
     }
     setDescError(false);
+    setSubmitError("");
+    setSubmitting(true);
+    const result = await submitTask("video", {
+      length,
+      avatarStyle,
+      resolution,
+      noAvatarMode,
+      duration: length === "long" ? duration : undefined,
+      description: description.trim(),
+    });
+    setSubmitting(false);
+
+    if (!result.ok) {
+      setSubmitError(result.error);
+      return;
+    }
+    setPublicId(result.publicId);
     setSubmitted(true);
   };
 
@@ -73,10 +94,11 @@ export function VideoPage() {
 
         {submitted && (
           <SubmittedNote>
-            Thanks — we've got your video brief ({length === "short" ? "short clip" : "long video"},{" "}
-            {price}). This is a preview: nothing was actually sent or generated yet.
+            Thanks — task <strong>{publicId}</strong> is queued (
+            {length === "short" ? "short clip" : "long video"}, {price}). We'll notify you once it's ready.
           </SubmittedNote>
         )}
+        {submitError && <ErrorNote>{submitError}</ErrorNote>}
 
         <form onSubmit={handleSubmit} className="mt-8 flex flex-col gap-8">
           <SectionCard title="Length">
@@ -191,7 +213,7 @@ export function VideoPage() {
               </div>
             )}
 
-            <p className="text-xs text-fg-faint">Placeholder pricing — final numbers land before launch.</p>
+            <p className="text-xs text-fg-faint">Charged from your wallet balance once you submit.</p>
           </SectionCard>
 
           <SectionCard title="The brief">
@@ -217,7 +239,7 @@ export function VideoPage() {
             <UploadDropzone label="Upload a script, product shots, or reference video (optional)" />
           </SectionCard>
 
-          <SubmitBar />
+          <SubmitBar loading={submitting} />
         </form>
       </div>
     </DashboardShell>

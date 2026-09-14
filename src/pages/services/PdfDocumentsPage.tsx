@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { DashboardShell } from "../../components/dashboard/DashboardShell";
-import { ChipToggle, Field, inputClass, SectionCard, ServicePageHeader, SubmitBar, SubmittedNote, UploadDropzone } from "../../components/dashboard/form";
+import { ChipToggle, ErrorNote, Field, inputClass, SectionCard, ServicePageHeader, SubmitBar, SubmittedNote, UploadDropzone } from "../../components/dashboard/form";
+import { submitTask } from "../../lib/submitTask";
 
 const DOC_TYPES = [
   "Presentation (PowerPoint)",
@@ -16,14 +17,33 @@ export function PdfDocumentsPage() {
   const [description, setDescription] = useState("");
   const [descError, setDescError] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
+  const [publicId, setPublicId] = useState("");
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!description.trim()) {
       setDescError(true);
       return;
     }
     setDescError(false);
+    setSubmitError("");
+
+    const formData = new FormData(e.currentTarget);
+    setSubmitting(true);
+    const result = await submitTask("pdf", {
+      docType,
+      description: description.trim(),
+      websiteUrl: formData.get("websiteUrl") ?? "",
+    });
+    setSubmitting(false);
+
+    if (!result.ok) {
+      setSubmitError(result.error);
+      return;
+    }
+    setPublicId(result.publicId);
     setSubmitted(true);
   };
 
@@ -39,10 +59,11 @@ export function PdfDocumentsPage() {
 
         {submitted && (
           <SubmittedNote>
-            Thanks — we've got your <strong>{docType.toLowerCase()}</strong> brief. This is a
-            preview: nothing was actually sent or generated yet.
+            Thanks — task <strong>{publicId}</strong> is queued for your{" "}
+            <strong>{docType.toLowerCase()}</strong>. We'll notify you once it's ready.
           </SubmittedNote>
         )}
+        {submitError && <ErrorNote>{submitError}</ErrorNote>}
 
         <form onSubmit={handleSubmit} className="mt-8 flex flex-col gap-8">
           <SectionCard title="Document type">
@@ -72,7 +93,7 @@ export function PdfDocumentsPage() {
             </label>
 
             <Field label="Your website URL (auto-pulls logo, colors, copy & socials)">
-              <input placeholder="https://yourbusiness.com" className={inputClass} />
+              <input name="websiteUrl" placeholder="https://yourbusiness.com" className={inputClass} />
             </Field>
           </SectionCard>
 
@@ -80,7 +101,7 @@ export function PdfDocumentsPage() {
             <UploadDropzone label="Upload an existing logo or images to include (optional)" />
           </SectionCard>
 
-          <SubmitBar />
+          <SubmitBar loading={submitting} />
         </form>
       </div>
     </DashboardShell>

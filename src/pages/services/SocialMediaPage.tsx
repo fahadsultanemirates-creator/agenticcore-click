@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { DashboardShell } from "../../components/dashboard/DashboardShell";
-import { ChipToggle, inputClass, SectionCard, ServicePageHeader, SubmitBar, SubmittedNote } from "../../components/dashboard/form";
+import { ChipToggle, ErrorNote, inputClass, SectionCard, ServicePageHeader, SubmitBar, SubmittedNote } from "../../components/dashboard/form";
+import { submitTask } from "../../lib/submitTask";
 
 const REQUEST_TYPES = [
   { id: "posts", label: "Post pack (3 designs)", blurb: "3 ready-to-publish post designs for your platforms." },
@@ -17,18 +18,31 @@ export function SocialMediaPage() {
   const [description, setDescription] = useState("");
   const [descError, setDescError] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
+  const [publicId, setPublicId] = useState("");
 
   const togglePlatform = (platform: string) => {
     setPlatforms((prev) => (prev.includes(platform) ? prev.filter((p) => p !== platform) : [...prev, platform]));
   };
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!description.trim()) {
       setDescError(true);
       return;
     }
     setDescError(false);
+    setSubmitError("");
+    setSubmitting(true);
+    const result = await submitTask("social", { requestType, platforms, description: description.trim() });
+    setSubmitting(false);
+
+    if (!result.ok) {
+      setSubmitError(result.error);
+      return;
+    }
+    setPublicId(result.publicId);
     setSubmitted(true);
   };
 
@@ -44,10 +58,10 @@ export function SocialMediaPage() {
 
         {submitted && (
           <SubmittedNote>
-            Thanks — we've got your social media brief. This is a preview: nothing was actually
-            sent or generated yet.
+            Thanks — task <strong>{publicId}</strong> is queued. We'll notify you once it's ready.
           </SubmittedNote>
         )}
+        {submitError && <ErrorNote>{submitError}</ErrorNote>}
 
         <form onSubmit={handleSubmit} className="mt-8 flex flex-col gap-8">
           <SectionCard title="What kind of request">
@@ -100,7 +114,7 @@ export function SocialMediaPage() {
             </label>
           </SectionCard>
 
-          <SubmitBar />
+          <SubmitBar loading={submitting} />
         </form>
       </div>
     </DashboardShell>

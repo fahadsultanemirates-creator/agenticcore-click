@@ -1,4 +1,4 @@
-import { Sparkles } from "lucide-react";
+import { Loader2, Sparkles, TriangleAlert } from "lucide-react";
 import type { ReactNode } from "react";
 
 export const inputClass =
@@ -75,19 +75,25 @@ export function ServicePageHeader({
   );
 }
 
-export function SubmitBar({ label = "Send brief" }: { label?: string }) {
+export function SubmitBar({
+  label = "Send brief",
+  loading = false,
+  loadingLabel = "Submitting...",
+}: {
+  label?: string;
+  loading?: boolean;
+  loadingLabel?: string;
+}) {
   return (
     <div className="flex flex-col items-start gap-3">
       <button
         type="submit"
-        className="inline-flex w-fit items-center gap-2 rounded-full bg-yellow-400 px-7 py-3.5 text-base font-semibold text-void shadow-glow-yellow transition-transform hover:-translate-y-0.5"
+        disabled={loading}
+        className="inline-flex w-fit items-center gap-2 rounded-full bg-yellow-400 px-7 py-3.5 text-base font-semibold text-void shadow-glow-yellow transition-transform hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60"
       >
-        {label}
-        <Sparkles className="h-4 w-4" />
+        {loading ? loadingLabel : label}
+        {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
       </button>
-      <p className="text-xs text-fg-faint">
-        Mockup only — this simulates the flow, no request is actually sent anywhere.
-      </p>
     </div>
   );
 }
@@ -96,6 +102,15 @@ export function SubmittedNote({ children }: { children: ReactNode }) {
   return (
     <div className="mt-6 flex items-start gap-3 rounded-2xl border border-yellow-400/40 bg-yellow-400/10 p-4">
       <Sparkles className="mt-0.5 h-5 w-5 shrink-0 text-yellow-400" />
+      <p className="text-sm text-fg">{children}</p>
+    </div>
+  );
+}
+
+export function ErrorNote({ children }: { children: ReactNode }) {
+  return (
+    <div className="mt-6 flex items-start gap-3 rounded-2xl border border-red-500/40 bg-red-500/10 p-4">
+      <TriangleAlert className="mt-0.5 h-5 w-5 shrink-0 text-red-400" />
       <p className="text-sm text-fg">{children}</p>
     </div>
   );

@@ -43,7 +43,7 @@ export async function synthesizeSpeech(text: string, language: string): Promise<
     body: JSON.stringify({
       text,
       language,
-      voice_id: 'eve',
+      voice_id: 'rex',
       output_format: { codec: 'mp3' }
     })
   });

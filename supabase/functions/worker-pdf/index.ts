@@ -10,7 +10,8 @@
 // honest PDF. Flagged in task_events so this isn't a silent gap.
 
 import { supabaseAdmin } from '../_shared/storage.ts';
-import { grokChat } from '../_shared/grok.ts';
+import { grokChat, grokVisionChat } from '../_shared/grok.ts';
+import { fetchAttachments } from '../_shared/attachments.ts';
 import { renderDocumentPdf, type DocSpec } from '../_shared/pdf.ts';
 import { generateQrSvg } from '../_shared/qrcode.ts';
 import { uploadDeliverable } from '../_shared/storage.ts';
@@ -54,22 +55,30 @@ async function generateDocSpec(type: string, payload: Record<string, unknown>): 
           '(same content, properly translated) -- tag each section with its language.'
         : 'Write the entire document in English.';
 
-  const raw = await grokChat(
-    [
-      {
-        role: 'system',
-        content:
-          'You are a professional business copywriter and document designer. Given a brief, produce the ' +
-          'complete, ready-to-use content for the requested document (no placeholder/lorem ipsum text). ' +
-          `${languageInstruction} ` +
-          'Respond with ONLY a JSON object of the exact shape ' +
-          '{"title": string, "subtitle": string | null, "sections": [{"heading": string, "body": string, "language": "en"|"ur"}]} ' +
-          '-- no markdown fences, no commentary.'
-      },
-      { role: 'user', content: describeBrief(type, payload) }
-    ],
-    { maxTokens: 6000 }
-  );
+  const systemPrompt =
+    'You are a professional business copywriter and document designer. Given a brief, produce the ' +
+    'complete, ready-to-use content for the requested document (no placeholder/lorem ipsum text). ' +
+    `${languageInstruction} ` +
+    'Respond with ONLY a JSON object of the exact shape ' +
+    '{"title": string, "subtitle": string | null, "sections": [{"heading": string, "body": string, "language": "en"|"ur"}]} ' +
+    '-- no markdown fences, no commentary.';
+  const userBrief = describeBrief(type, payload);
+
+  const attachments = await fetchAttachments(payload.referenceFiles);
+  const raw = attachments.length > 0
+    ? await grokVisionChat(
+        `${systemPrompt} You are also given reference image(s) (e.g. an existing logo or brand photos) -- reflect their branding/style in the content and any visual description you write.`,
+        userBrief,
+        attachments,
+        { maxTokens: 6000 }
+      )
+    : await grokChat(
+        [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userBrief }
+        ],
+        { maxTokens: 6000 }
+      );
 
   const cleaned = raw.trim().replace(/^```(?:json)?\n?/i, '').replace(/```$/i, '').trim();
   const parsed = JSON.parse(cleaned);

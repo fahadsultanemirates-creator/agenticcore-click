@@ -4,7 +4,8 @@
 // client.
 
 import { supabaseAdmin } from '../_shared/storage.ts';
-import { grokChat, extractCodeBlock } from '../_shared/grok.ts';
+import { grokChat, grokVisionChat, extractCodeBlock } from '../_shared/grok.ts';
+import { fetchAttachments } from '../_shared/attachments.ts';
 import { buildZip } from '../_shared/zip.ts';
 import { addTaskFile, logEvent, markDelivered, markFailed } from '../_shared/task.ts';
 import { jsonResponse } from '../_shared/cors.ts';
@@ -25,7 +26,7 @@ function buildPrompt(payload: Record<string, unknown>): { system: string; user: 
   ].join('\n');
 
   const lines = Object.entries(payload)
-    .filter(([, v]) => v !== undefined && v !== null && String(v).trim() !== '')
+    .filter(([k, v]) => k !== 'referenceFiles' && v !== undefined && v !== null && String(v).trim() !== '')
     .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`);
 
   const user = `Build the website for this business:\n\n${lines.join('\n')}`;
@@ -115,11 +116,21 @@ export async function handleRequest(req: Request): Promise<Response> {
   if (error || !task) return jsonResponse({ error: 'Task not found' }, 404);
 
   try {
-    const { system, user } = buildPrompt(task.payload ?? {});
-    const raw = await grokChat([
-      { role: 'system', content: system },
-      { role: 'user', content: user }
-    ], { maxTokens: 8000 });
+    const payload = task.payload ?? {};
+    const { system, user } = buildPrompt(payload);
+    const attachments = await fetchAttachments(payload.referenceFiles);
+
+    const raw = attachments.length > 0
+      ? await grokVisionChat(
+          `${system}\nYou are also given reference image(s) (a logo and/or business photos) -- visually match their colors, style, and branding in the site you build.`,
+          user,
+          attachments,
+          { maxTokens: 8000 }
+        )
+      : await grokChat([
+          { role: 'system', content: system },
+          { role: 'user', content: user }
+        ], { maxTokens: 8000 });
     const html = extractCodeBlock(raw, 'html');
 
     const { siteId, url } = await ensureNetlifySite(taskId, task.public_id, task.brand ?? {});

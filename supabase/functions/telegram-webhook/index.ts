@@ -22,8 +22,9 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { listAvatars, listVoices } from '../_shared/heygen.ts';
 import { transcribeAudio } from '../_shared/voice.ts';
 import { downloadTelegramFile } from '../_shared/telegramApi.ts';
+import { uploadClientMedia } from '../_shared/storage.ts';
 import { detectLanguage, getOwnerLanguage, setOwnerLanguage, sendBotMessage } from '../_shared/botMessage.ts';
-import { classifyIntent } from '../_shared/intent.ts';
+import { converse } from '../_shared/botConversation.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -341,7 +342,7 @@ async function handleReportCommand(chatId: number, url: string): Promise<string>
   return `${publicId} queued — business report for ${normalizedUrl}. I'll send the PDF here once it's ready (usually a few minutes).`;
 }
 
-async function routeMessage(chatId: number, text: string): Promise<string> {
+async function routeMessage(chatId: number, text: string, attachmentUrls: string[] = []): Promise<string> {
   if (HELP_PATTERN.test(text)) return helpText();
   if (QUEUE_PATTERN.test(text)) return handleQueueCommand();
 
@@ -376,8 +377,10 @@ async function routeMessage(chatId: number, text: string): Promise<string> {
     return `Unrecognized command. Try /files ${text.match(TASK_ID_PATTERN)![0].toUpperCase()} or /revise <id> <note>.`;
   }
 
-  // Free-form text or a voice transcript -- let Grok figure out what was meant.
-  const parsed = await classifyIntent(text);
+  // Free-form text, a voice transcript, or a photo/document caption -- let
+  // the conversational engine figure out what was meant, using real memory
+  // of this chat so it can ask a follow-up and resolve it next message.
+  const parsed = await converse(String(chatId), text, attachmentUrls);
   switch (parsed.intent) {
     case 'queue':
       return handleQueueCommand();
@@ -401,6 +404,8 @@ async function routeMessage(chatId: number, text: string): Promise<string> {
       return handleAddCatalogCommand('voice', parsed.id, parsed.name);
     case 'report':
       return handleReportCommand(chatId, parsed.url);
+    case 'ask':
+      return parsed.question;
     default:
       return 'Unrecognized command. Send /help for the list.';
   }
@@ -439,6 +444,7 @@ export async function handleRequest(req: Request): Promise<Response> {
 
   let text: string;
   let language: 'en' | 'ur';
+  const attachmentUrls: string[] = [];
 
   try {
     if (message?.voice?.file_id) {
@@ -446,16 +452,31 @@ export async function handleRequest(req: Request): Promise<Response> {
       const transcription = await transcribeAudio(audioBytes, 'voice.oga');
       text = transcription.text.trim();
       language = detectLanguage(text);
+    } else if (Array.isArray(message?.photo) && message.photo.length > 0) {
+      // Telegram sends multiple resolutions -- the last is the largest.
+      const largest = message.photo[message.photo.length - 1];
+      const bytes = await downloadTelegramFile(largest.file_id);
+      const { url } = await uploadClientMedia(`telegram/${chatId}`, `photo-${largest.file_id}.jpg`, bytes, 'image/jpeg');
+      attachmentUrls.push(url);
+      text = typeof message?.caption === 'string' ? message.caption.trim() : '(sent a photo)';
+      language = detectLanguage(text);
+    } else if (message?.document?.file_id) {
+      const doc = message.document;
+      const bytes = await downloadTelegramFile(doc.file_id);
+      const { url } = await uploadClientMedia(`telegram/${chatId}`, doc.file_name || `document-${doc.file_id}`, bytes, doc.mime_type || 'application/octet-stream');
+      attachmentUrls.push(url);
+      text = typeof message?.caption === 'string' ? message.caption.trim() : `(sent a document: ${doc.file_name || 'file'})`;
+      language = detectLanguage(text);
     } else if (typeof message?.text === 'string' && message.text.trim()) {
       text = message.text.trim();
       language = detectLanguage(text);
     } else {
-      // Not text or voice (photo, sticker, etc.) -- nothing to act on.
+      // Not text, voice, photo, or document (sticker, etc.) -- nothing to act on.
       return new Response('ok');
     }
   } catch (err) {
     console.error('telegram-webhook: could not read incoming message', err);
-    await sendBotMessage(chatId, 'Could not understand that voice message. Please try again or type instead.', await getOwnerLanguage()).catch(() => {});
+    await sendBotMessage(chatId, 'Could not understand that message. Please try again or type instead.', await getOwnerLanguage()).catch(() => {});
     return new Response('ok');
   }
 
@@ -463,7 +484,7 @@ export async function handleRequest(req: Request): Promise<Response> {
 
   let rawReply: string;
   try {
-    rawReply = await routeMessage(chatId, text);
+    rawReply = await routeMessage(chatId, text, attachmentUrls);
   } catch (err) {
     console.error('telegram-webhook: command failed', err);
     rawReply = 'Something went wrong handling that.';

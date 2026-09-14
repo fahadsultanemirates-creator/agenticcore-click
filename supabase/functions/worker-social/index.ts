@@ -12,11 +12,17 @@ import { addTaskFile, logEvent, markDelivered, markFailed } from '../_shared/tas
 import { jsonResponse } from '../_shared/cors.ts';
 
 const IMAGE_REQUEST_TYPES = new Set(['posts', 'profile']);
-const OPTION_COUNT = 3;
+const DEFAULT_OPTION_COUNT = 3;
 
 function platformList(payload: Record<string, unknown>): string {
   const platforms = payload.platforms;
   return Array.isArray(platforms) ? platforms.join(', ') : String(platforms ?? '');
+}
+
+function resolveOptionCount(payload: Record<string, unknown>): number {
+  const n = Number(payload.optionCount);
+  if (!Number.isFinite(n)) return DEFAULT_OPTION_COUNT;
+  return Math.min(5, Math.max(1, Math.round(n)));
 }
 
 async function handleImageRequest(taskId: string, version: number, payload: Record<string, unknown>) {
@@ -26,7 +32,7 @@ async function handleImageRequest(taskId: string, version: number, payload: Reco
       ? `Social media profile kit (profile picture + cover/banner concept) for ${platformList(payload)}: ${payload.description}. Clean, professional, on-brand.`
       : `Social media post design for ${platformList(payload)}: ${payload.description}. Eye-catching, scroll-stopping, on-brand.`;
 
-  const urls = await generateImageOptions(taskId, prompt, OPTION_COUNT, version);
+  const urls = await generateImageOptions(taskId, prompt, resolveOptionCount(payload), version, payload.referenceFiles);
   await logEvent(taskId, 'social_images_generated', 'worker', { requestType, count: urls.length });
 }
 

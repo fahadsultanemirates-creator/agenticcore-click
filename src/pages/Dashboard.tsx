@@ -10,7 +10,9 @@ export function Dashboard() {
     <DashboardShell crumb="Dashboard" title="Welcome back">
       <NewRequestSection />
       <DeliverablesSection />
-      <BillingSection />
+      <div id="billing">
+        <BillingSection />
+      </div>
       <PortfolioSection />
       <ChatLauncher />
     </DashboardShell>

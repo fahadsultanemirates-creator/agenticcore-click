@@ -7,12 +7,18 @@ import { generateImageOptions } from '../_shared/images.ts';
 import { logEvent, markDelivered, markFailed } from '../_shared/task.ts';
 import { jsonResponse } from '../_shared/cors.ts';
 
-const OPTION_COUNT = 3;
+const DEFAULT_OPTION_COUNT = 3;
 
 function buildPrompt(payload: Record<string, unknown>): string {
   const imageType = String(payload.imageType ?? 'image');
   const description = String(payload.description ?? '');
   return `${imageType}: ${description}. High quality, professional, ready to use commercially.`;
+}
+
+function resolveOptionCount(payload: Record<string, unknown>): number {
+  const n = Number(payload.optionCount);
+  if (!Number.isFinite(n)) return DEFAULT_OPTION_COUNT;
+  return Math.min(5, Math.max(1, Math.round(n)));
 }
 
 export async function handleRequest(req: Request): Promise<Response> {
@@ -32,8 +38,9 @@ export async function handleRequest(req: Request): Promise<Response> {
   if (error || !task) return jsonResponse({ error: 'Task not found' }, 404);
 
   try {
-    const prompt = buildPrompt(task.payload ?? {});
-    const urls = await generateImageOptions(taskId, prompt, OPTION_COUNT, task.version);
+    const payload = task.payload ?? {};
+    const prompt = buildPrompt(payload);
+    const urls = await generateImageOptions(taskId, prompt, resolveOptionCount(payload), task.version, payload.referenceFiles);
     await logEvent(taskId, 'images_generated', 'worker', { count: urls.length });
     await markDelivered(taskId);
     return jsonResponse({ ok: true, urls });

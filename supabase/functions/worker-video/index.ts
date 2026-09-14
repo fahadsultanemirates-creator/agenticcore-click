@@ -10,7 +10,8 @@
 // the dispatcher with { taskId }.
 
 import { supabaseAdmin } from '../_shared/storage.ts';
-import { grokChat } from '../_shared/grok.ts';
+import { grokChat, grokVisionChat } from '../_shared/grok.ts';
+import { fetchAttachments } from '../_shared/attachments.ts';
 import { submitHeygenVideo, DEFAULT_AVATAR, DEFAULT_VOICE_ID, type VideoDimension, type CharacterChoice } from '../_shared/heygen.ts';
 import { notifyOwner } from '../_shared/telegram.ts';
 import { logEvent, markNeedsInfo, markFailed, setProviderJob } from '../_shared/task.ts';
@@ -48,13 +49,23 @@ function targetWords(payload: Record<string, unknown>): number {
 
 async function generateScript(payload: Record<string, unknown>): Promise<string> {
   const words = targetWords(payload);
+  const systemPrompt = `Write a natural, spoken-word video script of approximately ${words} words. Output ONLY the script text -- no stage directions, no scene headings, no markdown.`;
+  const brief = String(payload.description ?? '');
+
+  const attachments = await fetchAttachments(payload.referenceFiles);
+  if (attachments.length > 0) {
+    return await grokVisionChat(
+      `${systemPrompt} You are also given reference image(s) (product shots/brand photos) -- let what's genuinely in them inform the script's content.`,
+      brief,
+      attachments,
+      { maxTokens: 1000, temperature: 0.7 }
+    );
+  }
+
   return await grokChat(
     [
-      {
-        role: 'system',
-        content: `Write a natural, spoken-word video script of approximately ${words} words. Output ONLY the script text -- no stage directions, no scene headings, no markdown.`
-      },
-      { role: 'user', content: String(payload.description ?? '') }
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: brief }
     ],
     { maxTokens: 1000, temperature: 0.7 }
   );

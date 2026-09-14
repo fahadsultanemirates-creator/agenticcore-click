@@ -404,7 +404,7 @@ export function Forge() {
             </div>
           )}
 
-          <form onSubmit={handleSubmitForm} className="flex items-center gap-2 rounded-full border-2 border-yellow-400/30 bg-surface px-2 py-2 pl-4">
+          <form onSubmit={handleSubmitForm} className="flex items-center gap-1.5 rounded-full border-2 border-yellow-400/30 bg-surface py-1.5 pr-1.5 pl-4">
             <input
               value={input}
               onChange={(e) => setInput(e.target.value)}

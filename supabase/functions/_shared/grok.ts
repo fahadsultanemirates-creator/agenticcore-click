@@ -5,7 +5,9 @@
 const XAI_API_KEY = Deno.env.get('XAI_API_KEY')!;
 const XAI_BASE_URL = 'https://api.x.ai/v1';
 const CHAT_MODEL = Deno.env.get('XAI_CHAT_MODEL') || 'grok-4';
-const IMAGE_MODEL = Deno.env.get('XAI_IMAGE_MODEL') || 'grok-2-image';
+// grok-2-image was retired -- current model per docs.x.ai is grok-imagine-image-2.0
+// (confirmed against a real 404 from the live API, not guessed).
+const IMAGE_MODEL = Deno.env.get('XAI_IMAGE_MODEL') || 'grok-imagine-image-2.0';
 
 export class GrokError extends Error {
   constructor(message: string, public status?: number) {

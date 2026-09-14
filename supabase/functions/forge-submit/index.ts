@@ -156,8 +156,18 @@ export async function handleRequest(req: Request): Promise<Response> {
     return jsonResponse({ error: 'Could not create all the tasks. Your wallet was not charged.' }, 500);
   }
 
+  // Keep the conversation going rather than resetting it -- the client can
+  // keep chatting (ask about what they just queued, start another request)
+  // with real memory of what happened, instead of Forge "forgetting"
+  // everything the moment something gets confirmed. The confirmation itself
+  // is persisted as an assistant message so it's part of that memory too.
   if (conversationId) {
-    await supabaseAdmin.from('forge_conversations').update({ status: 'completed', updated_at: new Date().toISOString() }).eq('id', conversationId).eq('user_id', caller.id);
+    await supabaseAdmin.from('forge_conversations').update({ updated_at: new Date().toISOString() }).eq('id', conversationId).eq('user_id', caller.id);
+    await supabaseAdmin.from('forge_messages').insert({
+      conversation_id: conversationId,
+      role: 'assistant',
+      content: `Queued: ${publicIds.join(', ')} -- $${totalUsd.toFixed(2)} charged from the wallet. The team will notify you as each one is ready.`
+    });
   }
 
   fetch(`${SUPABASE_URL}/functions/v1/dispatcher`, {

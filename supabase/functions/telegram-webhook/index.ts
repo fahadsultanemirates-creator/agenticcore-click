@@ -25,6 +25,7 @@ const TASK_ID_PATTERN = /AC-CLICK-\d{4}/i;
 const NEW_PATTERN = /^\/new(?:@\S+)?\s+(\S+)\s+([\s\S]+)$/i;
 const REVISE_PATTERN = /^\/revise(?:@\S+)?\s+(AC-CLICK-\d{4})\s+([\s\S]+)$/i;
 const FILES_PATTERN = /^\/files(?:@\S+)?\s+(AC-CLICK-\d{4})\b/i;
+const DELIVER_PATTERN = /^\/deliver(?:@\S+)?\s+(AC-CLICK-\d{4})\s+(\S+)$/i;
 const QUEUE_PATTERN = /^\/queue(?:@\S+)?$/i;
 const HELP_PATTERN = /^\/(start|help)(?:@\S+)?$/i;
 
@@ -129,7 +130,52 @@ async function handleNewCommand(chatId: number, type: string, brief: string): Pr
     detail: { type: normalizedType, brief }
   });
 
+  // Fire-and-forget -- same nudge submit-task gives the dispatcher, so an
+  // owner task doesn't sit idle until the next cron sweep (it still queues
+  // behind any pending client tasks once the dispatcher claims it).
+  fetch(`${SUPABASE_URL}/functions/v1/dispatcher`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, 'Content-Type': 'application/json' }
+  }).catch((err) => console.error('telegram-webhook: dispatch trigger failed', err));
+
   await sendTelegramMessage(chatId, `${publicId} queued (owner task — will run after any pending client tasks).`);
+}
+
+async function handleDeliverCommand(chatId: number, publicId: string, url: string): Promise<void> {
+  const { data: task, error: fetchError } = await supabaseAdmin
+    .from('tasks')
+    .select('id, version')
+    .eq('public_id', publicId)
+    .maybeSingle();
+
+  if (fetchError) {
+    console.error('telegram-webhook: /deliver lookup failed', fetchError);
+    await sendTelegramMessage(chatId, `Could not look up ${publicId}.`);
+    return;
+  }
+  if (!task) {
+    await sendTelegramMessage(chatId, `No task found with id ${publicId}.`);
+    return;
+  }
+
+  const { error: fileError } = await supabaseAdmin
+    .from('task_files')
+    .insert({ task_id: task.id, url, file_type: 'manual', option_index: 1, version: task.version });
+  if (fileError) {
+    console.error('telegram-webhook: /deliver file insert failed', fileError);
+    await sendTelegramMessage(chatId, `Could not attach that file to ${publicId}.`);
+    return;
+  }
+
+  await supabaseAdmin.from('tasks').update({ status: 'delivered', updated_at: new Date().toISOString() }).eq('id', task.id);
+  await supabaseAdmin.from('task_events').insert({
+    task_id: task.id,
+    event_type: 'delivered',
+    actor: 'owner',
+    detail: { url, manual: true }
+  });
+
+  await sendTelegramMessage(chatId, `${publicId} marked delivered with ${url}.`);
 }
 
 async function handleReviseCommand(chatId: number, publicId: string, note: string): Promise<void> {
@@ -260,6 +306,7 @@ export async function handleRequest(req: Request): Promise<Response> {
           '/new <type> <brief> — create an owner task (queues behind client tasks)',
           '/revise <task id> <note> — re-queue a delivered task for revision',
           '/files <task id> — list a task\'s deliverable files',
+          '/deliver <task id> <url> — manually attach a file and mark delivered (for anything not yet automated, e.g. no-avatar video)',
           '',
           `Valid types: ${[...TASK_TYPES].join(', ')}`
         ].join('\n')
@@ -287,6 +334,12 @@ export async function handleRequest(req: Request): Promise<Response> {
     const filesMatch = trimmed.match(FILES_PATTERN);
     if (filesMatch) {
       await handleFilesCommand(chatId, filesMatch[1].toUpperCase());
+      return new Response('ok');
+    }
+
+    const deliverMatch = trimmed.match(DELIVER_PATTERN);
+    if (deliverMatch) {
+      await handleDeliverCommand(chatId, deliverMatch[1].toUpperCase(), deliverMatch[2]);
       return new Response('ok');
     }
 

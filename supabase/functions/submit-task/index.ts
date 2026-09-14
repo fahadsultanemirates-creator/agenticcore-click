@@ -205,6 +205,14 @@ export async function handleRequest(req: Request): Promise<Response> {
     detail: { price_usd: priceUsd, type, subtype }
   });
 
+  // Fire-and-forget -- nudges the dispatcher so this task doesn't wait for
+  // the cron safety net. Never awaited: a dispatch hiccup here is not a
+  // reason to fail a request that already succeeded and was charged.
+  fetch(`${SUPABASE_URL}/functions/v1/dispatcher`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, 'Content-Type': 'application/json' }
+  }).catch((err) => console.error('submit-task: dispatch trigger failed', err));
+
   return jsonResponse({ taskId: task.id, publicId: task.public_id, priceUsd });
 }
 

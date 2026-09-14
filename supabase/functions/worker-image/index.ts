@@ -1,0 +1,47 @@
+// Grok-driven image generation -- always 3 options, per the service's own
+// promise ("Every request comes back with 3 options to pick from"). Invoked
+// by the dispatcher with { taskId }.
+
+import { supabaseAdmin } from '../_shared/storage.ts';
+import { generateImageOptions } from '../_shared/images.ts';
+import { logEvent, markDelivered, markFailed } from '../_shared/task.ts';
+import { jsonResponse } from '../_shared/cors.ts';
+
+const OPTION_COUNT = 3;
+
+function buildPrompt(payload: Record<string, unknown>): string {
+  const imageType = String(payload.imageType ?? 'image');
+  const description = String(payload.description ?? '');
+  return `${imageType}: ${description}. High quality, professional, ready to use commercially.`;
+}
+
+export async function handleRequest(req: Request): Promise<Response> {
+  if (req.method === 'OPTIONS') return new Response(null, { headers: {} });
+
+  let body: any;
+  try {
+    body = await req.json();
+  } catch {
+    return jsonResponse({ error: 'Invalid JSON body' }, 400);
+  }
+
+  const taskId = body?.taskId;
+  if (typeof taskId !== 'string') return jsonResponse({ error: 'Missing taskId' }, 400);
+
+  const { data: task, error } = await supabaseAdmin.from('tasks').select('*').eq('id', taskId).maybeSingle();
+  if (error || !task) return jsonResponse({ error: 'Task not found' }, 404);
+
+  try {
+    const prompt = buildPrompt(task.payload ?? {});
+    const urls = await generateImageOptions(taskId, prompt, OPTION_COUNT, task.version);
+    await logEvent(taskId, 'images_generated', 'worker', { count: urls.length });
+    await markDelivered(taskId);
+    return jsonResponse({ ok: true, urls });
+  } catch (err) {
+    console.error(`worker-image failed for ${taskId}:`, err);
+    await markFailed(taskId, err instanceof Error ? err.message : String(err));
+    return jsonResponse({ ok: false, error: 'Image generation failed' });
+  }
+}
+
+Deno.serve(handleRequest);

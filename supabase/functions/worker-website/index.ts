@@ -69,6 +69,20 @@ async function ensureNetlifySite(taskId: string, publicId: string, brand: Record
     .update({ brand: { ...brand, netlify_site_id: site.id } })
     .eq('id', taskId);
 
+  // Known gap: sites created via this API have come back with Netlify's
+  // "require team login" visitor access control ON by default on this
+  // account/plan (existing sites created through the dashboard did not),
+  // which would 401 every real visitor. There's no confirmed public API
+  // call from here to turn it off, so it's flagged loudly instead of
+  // silently shipping an inaccessible site -- fix per-site via the
+  // Netlify dashboard (or MCP) until Netlify's default changes.
+  await supabaseAdmin.from('task_events').insert({
+    task_id: taskId,
+    event_type: 'netlify_site_created_check_access',
+    actor: 'worker',
+    detail: { siteId: site.id, note: 'Verify visitor access control is not set to require team login before sharing this URL.' }
+  });
+
   return { siteId: site.id, url: site.ssl_url || site.url };
 }
 

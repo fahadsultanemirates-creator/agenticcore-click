@@ -28,9 +28,19 @@ export async function addTaskFile(
   if (error) console.error(`addTaskFile failed for ${taskId}:`, error);
 }
 
+// Retries a couple of times on top of the single attempt other writes in
+// this file get -- this is the write that actually closes out a task after
+// real work (generation, deploy, upload) already happened, so a transient
+// "Gateway Timeout" from PostgREST here would otherwise leave a fully
+// finished task stuck in in_progress forever (seen in practice against
+// this project). Other logging/event writes stay best-effort.
 async function setStatus(taskId: string, status: string): Promise<void> {
-  const { error } = await supabaseAdmin.from('tasks').update({ status, updated_at: new Date().toISOString() }).eq('id', taskId);
-  if (error) console.error(`setStatus(${status}) failed for ${taskId}:`, error);
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const { error } = await supabaseAdmin.from('tasks').update({ status, updated_at: new Date().toISOString() }).eq('id', taskId);
+    if (!error) return;
+    console.error(`setStatus(${status}) attempt ${attempt} failed for ${taskId}:`, error);
+    if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, attempt * 500));
+  }
 }
 
 export async function markDelivered(taskId: string): Promise<void> {

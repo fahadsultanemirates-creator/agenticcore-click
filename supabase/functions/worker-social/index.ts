@@ -72,6 +72,22 @@ function brandUrlFor(payload: Record<string, unknown>): string | null {
   return normalizeUrl(explicit ?? '') ?? extractUrl(String(payload.description ?? payload.brief ?? ''));
 }
 
+
+// A revision only differs from the original if the generator is told what to
+// change. Notes are appended to the payload by the revise path; without this
+// the worker would regenerate the same brief and hand back the same thing.
+function revisionInstruction(payload: Record<string, unknown>): string {
+  const notes = Array.isArray(payload.revisionNotes) ? (payload.revisionNotes as string[]) : [];
+  if (notes.length === 0) return '';
+  const latest = notes[notes.length - 1];
+  const earlier = notes.slice(0, -1);
+  return (
+    `\n\nThis is a REVISION of work already delivered. Change what is asked for and leave everything ` +
+    `else as it was -- do not rebuild the whole thing around the change.\nWhat to change now: ${latest}` +
+    (earlier.length ? `\nAlready applied previously: ${earlier.join(' | ')}` : '')
+  );
+}
+
 function platformList(payload: Record<string, unknown>): string {
   const platforms = payload.platforms;
   return Array.isArray(platforms) ? platforms.join(', ') : String(platforms ?? '');
@@ -121,7 +137,7 @@ async function handleCopyRequest(taskId: string, version: number, payload: Recor
       : `Write a caption & hashtag pack (at least 4 distinct caption options with matching hashtags) for ${platformList(payload)}. Brief: ${payload.description}.`;
 
   const profile = await getBrandProfile(brandUrlFor(payload));
-  const briefWithBrand = brief + brandFactsForPrompt(profile);
+  const briefWithBrand = brief + brandFactsForPrompt(profile) + revisionInstruction(payload);
 
   const raw = await claudeChat(
     [

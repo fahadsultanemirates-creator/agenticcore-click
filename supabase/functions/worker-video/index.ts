@@ -46,6 +46,22 @@ function brandUrlFor(payload: Record<string, unknown>): string | null {
   return normalizeUrl(explicit ?? '') ?? extractUrl(String(payload.description ?? payload.brief ?? ''));
 }
 
+
+// A revision only differs from the original if the generator is told what to
+// change. Notes are appended to the payload by the revise path; without this
+// the worker would regenerate the same brief and hand back the same thing.
+function revisionInstruction(payload: Record<string, unknown>): string {
+  const notes = Array.isArray(payload.revisionNotes) ? (payload.revisionNotes as string[]) : [];
+  if (notes.length === 0) return '';
+  const latest = notes[notes.length - 1];
+  const earlier = notes.slice(0, -1);
+  return (
+    `\n\nThis is a REVISION of work already delivered. Change what is asked for and leave everything ` +
+    `else as it was -- do not rebuild the whole thing around the change.\nWhat to change now: ${latest}` +
+    (earlier.length ? `\nAlready applied previously: ${earlier.join(' | ')}` : '')
+  );
+}
+
 interface VideoDefaulting {
   payload: Record<string, unknown>;
   defaulted: string[];
@@ -138,7 +154,7 @@ async function generateScript(payload: Record<string, unknown>): Promise<string>
   const words = targetWords(payload);
   const profile = await getBrandProfile(brandUrlFor(payload));
   const systemPrompt = `Write a natural, spoken-word video script of approximately ${words} words. Output ONLY the script text -- no stage directions, no scene headings, no markdown.`;
-  const brief = String(payload.description ?? '') + brandFactsForPrompt(profile);
+  const brief = String(payload.description ?? '') + brandFactsForPrompt(profile) + revisionInstruction(payload);
 
   const attachments = await fetchAttachments(payload.referenceFiles);
   if (attachments.length > 0) {

@@ -67,7 +67,7 @@ async function generateAssetSpec(catalogItem: CatalogItem, payload: Record<strin
     'exact shape {"title": string, "sections": [{"heading": string, "body": string}]} with EXACTLY ONE entry in ' +
     '"sections" -- no markdown fences, no commentary.';
 
-  const userBrief = [`Product: ${item}`, `Brief: ${description}`].filter(Boolean).join('\n') + brandFactsForPrompt(profile);
+  const userBrief = [`Product: ${item}`, `Brief: ${description}`].filter(Boolean).join('\n') + brandFactsForPrompt(profile) + revisionInstruction(payload);
 
   const raw = await claudeChat(
     [
@@ -84,6 +84,22 @@ async function generateAssetSpec(catalogItem: CatalogItem, payload: Record<strin
   }
   // One section, enforced here rather than trusted from the model.
   return { title: String(parsed.title), sections: [parsed.sections[0]], kind: 'asset', brand: brandColors(profile) };
+}
+
+
+// A revision only differs from the original if the generator is told what to
+// change. Notes are appended to the payload by the revise path; without this
+// the worker would regenerate the same brief and hand back the same thing.
+function revisionInstruction(payload: Record<string, unknown>): string {
+  const notes = Array.isArray(payload.revisionNotes) ? (payload.revisionNotes as string[]) : [];
+  if (notes.length === 0) return '';
+  const latest = notes[notes.length - 1];
+  const earlier = notes.slice(0, -1);
+  return (
+    `\n\nThis is a REVISION of work already delivered. Change what is asked for and leave everything ` +
+    `else as it was -- do not rebuild the whole thing around the change.\nWhat to change now: ${latest}` +
+    (earlier.length ? `\nAlready applied previously: ${earlier.join(' | ')}` : '')
+  );
 }
 
 function describeBrief(type: string, payload: Record<string, unknown>): string {
@@ -128,7 +144,7 @@ async function generateDocSpec(catalogItem: CatalogItem, type: string, payload: 
     '{"title": string, "subtitle": string | null, "sections": [{"heading": string, "body": string, "language": "en"|"ur"}]} ' +
     '-- no markdown fences, no commentary.';
   const profile = catalogItem.urlUse === 'brand' ? await getBrandProfile(brandUrlFor(payload)) : null;
-  const userBrief = describeBrief(type, payload) + brandFactsForPrompt(profile);
+  const userBrief = describeBrief(type, payload) + brandFactsForPrompt(profile) + revisionInstruction(payload);
 
   const attachments = await fetchAttachments(payload.referenceFiles);
   const raw = attachments.length > 0

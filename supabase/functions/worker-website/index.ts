@@ -43,6 +43,22 @@ function brandUrlFor(payload: Record<string, unknown>): string | null {
   return normalizeUrl(explicit ?? '') ?? extractUrl(String(payload.description ?? payload.brief ?? ''));
 }
 
+
+// A revision only differs from the original if the generator is told what to
+// change. Notes are appended to the payload by the revise path; without this
+// the worker would regenerate the same brief and hand back the same thing.
+function revisionInstruction(payload: Record<string, unknown>): string {
+  const notes = Array.isArray(payload.revisionNotes) ? (payload.revisionNotes as string[]) : [];
+  if (notes.length === 0) return '';
+  const latest = notes[notes.length - 1];
+  const earlier = notes.slice(0, -1);
+  return (
+    `\n\nThis is a REVISION of work already delivered. Change what is asked for and leave everything ` +
+    `else as it was -- do not rebuild the whole thing around the change.\nWhat to change now: ${latest}` +
+    (earlier.length ? `\nAlready applied previously: ${earlier.join(' | ')}` : '')
+  );
+}
+
 function imageSlotsForPayload(payload: Record<string, unknown>): { label: string; filename: string }[] {
   return String(payload.tier ?? '').toLowerCase() === 'large' ? IMAGE_SLOTS_LARGE : IMAGE_SLOTS_SMALL;
 }
@@ -192,7 +208,7 @@ export async function handleRequest(req: Request): Promise<Response> {
       fetchAttachments(payload.referenceFiles)
     ]);
     const { system, user } = buildPrompt(payload, images);
-    const userWithBrand = user + brandFactsForPrompt(profile);
+    const userWithBrand = user + brandFactsForPrompt(profile) + revisionInstruction(payload);
 
     const raw = attachments.length > 0
       ? await claudeVisionChat(

@@ -26,6 +26,7 @@ import { uploadClientMedia } from '../_shared/storage.ts';
 import { detectLanguage, getOwnerLanguage, setOwnerLanguage, sendBotMessage } from '../_shared/botMessage.ts';
 import { converse } from '../_shared/botConversation.ts';
 import { expandSku, getSku, CATALOG } from '../_shared/catalog.ts';
+import { checkRevisionAllowance, findTaskReference, TASK_REFERENCE_PATTERN } from '../_shared/orders.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -33,11 +34,11 @@ const TELEGRAM_WEBHOOK_SECRET = Deno.env.get('TELEGRAM_WEBHOOK_SECRET')!;
 // Unset means nobody can use owner commands (fails closed, not open).
 const OWNER_TELEGRAM_ID = Deno.env.get('OWNER_TELEGRAM_ID') || undefined;
 
-const TASK_ID_PATTERN = /AC-CLICK-\d{4}/i;
+
 const NEW_PATTERN = /^\/new(?:@\S+)?\s+(\d{2,3})\s+([\s\S]+)$/i;
-const REVISE_PATTERN = /^\/revise(?:@\S+)?\s+(AC-CLICK-\d{4})\s+([\s\S]+)$/i;
-const FILES_PATTERN = /^\/files(?:@\S+)?\s+(AC-CLICK-\d{4})\b/i;
-const DELIVER_PATTERN = /^\/deliver(?:@\S+)?\s+(AC-CLICK-\d{4})\s+(\S+)$/i;
+const REVISE_PATTERN = /^\/revise(?:@\S+)?\s+(AC-\d{4}-\d{2,}|AC-CLICK-\d{4})\s+([\s\S]+)$/i;
+const FILES_PATTERN = /^\/files(?:@\S+)?\s+(AC-\d{4}-\d{2,}|AC-CLICK-\d{4})\b/i;
+const DELIVER_PATTERN = /^\/deliver(?:@\S+)?\s+(AC-\d{4}-\d{2,}|AC-CLICK-\d{4})\s+(\S+)$/i;
 const QUEUE_PATTERN = /^\/queue(?:@\S+)?$/i;
 const HELP_PATTERN = /^\/(start|help)(?:@\S+)?$/i;
 const AVATARS_PATTERN = /^\/avatars(?:@\S+)?(?:\s+(\S+))?$/i;
@@ -216,7 +217,7 @@ async function handleDeliverCommand(publicId: string, url: string): Promise<stri
 async function handleReviseCommand(publicId: string, note: string): Promise<string> {
   const { data: task, error: fetchError } = await supabaseAdmin
     .from('tasks')
-    .select('id, status, revisions_used')
+    .select('id, status, type, sku, version, revisions_used, revisions_allowed, payload')
     .eq('public_id', publicId)
     .maybeSingle();
 
@@ -225,13 +226,34 @@ async function handleReviseCommand(publicId: string, note: string): Promise<stri
     return `Could not look up ${publicId}.`;
   }
   if (!task) return `No task found with id ${publicId}.`;
-  if (task.status !== 'delivered') {
-    return `Can't revise ${publicId} — current status is "${task.status}", not delivered yet.`;
+
+  // A website includes two revisions; an image product includes none, because
+  // it already came back as five options and choosing between them IS the
+  // revision. The allowance lives on the task, so it reflects what this client
+  // was sold rather than whatever the catalog says today.
+  const verdict = checkRevisionAllowance(task);
+  if (!verdict.allowed) {
+    return `Can't revise ${publicId} — ${verdict.reason}`;
   }
+
+  const revisionNo = verdict.used + 1;
+  const payload = (task.payload ?? {}) as Record<string, unknown>;
+  const priorNotes = Array.isArray(payload.revisionNotes) ? (payload.revisionNotes as string[]) : [];
 
   const { error: updateError } = await supabaseAdmin
     .from('tasks')
-    .update({ status: 'queued', revisions_used: task.revisions_used + 1, updated_at: new Date().toISOString() })
+    .update({
+      status: 'queued',
+      revisions_used: revisionNo,
+      // The version has to move, or the new files land on top of the old ones
+      // at version 1 and the client can't tell which is the revision.
+      version: (task.version ?? 1) + 1,
+      // The note goes into the PAYLOAD, not just the audit log. It used to be
+      // recorded in task_events only, which no worker reads -- so a revision
+      // regenerated the original brief and came back materially unchanged.
+      payload: { ...payload, revisionNotes: [...priorNotes, note] },
+      updated_at: new Date().toISOString()
+    })
     .eq('id', task.id);
 
   if (updateError) {
@@ -243,11 +265,12 @@ async function handleReviseCommand(publicId: string, note: string): Promise<stri
     task_id: task.id,
     event_type: 'revision_requested',
     actor: 'owner',
-    detail: { note }
+    detail: { note, revision: revisionNo, allowance: verdict.allowance }
   });
 
   triggerDispatch();
-  return `${publicId} re-queued for revision #${task.revisions_used + 1}.`;
+  const left = verdict.allowance - revisionNo;
+  return `${publicId} re-queued for revision ${revisionNo} of ${verdict.allowance}${left > 0 ? ` (${left} left after this)` : ' (last one included)'}.`;
 }
 
 async function handleFilesCommand(publicId: string): Promise<string> {
@@ -399,8 +422,9 @@ async function routeMessage(chatId: number, text: string, attachmentUrls: string
   const reportMatch = text.match(REPORT_PATTERN);
   if (reportMatch) return handleReportCommand(chatId, reportMatch[1].trim());
 
-  if (TASK_ID_PATTERN.test(text)) {
-    return `Unrecognized command. Try /files ${text.match(TASK_ID_PATTERN)![0].toUpperCase()} or /revise <id> <note>.`;
+  const mentionedTask = findTaskReference(text);
+  if (mentionedTask && /^\//.test(text)) {
+    return `Unrecognized command. Try /files ${mentionedTask} or /revise ${mentionedTask} <note>.`;
   }
 
   // Free-form text, a voice transcript, or a photo/document caption -- let

@@ -56,6 +56,13 @@ export interface CatalogItem {
     options?: number;
   };
   urlUse: UrlUse;
+  /**
+   * How many free revisions this product includes. Image products are 0 on
+   * purpose: they already come back as five options to choose between, so the
+   * choice replaces the revision. Enforced at the revise path, not trusted to
+   * a prompt.
+   */
+  revisions: number;
   /** Plain words a client or the owner might actually use, to help routing. */
   aliases: string[];
   ownerOnly?: boolean;
@@ -73,6 +80,7 @@ export const CATALOG: CatalogItem[] = [
     branding: 'client',
     output: { options: 1 },
     urlUse: 'brand',
+    revisions: 2,
     aliases: ['small website', 'simple site', 'one page website', 'landing page'],
   },
   {
@@ -85,6 +93,7 @@ export const CATALOG: CatalogItem[] = [
     branding: 'client',
     output: { options: 1 },
     urlUse: 'brand',
+    revisions: 2,
     aliases: ['big website', 'full website', 'multi page site'],
   },
 
@@ -99,6 +108,7 @@ export const CATALOG: CatalogItem[] = [
     branding: 'client',
     output: { maxPages: 15 },
     urlUse: 'brand',
+    revisions: 1,
     aliases: ['presentation', 'powerpoint', 'slides', 'pitch deck'],
   },
   {
@@ -111,6 +121,7 @@ export const CATALOG: CatalogItem[] = [
     branding: 'client',
     output: { maxPages: 6 },
     urlUse: 'brand',
+    revisions: 1,
     aliases: ['brochure', 'tri-fold', 'leaflet'],
   },
   {
@@ -123,6 +134,7 @@ export const CATALOG: CatalogItem[] = [
     branding: 'client',
     output: { pages: 1 },
     urlUse: 'brand',
+    revisions: 1,
     aliases: ['business card', 'visiting card', 'name card'],
   },
   {
@@ -135,6 +147,7 @@ export const CATALOG: CatalogItem[] = [
     branding: 'client',
     output: { pages: 1 },
     urlUse: 'brand',
+    revisions: 1,
     aliases: ['flyer', 'handbill', 'one pager'],
   },
   {
@@ -147,6 +160,7 @@ export const CATALOG: CatalogItem[] = [
     branding: 'client',
     output: { pages: 1 },
     urlUse: 'brand',
+    revisions: 1,
     aliases: ['banner', 'standee', 'roll up'],
   },
   {
@@ -159,6 +173,7 @@ export const CATALOG: CatalogItem[] = [
     branding: 'client',
     output: { maxPages: 10 },
     urlUse: 'brand',
+    revisions: 1,
     aliases: ['document', 'other'],
   },
 
@@ -173,6 +188,7 @@ export const CATALOG: CatalogItem[] = [
     branding: 'client',
     output: { options: 5 },
     urlUse: 'brand',
+    revisions: 0,
     aliases: ['logo', 'logomark', 'brand mark', 'emblem'],
   },
   {
@@ -185,6 +201,7 @@ export const CATALOG: CatalogItem[] = [
     branding: 'client',
     output: { options: 5 },
     urlUse: 'none',
+    revisions: 0,
     aliases: ['avatar', 'profile picture', 'headshot'],
   },
   {
@@ -197,6 +214,7 @@ export const CATALOG: CatalogItem[] = [
     branding: 'client',
     output: { options: 5 },
     urlUse: 'brand',
+    revisions: 0,
     aliases: ['business image', 'hero image', 'banner image'],
   },
   {
@@ -209,6 +227,7 @@ export const CATALOG: CatalogItem[] = [
     branding: 'client',
     output: { options: 5 },
     urlUse: 'brand',
+    revisions: 0,
     aliases: ['product photo', 'product shot', 'packshot'],
   },
   {
@@ -221,6 +240,7 @@ export const CATALOG: CatalogItem[] = [
     branding: 'client',
     output: { options: 5 },
     urlUse: 'none',
+    revisions: 0,
     aliases: ['illustration', 'artwork', 'drawing'],
   },
   {
@@ -233,6 +253,7 @@ export const CATALOG: CatalogItem[] = [
     branding: 'client',
     output: { options: 5 },
     urlUse: 'none',
+    revisions: 0,
     aliases: ['image', 'picture', 'graphic'],
   },
 
@@ -247,6 +268,7 @@ export const CATALOG: CatalogItem[] = [
     branding: 'client',
     output: { options: 1 },
     urlUse: 'brand',
+    revisions: 1,
     aliases: ['short video with presenter', 'avatar clip', 'talking head'],
   },
   {
@@ -259,6 +281,7 @@ export const CATALOG: CatalogItem[] = [
     branding: 'client',
     output: { options: 1 },
     urlUse: 'brand',
+    revisions: 1,
     aliases: ['promo clip', 'b-roll', 'motion video', 'no avatar video'],
   },
   {
@@ -271,6 +294,7 @@ export const CATALOG: CatalogItem[] = [
     branding: 'client',
     output: { options: 1 },
     urlUse: 'brand',
+    revisions: 1,
     aliases: ['long video', 'explainer', 'full promo'],
   },
 
@@ -285,6 +309,7 @@ export const CATALOG: CatalogItem[] = [
     branding: 'client',
     output: { options: 3 },
     urlUse: 'brand',
+    revisions: 0,
     aliases: ['posts', 'post pack', 'social designs', 'instagram posts'],
   },
   {
@@ -297,6 +322,7 @@ export const CATALOG: CatalogItem[] = [
     branding: 'client',
     output: { options: 3 },
     urlUse: 'brand',
+    revisions: 0,
     aliases: ['profile kit', 'cover photo', 'banner', 'profile picture'],
   },
   {
@@ -309,6 +335,7 @@ export const CATALOG: CatalogItem[] = [
     branding: 'client',
     output: { maxPages: 6 },
     urlUse: 'brand',
+    revisions: 1,
     aliases: ['captions', 'hashtags', 'copy for posts'],
   },
   {
@@ -321,6 +348,7 @@ export const CATALOG: CatalogItem[] = [
     branding: 'client',
     output: { maxPages: 4 },
     urlUse: 'brand',
+    revisions: 1,
     aliases: ['google business', 'gbp', 'google profile', 'maps listing'],
   },
 
@@ -335,6 +363,7 @@ export const CATALOG: CatalogItem[] = [
     branding: 'client',
     output: { pages: 1 },
     urlUse: 'brand',
+    revisions: 1,
     aliases: ['invoice', 'quotation', 'bill'],
   },
   {
@@ -347,6 +376,7 @@ export const CATALOG: CatalogItem[] = [
     branding: 'client',
     output: { maxPages: 8 },
     urlUse: 'brand',
+    revisions: 1,
     aliases: ['terms', 'privacy policy', 't&c', 'legal'],
   },
   {
@@ -359,6 +389,7 @@ export const CATALOG: CatalogItem[] = [
     branding: 'client',
     output: { pages: 1 },
     urlUse: 'brand',
+    revisions: 1,
     aliases: ['business plan', 'pitch one pager'],
   },
   {
@@ -371,6 +402,7 @@ export const CATALOG: CatalogItem[] = [
     branding: 'client',
     output: { maxPages: 5 },
     urlUse: 'brand',
+    revisions: 1,
     aliases: ['proposal', 'quote', 'offer'],
   },
   {
@@ -383,6 +415,7 @@ export const CATALOG: CatalogItem[] = [
     branding: 'client',
     output: { maxPages: 8 },
     urlUse: 'brand',
+    revisions: 1,
     aliases: ['contract', 'agreement', 'service agreement'],
   },
 
@@ -400,6 +433,7 @@ export const CATALOG: CatalogItem[] = [
     branding: 'client',
     output: { pages: 1 },
     urlUse: 'brand',
+    revisions: 1,
     aliases: ['business name', 'tagline', 'slogan', 'naming'],
   },
   {
@@ -412,6 +446,7 @@ export const CATALOG: CatalogItem[] = [
     branding: 'client',
     output: { pages: 1 },
     urlUse: 'brand',
+    revisions: 1,
     aliases: ['style guide', 'brand guide', 'brand sheet'],
   },
   {
@@ -424,6 +459,7 @@ export const CATALOG: CatalogItem[] = [
     branding: 'client',
     output: { pages: 1 },
     urlUse: 'brand',
+    revisions: 1,
     aliases: ['letterhead', 'letter head', 'company letter paper'],
   },
   {
@@ -436,6 +472,7 @@ export const CATALOG: CatalogItem[] = [
     branding: 'client',
     output: { pages: 1 },
     urlUse: 'brand',
+    revisions: 1,
     aliases: ['email signature', 'mail footer'],
   },
   {
@@ -448,6 +485,7 @@ export const CATALOG: CatalogItem[] = [
     branding: 'client',
     output: { pages: 1 },
     urlUse: 'brand',
+    revisions: 1,
     aliases: ['price list', 'menu', 'rate card'],
   },
   {
@@ -460,6 +498,7 @@ export const CATALOG: CatalogItem[] = [
     branding: 'client',
     output: { options: 1 },
     urlUse: 'brand',
+    revisions: 1,
     aliases: ['qr card', 'qr business card'],
   },
   {
@@ -472,6 +511,7 @@ export const CATALOG: CatalogItem[] = [
     branding: 'client',
     output: { options: 1 },
     urlUse: 'brand',
+    revisions: 1,
     aliases: ['table tent', 'qr stand', 'table qr'],
   },
   {
@@ -484,6 +524,7 @@ export const CATALOG: CatalogItem[] = [
     branding: 'client',
     output: { pages: 1 },
     urlUse: 'brand',
+    revisions: 1,
     aliases: ['coming soon', 'teaser page', 'launching soon'],
   },
 
@@ -500,6 +541,7 @@ export const CATALOG: CatalogItem[] = [
     branding: 'agenticcore',
     output: { maxPages: 15 },
     urlUse: 'analyse',
+    revisions: 2,
     aliases: ['business report', 'website audit', 'site review'],
     ownerOnly: true,
   },

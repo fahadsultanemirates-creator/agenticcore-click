@@ -5,6 +5,7 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { calculatePriceUsd, REAL_TASK_TYPES } from '../_shared/pricing.ts';
+import { allocateClientOrder } from '../_shared/orders.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!;
@@ -82,25 +83,6 @@ async function validateVideoCharacterChoice(callerId: string, payload: Record<st
   return null;
 }
 
-async function generatePublicId(): Promise<string> {
-  const { count } = await supabaseAdmin.from('tasks').select('*', { count: 'exact', head: true });
-  const base = (count ?? 0) + 1;
-
-  for (let attempt = 0; attempt < 5; attempt++) {
-    const candidate = `AC-CLICK-${String(base + attempt).padStart(4, '0')}`;
-    const { data: existing } = await supabaseAdmin
-      .from('tasks')
-      .select('id')
-      .eq('public_id', candidate)
-      .maybeSingle();
-    if (!existing) return candidate;
-  }
-
-  // Extremely unlikely fallback -- a random suffix guarantees uniqueness
-  // even if five sequential slots were all raced simultaneously.
-  return `AC-CLICK-${String(base).padStart(4, '0')}-${crypto.randomUUID().slice(0, 4)}`;
-}
-
 export async function handleRequest(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: CORS_HEADERS });
@@ -163,18 +145,29 @@ export async function handleRequest(req: Request): Promise<Response> {
     return jsonResponse({ error: `Insufficient wallet balance. This request costs $${priceUsd}.` }, 402);
   }
 
-  const publicId = await generatePublicId();
+  // The order's own identity: which account, which of their orders, which
+  // product, and how many revisions it comes with. Recorded on the row so a
+  // later "revise my letterhead" can be answered from data rather than memory.
+  const identity = await allocateClientOrder(caller.id, type, payload);
+  if (!identity) {
+    await supabaseAdmin.rpc('refund_wallet_balance', { p_user_id: caller.id, p_amount: priceUsd });
+    return jsonResponse({ error: 'Could not identify the product for this request. Your wallet was not charged.' }, 400);
+  }
 
   const { data: task, error: insertError } = await supabaseAdmin
     .from('tasks')
     .insert({
-      public_id: publicId,
+      public_id: identity.publicId,
       source: 'website',
       type,
       subtype,
       status: 'queued',
       wallet_confirmed: true,
       user_id: caller.id,
+      account_no: identity.accountNo,
+      order_no: identity.orderNo,
+      sku: identity.sku,
+      revisions_allowed: identity.revisionsAllowed,
       payload
     })
     .select('id, public_id')
@@ -191,7 +184,7 @@ export async function handleRequest(req: Request): Promise<Response> {
     task_id: task.id,
     event_type: 'created',
     actor: 'client',
-    detail: { price_usd: priceUsd, type, subtype }
+    detail: { price_usd: priceUsd, type, subtype, sku: identity.sku, revisions_allowed: identity.revisionsAllowed }
   });
 
   // Fire-and-forget -- nudges the dispatcher so this task doesn't wait for
@@ -202,7 +195,13 @@ export async function handleRequest(req: Request): Promise<Response> {
     headers: { Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, 'Content-Type': 'application/json' }
   }).catch((err) => console.error('submit-task: dispatch trigger failed', err));
 
-  return jsonResponse({ taskId: task.id, publicId: task.public_id, priceUsd });
+  return jsonResponse({
+    taskId: task.id,
+    publicId: task.public_id,
+    priceUsd,
+    sku: identity.sku,
+    revisionsAllowed: identity.revisionsAllowed
+  });
 }
 
 Deno.serve(handleRequest);

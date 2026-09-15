@@ -43,7 +43,15 @@ async function generateWebsiteImages(
   payload: Record<string, unknown>
 ): Promise<{ label: string; url: string }[]> {
   const slots = imageSlotsForPayload(payload);
-  const businessContext = `${payload.businessName ?? ''} -- ${payload.category ?? ''} -- ${payload.description ?? ''}`.trim();
+  // The structured fields come from the website intake form; an owner task
+  // (Telegram /new) carries only payload.brief, which would leave this
+  // context blank and generate photos with nothing to go on -- the page
+  // copy itself is unaffected, since buildPrompt dumps every payload field
+  // including the brief.
+  const businessContext =
+    [payload.businessName, payload.category, payload.description ?? payload.brief]
+      .filter((v) => v !== undefined && v !== null && String(v).trim() !== '')
+      .join(' -- ');
 
   const urls = await mapWithConcurrency(slots, 4, (slot) =>
     generateBrandVisual(

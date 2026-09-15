@@ -7,7 +7,7 @@
 import { supabaseAdmin, uploadDeliverable } from '../_shared/storage.ts';
 import { grokVisionChat } from '../_shared/grok.ts';
 import { screenshotUrl } from '../_shared/htmlPdf.ts';
-import { generateBrandVisual } from '../_shared/images.ts';
+import { generateBrandVisual, mapWithConcurrency } from '../_shared/images.ts';
 import { renderDocumentPdf, type DocSection } from '../_shared/pdf.ts';
 import { sendBotMessage, getOwnerLanguage } from '../_shared/botMessage.ts';
 import { sendTelegramDocument } from '../_shared/telegramApi.ts';
@@ -101,17 +101,44 @@ async function generateReportVisuals(taskId: string): Promise<{ cover: string; d
 // heading/body -- not a generic filler image -- so every page carries
 // something specific to the point being made instead of leaving the rest
 // of the page blank once the (short) body text runs out.
-async function generateSlideVisuals(taskId: string, slides: ReportSlide[], filePrefix: string, topicHint: string): Promise<string[]> {
-  return Promise.all(
-    slides.map((slide, i) =>
-      generateBrandVisual(
-        taskId,
+//
+// A report can ask for up to ~15 of these across its three parts -- all
+// funneled through one concurrency-limited batch (not three separate
+// Promise.all groups) since xAI's image model is rate-limited per second
+// at the account level and three parallel groups would still burst past
+// it even though each group alone looks small.
+interface SlideVisualJob {
+  group: 'flaws' | 'improvements' | 'marketing';
+  prompt: string;
+  filename: string;
+}
+
+async function generateAllSlideVisuals(
+  taskId: string,
+  content: ReportContent
+): Promise<{ flaws: string[]; improvements: string[]; marketing: string[] }> {
+  const buildJobs = (group: SlideVisualJob['group'], slides: ReportSlide[], filePrefix: string, topicHint: string): SlideVisualJob[] =>
+    slides.map((slide, i) => ({
+      group,
+      prompt:
         `A small abstract illustration for this specific point from a ${topicHint}: "${slide.heading}" -- ${slide.body} ` +
-          'Represent the concrete idea itself, not literal text or icons of the words.',
-        `${filePrefix}-${i + 1}.png`
-      )
-    )
-  );
+        'Represent the concrete idea itself, not literal text or icons of the words.',
+      filename: `${filePrefix}-${i + 1}.png`
+    }));
+
+  const jobs: SlideVisualJob[] = [
+    ...buildJobs('flaws', content.flaws, 'slide-flaw', 'website design/UX flaw'),
+    ...buildJobs('improvements', content.improvements, 'slide-improvement', 'recommended website improvement'),
+    ...buildJobs('marketing', content.marketingPlan, 'slide-marketing', 'social media marketing tactic')
+  ];
+
+  const urls = await mapWithConcurrency(jobs, 4, (job) => generateBrandVisual(taskId, job.prompt, job.filename));
+
+  const result = { flaws: [] as string[], improvements: [] as string[], marketing: [] as string[] };
+  jobs.forEach((job, i) => {
+    result[job.group].push(urls[i]);
+  });
+  return result;
 }
 
 export async function handleRequest(req: Request): Promise<Response> {
@@ -143,17 +170,8 @@ export async function handleRequest(req: Request): Promise<Response> {
     ]);
 
     const content = await analyzeSite(url, desktopShot, mobileShot, html);
-
-    const [flawImages, improvementImages, marketingImages] = await Promise.all([
-      generateSlideVisuals(taskId, content.flaws, 'slide-flaw', 'website design/UX flaw'),
-      generateSlideVisuals(taskId, content.improvements, 'slide-improvement', 'recommended website improvement'),
-      generateSlideVisuals(taskId, content.marketingPlan, 'slide-marketing', 'social media marketing tactic')
-    ]);
-    const sections = toSections(content, visuals.dividers, {
-      flaws: flawImages,
-      improvements: improvementImages,
-      marketing: marketingImages
-    });
+    const slideImages = await generateAllSlideVisuals(taskId, content);
+    const sections = toSections(content, visuals.dividers, slideImages);
 
     const pdfBytes = await renderDocumentPdf({
       title: 'Business Report',

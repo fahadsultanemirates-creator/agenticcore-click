@@ -13,7 +13,7 @@ import { supabaseAdmin } from '../_shared/storage.ts';
 import { grokChat, grokVisionChat } from '../_shared/grok.ts';
 import { fetchAttachments } from '../_shared/attachments.ts';
 import { renderDocumentPdf, type DocSpec, type DocSection } from '../_shared/pdf.ts';
-import { generateBrandVisual } from '../_shared/images.ts';
+import { generateBrandVisual, mapWithConcurrency } from '../_shared/images.ts';
 import { generateQrSvg } from '../_shared/qrcode.ts';
 import { uploadDeliverable } from '../_shared/storage.ts';
 import { sendTelegramDocument } from '../_shared/telegramApi.ts';
@@ -95,14 +95,12 @@ async function generateDocSpec(type: string, payload: Record<string, unknown>): 
 // -- the same fix applied to the business report -- so a short section
 // doesn't leave the rest of its page blank once the body text runs out.
 async function generateSectionVisuals(taskId: string, sections: DocSection[]): Promise<void> {
-  const images = await Promise.all(
-    sections.map((section, i) =>
-      generateBrandVisual(
-        taskId,
-        `A small abstract illustration for this specific point from a business document: "${section.heading}" -- ` +
-          `${section.body} Represent the concrete idea itself, not literal text or icons of the words.`,
-        `section-${i + 1}.png`
-      )
+  const images = await mapWithConcurrency(sections, 4, (section, i) =>
+    generateBrandVisual(
+      taskId,
+      `A small abstract illustration for this specific point from a business document: "${section.heading}" -- ` +
+        `${section.body} Represent the concrete idea itself, not literal text or icons of the words.`,
+      `section-${i + 1}.png`
     )
   );
   sections.forEach((section, i) => {

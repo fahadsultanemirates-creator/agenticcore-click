@@ -115,30 +115,45 @@ export function extractCodeBlock(text: string, lang?: string): string {
 // One image per call (b64) -- more reliable across providers than trusting
 // an `n` parameter, since callers that need multiple options (image/social
 // workers) just call this in parallel.
+//
+// The account's image model is capped at a handful of requests/second
+// (confirmed via a real 429 "resource-exhausted" response, not guessed) --
+// a document with many per-slide visuals can burst past that even with
+// caller-side concurrency limits, so this retries a 429 with backoff
+// before giving up rather than failing the whole document.
 export async function grokImage(prompt: string): Promise<Uint8Array> {
-  const resp = await fetch(`${XAI_BASE_URL}/images/generations`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${XAI_API_KEY}`,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      model: IMAGE_MODEL,
-      prompt,
-      n: 1,
-      response_format: 'b64_json'
-    })
-  });
+  const maxAttempts = 4;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const resp = await fetch(`${XAI_BASE_URL}/images/generations`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${XAI_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: IMAGE_MODEL,
+        prompt,
+        n: 1,
+        response_format: 'b64_json'
+      })
+    });
 
-  if (!resp.ok) {
+    if (resp.ok) {
+      const data = await resp.json();
+      const b64 = data?.data?.[0]?.b64_json;
+      if (typeof b64 !== 'string' || !b64) {
+        throw new GrokError('xAI image generation returned no image data');
+      }
+      return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+    }
+
+    if (resp.status === 429 && attempt < maxAttempts) {
+      await new Promise((resolve) => setTimeout(resolve, attempt * 1500));
+      continue;
+    }
+
     const body = await resp.text().catch(() => '');
     throw new GrokError(`xAI image generation failed (${resp.status}): ${body}`, resp.status);
   }
-
-  const data = await resp.json();
-  const b64 = data?.data?.[0]?.b64_json;
-  if (typeof b64 !== 'string' || !b64) {
-    throw new GrokError('xAI image generation returned no image data');
-  }
-  return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+  throw new GrokError('xAI image generation failed after retries');
 }

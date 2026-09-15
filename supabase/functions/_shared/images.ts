@@ -20,6 +20,24 @@ export async function generateBrandVisual(taskId: string, prompt: string, filena
   return url;
 }
 
+// A document with many per-slide visuals (a business report can ask for
+// close to 20 images) can't just Promise.all them all -- xAI's image
+// model is rate-limited per second at the account level, and firing every
+// request at once trips a 429 that fails the whole document. This runs a
+// fixed number of requests at a time instead of the whole batch at once.
+export async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T, index: number) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  async function worker(): Promise<void> {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await fn(items[i], i);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
+
 // xAI's image endpoint is text-to-image only -- there's no image-reference
 // input to hand it a client's logo/photo directly. So when a reference is
 // attached, one vision call first produces a detailed visual description

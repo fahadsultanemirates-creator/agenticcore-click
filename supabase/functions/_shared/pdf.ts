@@ -100,10 +100,12 @@ function renderSection(section: DocSection, docLanguage: 'en' | 'ur', index: num
     <section class="page slide" dir="${rtl ? 'rtl' : 'ltr'}" style="font-family:${fontFamily}; text-align:${rtl ? 'right' : 'left'};">
       <div class="slide-body">
         ${section.imageUrl ? `<img class="slide-image" src="${escapeHtml(section.imageUrl)}" alt="" />` : ''}
-        <div class="badge" style="${rtl ? 'margin-left:auto;' : ''}">${String(index).padStart(2, '0')}</div>
-        <div class="rule" style="${rtl ? 'margin-left:auto;' : ''}"></div>
-        <h2>${escapeHtml(section.heading)}</h2>
-        <div class="body">${bodyToHtml(section.body)}</div>
+        <div class="slide-text">
+          <div class="badge" style="${rtl ? 'margin-left:auto;' : ''}">${String(index).padStart(2, '0')}</div>
+          <div class="rule" style="${rtl ? 'margin-left:auto;' : ''}"></div>
+          <h2>${escapeHtml(section.heading)}</h2>
+          <div class="body">${bodyToHtml(section.body)}</div>
+        </div>
       </div>
       ${footer(index, total, brandLabel, rtl)}
     </section>`;
@@ -161,11 +163,17 @@ ${FONT_LINK}
     bottom: -90px; ${rtl ? 'left' : 'right'}: -90px;
   }
 
-  /* Section slides */
-  .slide-body { flex: 1; }
+  /* Section slides -- the image is a flex-grow sibling of the text block,
+     not a fixed-height banner, so it expands to soak up whatever room a
+     short body leaves rather than the page ending in dead space. */
+  .slide-body { flex: 1; display: flex; flex-direction: column; }
   .slide-image {
-    width: 100%; height: 200px; object-fit: cover; border-radius: 16px;
-    margin-bottom: 24px; border: 1px solid var(--border);
+    width: 100%; flex: 1 1 160px; min-height: 160px; max-height: 460px; object-fit: cover;
+    border-radius: 16px; margin-bottom: 24px; border: 1px solid var(--border);
+  }
+  .slide-text { flex: 0 0 auto; }
+  .slide-body:not(:has(.slide-image)) .slide-text {
+    flex: 1; display: flex; flex-direction: column; justify-content: center;
   }
   .badge {
     width: 46px; height: 46px; border-radius: 12px; background: var(--yellow-400);

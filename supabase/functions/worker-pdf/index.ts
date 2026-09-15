@@ -12,7 +12,7 @@
 import { supabaseAdmin } from '../_shared/storage.ts';
 import { grokChat, grokVisionChat } from '../_shared/grok.ts';
 import { fetchAttachments } from '../_shared/attachments.ts';
-import { renderDocumentPdf, type DocSpec } from '../_shared/pdf.ts';
+import { renderDocumentPdf, type DocSpec, type DocSection } from '../_shared/pdf.ts';
 import { generateBrandVisual } from '../_shared/images.ts';
 import { generateQrSvg } from '../_shared/qrcode.ts';
 import { uploadDeliverable } from '../_shared/storage.ts';
@@ -91,6 +91,25 @@ async function generateDocSpec(type: string, payload: Record<string, unknown>): 
   return parsed as DocSpec;
 }
 
+// One real illustration per section, tied to that section's own heading/body
+// -- the same fix applied to the business report -- so a short section
+// doesn't leave the rest of its page blank once the body text runs out.
+async function generateSectionVisuals(taskId: string, sections: DocSection[]): Promise<void> {
+  const images = await Promise.all(
+    sections.map((section, i) =>
+      generateBrandVisual(
+        taskId,
+        `A small abstract illustration for this specific point from a business document: "${section.heading}" -- ` +
+          `${section.body} Represent the concrete idea itself, not literal text or icons of the words.`,
+        `section-${i + 1}.png`
+      )
+    )
+  );
+  sections.forEach((section, i) => {
+    section.imageUrl = images[i];
+  });
+}
+
 async function generateQrDeliverable(taskId: string, payload: Record<string, unknown>): Promise<string> {
   const content = await grokChat(
     [
@@ -146,6 +165,7 @@ export async function handleRequest(req: Request): Promise<Response> {
       )
     ]);
     spec.coverImageUrl = coverImageUrl;
+    await generateSectionVisuals(taskId, spec.sections);
     const pdfBytes = await renderDocumentPdf(spec);
     const { url } = await uploadDeliverable(taskId, 'document.pdf', pdfBytes, 'application/pdf');
 

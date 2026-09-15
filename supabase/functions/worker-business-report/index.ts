@@ -44,8 +44,9 @@ async function analyzeSite(url: string, desktopShot: Uint8Array, mobileShot: Uin
       'or content, (2) improvements -- specific, actionable fixes for those flaws, (3) marketingPlan -- a full ' +
       'social media marketing plan for this business (platforms, content types, posting cadence, campaign ideas). ' +
       'Each part is an array of slides, each with a short heading and a short body (2-4 sentences, plain ' +
-      'professional language -- no code, no HTML, no symbols like # @ * / no markdown). Aim for 3-7 slides per ' +
-      'part, 10-20 total. Respond with ONLY JSON: ' +
+      'professional language -- no code, no HTML, no symbols like # @ * / no markdown). Aim for 3-5 slides per ' +
+      'part, 9-15 total -- each slide gets its own generated illustration afterward, so keep the count focused ' +
+      'rather than padded. Respond with ONLY JSON: ' +
       '{"flaws":[{"heading":"","body":""}],"improvements":[{"heading":"","body":""}],"marketingPlan":[{"heading":"","body":""}]}',
     `Website: ${url}\n\nRaw HTML (truncated):\n${html}`,
     [
@@ -63,15 +64,21 @@ async function analyzeSite(url: string, desktopShot: Uint8Array, mobileShot: Uin
   return parsed as ReportContent;
 }
 
-function toSections(content: ReportContent, dividerImages: [string, string, string]): DocSection[] {
+function toSections(
+  content: ReportContent,
+  dividerImages: [string, string, string],
+  slideImages: { flaws: string[]; improvements: string[]; marketing: string[] }
+): DocSection[] {
   const divider = (title: string, imageUrl: string): DocSection => ({ heading: title, body: '', imageUrl });
+  const withImages = (slides: ReportSlide[], images: string[]): DocSection[] =>
+    slides.map((s, i) => ({ ...s, imageUrl: images[i] }));
   return [
     divider('Part 1 — Website & Theme Flaws', dividerImages[0]),
-    ...content.flaws,
+    ...withImages(content.flaws, slideImages.flaws),
     divider('Part 2 — Recommended Improvements', dividerImages[1]),
-    ...content.improvements,
+    ...withImages(content.improvements, slideImages.improvements),
     divider('Part 3 — Social Media Marketing Plan', dividerImages[2]),
-    ...content.marketingPlan
+    ...withImages(content.marketingPlan, slideImages.marketing)
   ];
 }
 
@@ -88,6 +95,23 @@ async function generateReportVisuals(taskId: string): Promise<{ cover: string; d
     generateBrandVisual(taskId, 'An abstract visual representing social media marketing and digital campaigns: connected network nodes, engagement icons, a megaphone shape.', 'divider-marketing.png')
   ]);
   return { cover, dividers: [flaws, improvements, marketing] };
+}
+
+// One real illustration per individual slide, tied to that slide's own
+// heading/body -- not a generic filler image -- so every page carries
+// something specific to the point being made instead of leaving the rest
+// of the page blank once the (short) body text runs out.
+async function generateSlideVisuals(taskId: string, slides: ReportSlide[], filePrefix: string, topicHint: string): Promise<string[]> {
+  return Promise.all(
+    slides.map((slide, i) =>
+      generateBrandVisual(
+        taskId,
+        `A small abstract illustration for this specific point from a ${topicHint}: "${slide.heading}" -- ${slide.body} ` +
+          'Represent the concrete idea itself, not literal text or icons of the words.',
+        `${filePrefix}-${i + 1}.png`
+      )
+    )
+  );
 }
 
 export async function handleRequest(req: Request): Promise<Response> {
@@ -119,7 +143,17 @@ export async function handleRequest(req: Request): Promise<Response> {
     ]);
 
     const content = await analyzeSite(url, desktopShot, mobileShot, html);
-    const sections = toSections(content, visuals.dividers);
+
+    const [flawImages, improvementImages, marketingImages] = await Promise.all([
+      generateSlideVisuals(taskId, content.flaws, 'slide-flaw', 'website design/UX flaw'),
+      generateSlideVisuals(taskId, content.improvements, 'slide-improvement', 'recommended website improvement'),
+      generateSlideVisuals(taskId, content.marketingPlan, 'slide-marketing', 'social media marketing tactic')
+    ]);
+    const sections = toSections(content, visuals.dividers, {
+      flaws: flawImages,
+      improvements: improvementImages,
+      marketing: marketingImages
+    });
 
     const pdfBytes = await renderDocumentPdf({
       title: 'Business Report',

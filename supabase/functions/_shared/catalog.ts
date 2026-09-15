@@ -57,10 +57,21 @@ export interface CatalogItem {
   };
   urlUse: UrlUse;
   /**
-   * How many free revisions this product includes. Image products are 0 on
-   * purpose: they already come back as five options to choose between, so the
-   * choice replaces the revision. Enforced at the revise path, not trusted to
-   * a prompt.
+   * How many free revisions this product includes.
+   *
+   * Revisions exist for deliverables that can be EDITED -- a website, a
+   * document, a single-page asset -- where "move the header, change that
+   * line" is a real, cheap operation on work that already exists.
+   *
+   * They do not exist for deliverables that can only be REGENERATED. Asking
+   * an image or video model to change one detail re-rolls the whole thing
+   * into something different, which is a new attempt, not a revision. Those
+   * products ship several options instead, and choosing between them IS the
+   * revision. Renderers 'images', 'video' and 'qr' are therefore always 0 --
+   * an invariant the catalog test asserts, so it cannot quietly drift back.
+   *
+   * Copied onto the task at creation and enforced at the revise path, never
+   * trusted to a prompt.
    */
   revisions: number;
   /** Plain words a client or the owner might actually use, to help routing. */
@@ -268,7 +279,7 @@ export const CATALOG: CatalogItem[] = [
     branding: 'client',
     output: { options: 1 },
     urlUse: 'brand',
-    revisions: 1,
+    revisions: 0,
     aliases: ['short video with presenter', 'avatar clip', 'talking head'],
   },
   {
@@ -281,7 +292,7 @@ export const CATALOG: CatalogItem[] = [
     branding: 'client',
     output: { options: 1 },
     urlUse: 'brand',
-    revisions: 1,
+    revisions: 0,
     aliases: ['promo clip', 'b-roll', 'motion video', 'no avatar video'],
   },
   {
@@ -294,7 +305,7 @@ export const CATALOG: CatalogItem[] = [
     branding: 'client',
     output: { options: 1 },
     urlUse: 'brand',
-    revisions: 1,
+    revisions: 0,
     aliases: ['long video', 'explainer', 'full promo'],
   },
 
@@ -498,7 +509,7 @@ export const CATALOG: CatalogItem[] = [
     branding: 'client',
     output: { options: 1 },
     urlUse: 'brand',
-    revisions: 1,
+    revisions: 0,
     aliases: ['qr card', 'qr business card'],
   },
   {
@@ -511,7 +522,7 @@ export const CATALOG: CatalogItem[] = [
     branding: 'client',
     output: { options: 1 },
     urlUse: 'brand',
-    revisions: 1,
+    revisions: 0,
     aliases: ['table tent', 'qr stand', 'table qr'],
   },
   {
@@ -541,7 +552,7 @@ export const CATALOG: CatalogItem[] = [
     branding: 'agenticcore',
     output: { maxPages: 15 },
     urlUse: 'analyse',
-    revisions: 2,
+    revisions: 1,
     aliases: ['business report', 'website audit', 'site review'],
     ownerOnly: true,
   },

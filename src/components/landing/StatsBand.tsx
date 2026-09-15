@@ -31,7 +31,7 @@ export function StatsBand() {
             ))}
           </div>
           <p className="relative mt-10 text-center text-xs text-fg-faint">
-            *Placeholder targets while we're building — real numbers coming at launch.
+            *Targets we build against — updated as real volume comes in.
           </p>
         </div>
       </Reveal>

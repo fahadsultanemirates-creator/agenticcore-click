@@ -5,6 +5,7 @@ import { Footer } from "../components/landing/Footer";
 import { Hero } from "../components/landing/Hero";
 import { HowItWorks } from "../components/landing/HowItWorks";
 import { Nav } from "../components/landing/Nav";
+import { PackagesSection } from "../components/landing/PackagesSection";
 import { ServicesGrid } from "../components/landing/ServicesGrid";
 import { StatsBand } from "../components/landing/StatsBand";
 
@@ -16,6 +17,7 @@ export function Landing() {
         <Hero />
         <HowItWorks />
         <ServicesGrid />
+        <PackagesSection />
         <StatsBand />
         <Faq />
         <CtaBanner />

@@ -186,3 +186,87 @@ export async function listOwnerTasks(limit = 25): Promise<OrderSummary[]> {
   }
   return toSummaries(data ?? []);
 }
+
+export interface RevisionResult {
+  ok: boolean;
+  message: string;
+  revision?: number;
+  allowance?: number;
+  remaining?: number;
+}
+
+// Applies an included revision to a delivered order.
+//
+// Shared by the Telegram bot and Forge so a client and the owner get exactly
+// the same answer to the same request. It used to exist only inside the bot's
+// /revise handler, which meant a client talking to Forge could not revise
+// anything at all -- they could only order the same thing again and pay twice.
+export async function applyRevision(
+  publicId: string,
+  note: string,
+  actor: 'owner' | 'client'
+): Promise<RevisionResult> {
+  const { data: task, error: fetchError } = await supabaseAdmin
+    .from('tasks')
+    .select('id, status, type, sku, version, revisions_used, revisions_allowed, payload')
+    .eq('public_id', publicId)
+    .maybeSingle();
+
+  if (fetchError) {
+    console.error('applyRevision: lookup failed', fetchError);
+    return { ok: false, message: `Could not look up ${publicId}.` };
+  }
+  if (!task) return { ok: false, message: `No order found with reference ${publicId}.` };
+
+  // A website includes two revisions; an image product includes none, because
+  // it already came back as five options and choosing between them IS the
+  // revision. The allowance lives on the task, so it reflects what this client
+  // was sold rather than whatever the catalog says today.
+  const verdict = checkRevisionAllowance(task);
+  if (!verdict.allowed) {
+    return { ok: false, message: `Can't revise ${publicId} — ${verdict.reason}` };
+  }
+
+  const revisionNo = verdict.used + 1;
+  const payload = (task.payload ?? {}) as Record<string, unknown>;
+  const priorNotes = Array.isArray(payload.revisionNotes) ? (payload.revisionNotes as string[]) : [];
+
+  const { error: updateError } = await supabaseAdmin
+    .from('tasks')
+    .update({
+      status: 'queued',
+      revisions_used: revisionNo,
+      // The version has to move, or the new files land on top of the old ones
+      // at version 1 and the client can't tell which is the revision.
+      version: (task.version ?? 1) + 1,
+      // The note goes into the PAYLOAD, not just the audit log. It used to be
+      // recorded in task_events only, which no worker reads -- so a revision
+      // regenerated the original brief and came back materially unchanged.
+      payload: { ...payload, revisionNotes: [...priorNotes, note] },
+      updated_at: new Date().toISOString()
+    })
+    .eq('id', task.id);
+
+  if (updateError) {
+    console.error('applyRevision: update failed', updateError);
+    return { ok: false, message: `Could not queue a revision for ${publicId}.` };
+  }
+
+  await supabaseAdmin.from('task_events').insert({
+    task_id: task.id,
+    event_type: 'revision_requested',
+    actor,
+    detail: { note, revision: revisionNo, allowance: verdict.allowance }
+  });
+
+  const remaining = verdict.allowance - revisionNo;
+  return {
+    ok: true,
+    revision: revisionNo,
+    allowance: verdict.allowance,
+    remaining,
+    message:
+      `${publicId} re-queued for revision ${revisionNo} of ${verdict.allowance}` +
+      (remaining > 0 ? ` (${remaining} left after this).` : ' (last one included).')
+  };
+}

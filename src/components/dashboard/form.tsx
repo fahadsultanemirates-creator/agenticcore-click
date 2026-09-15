@@ -1,4 +1,4 @@
-import { Clock, Loader2, Sparkles, TriangleAlert } from "lucide-react";
+import { Clock, Loader2, Sparkles, TriangleAlert, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { getService } from "../../data/services";
 
@@ -164,12 +164,70 @@ export function BrandUrlField({ value, onChange }: { value: string; onChange: (v
   );
 }
 
-export function UploadDropzone({ label }: { label: string }) {
+// A real upload control. The previous version rendered the same box with no
+// onChange handler at all, so choosing a file silently did nothing -- see
+// src/lib/useReferenceFiles.ts. Drive it with that hook.
+export function UploadDropzone({
+  label,
+  files,
+  uploading,
+  error,
+  onAdd,
+  onRemove,
+}: {
+  label: string;
+  files: { name: string; url: string }[];
+  uploading: boolean;
+  error: string;
+  onAdd: (files: FileList | null) => void;
+  onRemove: (url: string) => void;
+}) {
   return (
-    <label className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border-2 border-dashed border-border bg-void px-4 py-6 text-sm text-fg-faint transition-colors hover:border-yellow-400/50">
-      {label}
-      <input type="file" className="hidden" />
-    </label>
+    <div className="flex flex-col gap-2.5">
+      <label className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border-2 border-dashed border-border bg-void px-4 py-6 text-center text-sm text-fg-faint transition-colors hover:border-yellow-400/50">
+        {uploading ? (
+          <>
+            <Loader2 className="h-4 w-4 animate-spin text-yellow-400" /> Uploading…
+          </>
+        ) : (
+          label
+        )}
+        <input
+          type="file"
+          multiple
+          disabled={uploading}
+          className="hidden"
+          onChange={(e) => {
+            onAdd(e.target.files);
+            // Lets the same file be re-picked after a failed upload.
+            e.target.value = "";
+          }}
+        />
+      </label>
+
+      {files.length > 0 && (
+        <ul className="flex flex-wrap gap-2">
+          {files.map((file) => (
+            <li
+              key={file.url}
+              className="flex items-center gap-1.5 rounded-full border border-border bg-surface px-3 py-1.5 text-xs text-fg-muted"
+            >
+              <span className="max-w-[12rem] truncate">{file.name}</span>
+              <button
+                type="button"
+                onClick={() => onRemove(file.url)}
+                aria-label={`Remove ${file.name}`}
+                className="text-fg-faint transition-colors hover:text-yellow-400"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {error && <span className="text-xs text-yellow-400">{error}</span>}
+    </div>
   );
 }
 

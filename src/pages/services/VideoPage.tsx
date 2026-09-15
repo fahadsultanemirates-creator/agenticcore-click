@@ -4,6 +4,7 @@ import { DashboardShell } from "../../components/dashboard/DashboardShell";
 import { ErrorNote, inputClass, SectionCard, ServicePageHeader, SubmitBar, SubmittedNote, BrandUrlField, UploadDropzone } from "../../components/dashboard/form";
 import { AvatarPicker, VoicePicker, type CharacterChoice } from "../../components/dashboard/CharacterPicker";
 import { submitTask } from "../../lib/submitTask";
+import { useReferenceFiles } from "../../lib/useReferenceFiles";
 
 type Length = "short" | "long";
 // Avatar quality tiers are gone: they never changed the delivered video
@@ -52,6 +53,7 @@ export function VideoPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [publicId, setPublicId] = useState("");
+  const references = useReferenceFiles();
 
   // Long videos are always avatar-presented, whatever the style toggle says.
   const usesAvatar = length === "long" || avatarStyle !== "none";
@@ -81,6 +83,7 @@ export function VideoPage() {
       avatarType: usesAvatar ? avatarChoice?.avatarType : undefined,
       voiceSource: usesAvatar ? voiceChoice?.source : undefined,
       voiceProviderId: usesAvatar ? voiceChoice?.providerId : undefined,
+      referenceFiles: references.urls,
     });
     setSubmitting(false);
 
@@ -248,7 +251,14 @@ export function VideoPage() {
           </SectionCard>
 
           <SectionCard title="Assets">
-            <UploadDropzone label="Upload a script, product shots, or reference video (optional)" />
+            <UploadDropzone
+              label="Upload a script, product shots, or reference video (optional)"
+              files={references.files}
+              uploading={references.uploading}
+              error={references.error}
+              onAdd={references.add}
+              onRemove={references.remove}
+            />
           </SectionCard>
 
           <SubmitBar loading={submitting} />

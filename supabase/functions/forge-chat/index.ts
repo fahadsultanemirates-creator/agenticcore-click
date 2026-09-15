@@ -14,7 +14,9 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { claudeChat } from '../_shared/claude.ts';
 import { calculatePriceUsd, FULL_BUSINESS_SETUP_USD } from '../_shared/pricing.ts';
 import { catalogMenu, expandSku } from '../_shared/catalog.ts';
-import { accountBriefForPrompt } from '../_shared/accounts.ts';
+import { accountBriefForPrompt, resolveOrderReference } from '../_shared/accounts.ts';
+import { applyRevision } from '../_shared/orders.ts';
+import { describeCandidates } from '../_shared/orderMatch.ts';
 import { jsonResponse, CORS_HEADERS } from '../_shared/cors.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
@@ -41,8 +43,11 @@ interface DraftTask {
 
 interface ForgeEnvelope {
   reply: string;
-  action: 'ask' | 'submit_tasks' | 'submit_bundle';
+  action: 'ask' | 'submit_tasks' | 'submit_bundle' | 'revise';
   tasks?: DraftTask[];
+  /** For action "revise": the order reference and what to change. */
+  reference?: string;
+  note?: string;
 }
 
 const SYSTEM_PROMPT = `You are Forge, the intake assistant for agenticcore.click -- a self-serve "start a business in 20 minutes" platform. You talk to a logged-in client, figure out exactly what they need, ask short focused follow-up questions (one or two at a time, never a long form dumped at once), and once you have enough to act, hand back structured task drafts.
@@ -50,7 +55,7 @@ const SYSTEM_PROMPT = `You are Forge, the intake assistant for agenticcore.click
 CRITICAL LANGUAGE RULE: detect the language the client is writing in and reply in that exact same language, every message. This product is marketed worldwide -- never default to English if they wrote in something else.
 
 CRITICAL OUTPUT RULE: respond with ONLY a single JSON object, no markdown fences, no commentary outside it, of this exact shape:
-{"reply": string, "action": "ask"|"submit_tasks"|"submit_bundle", "tasks": [{"sku": number, "subtype": string|null, "payload": {...}}]}
+{"reply": string, "action": "ask"|"submit_tasks"|"submit_bundle"|"revise", "tasks": [{"sku": number, "subtype": string|null, "payload": {...}}], "reference": string, "note": string}
 "tasks" is omitted (or empty) when action is "ask". "reply" is what gets shown/spoken to the client -- keep it natural, warm, and concise, in their language.
 
 CRITICAL WORDING RULE: action "submit_tasks"/"submit_bundle" only PROPOSES a draft for the client to confirm on a card in the UI -- nothing is created or charged yet. Never say "Submitting..." or "Done" or anything implying it already happened; say things like "Ready to queue this -- confirm below" instead.
@@ -84,9 +89,44 @@ Do not compute a price for the bundle -- it's a flat $20 regardless of contents,
 
 Never invent a product number outside the catalog above (the business report is owner-only and deliberately absent from it). If the client's request doesn't map to a real service, say so honestly in "reply" and ask what they'd actually like, action "ask".
 
+REVISING SOMETHING ALREADY DELIVERED: when the client asks for a change to work they already have (not a new order), use action "revise" with "reference" set to that order's reference number from the list below and "note" set to a clear, specific description of the change in ENGLISH (it is read by the generator, not the client). Revisions included with the order are free -- do not quote a price. Only use "revise" once you know both which order and what to change; if either is unclear, use "ask". Never use "revise" for a brand new piece of work, and never for an order the list shows as having no revisions left -- say so honestly instead.
+
 EXISTING ORDERS AND REVISIONS: the client's live account and order book is appended below this prompt. It is the truth about what they have bought; the conversation is not. When they mention something they already ordered, match it to an entry there and refer to it by its reference number -- never ask them to look up or quote a reference number themselves, because they don't know them. If two entries fit equally well, name both and ask which. Never promise a revision on an order the book says has none left, and never quote a balance from memory. If they ask for a revision on something that can be revised, say so and tell them how many they have left; if it can't (an image, a video, a QR code -- things that can only be regenerated, not edited), explain that it came back as options to choose from and offer to run a fresh one instead.
 
 ATTACHMENTS: when the client's message contains "[attached files: <urls>]", those are real uploaded file URLs (a logo, photo, or reference document). Copy the exact URL(s) into payload.referenceFiles (an array of strings) on whichever task they're relevant to -- website (logo/brand photos), image (a reference to match), video (product shots), documents/brand-kit/pdf (an existing logo or brand asset). Never invent, guess, or alter a URL -- copy it byte-for-byte from what appears in the message, and never put a URL in "reply" itself (it's shown as an attachment chip already, not readable text).`;
+
+
+// Turns a proposed revision into a real one, or into an honest explanation of
+// why not. The model's "reference" is a starting point, never the authority:
+// it is only accepted if it names an order belonging to THIS client, and
+// otherwise the client's own words are matched against their order book.
+async function handleRevision(userId: string, envelope: ForgeEnvelope, message: string): Promise<string> {
+  const note = (envelope.note ?? '').trim();
+  if (!note) return envelope.reply;
+
+  const proposed = (envelope.reference ?? '').toUpperCase();
+  const match = await resolveOrderReference(userId, `${proposed} ${message}`);
+
+  if (!match.order) {
+    if (match.candidates.length > 0) {
+      return `Which one did you mean?\n${describeCandidates(match.candidates)}`;
+    }
+    return "I couldn't work out which of your orders you'd like changed. Which one is it?";
+  }
+
+  const result = await applyRevision(match.order.publicId, note, 'client');
+  if (!result.ok) return result.message;
+
+  triggerDispatch();
+  return `${envelope.reply}\n\n${result.message}`;
+}
+
+function triggerDispatch(): void {
+  fetch(`${SUPABASE_URL}/functions/v1/dispatcher`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, 'Content-Type': 'application/json' }
+  }).catch((err) => console.error('forge-chat: dispatch trigger failed', err));
+}
 
 export async function handleRequest(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response(null, { headers: CORS_HEADERS });
@@ -173,6 +213,34 @@ export async function handleRequest(req: Request): Promise<Response> {
   } catch (err) {
     console.error('forge-chat: Claude call/parse failed', err);
     envelope = { reply: "Sorry, I didn't quite catch that -- could you rephrase?", action: 'ask' };
+  }
+
+  // A revision is applied here rather than proposed, because an included
+  // revision costs nothing -- there is no charge for the client to confirm.
+  // The model names the order, but the server decides: the reference is
+  // checked against this client's own orders, and the allowance recorded on
+  // the order is what actually grants or refuses it.
+  if (envelope.action === 'revise') {
+    const reply = await handleRevision(caller.id, envelope, userContent);
+    await supabaseAdmin.from('forge_messages').insert({
+      conversation_id: conversationId,
+      role: 'assistant',
+      content: reply
+    });
+    const { data: walletAfter } = await supabaseAdmin
+      .from('wallets')
+      .select('balance_usd')
+      .eq('user_id', caller.id)
+      .maybeSingle();
+    return jsonResponse({
+      conversationId,
+      reply,
+      action: 'ask',
+      tasks: [],
+      totalUsd: null,
+      isBundle: false,
+      walletBalanceUsd: walletAfter ? Number(walletAfter.balance_usd) : 0
+    });
   }
 
   await supabaseAdmin.from('forge_messages').insert({

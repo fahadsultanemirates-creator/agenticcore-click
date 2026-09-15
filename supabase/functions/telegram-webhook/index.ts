@@ -26,7 +26,7 @@ import { uploadClientMedia } from '../_shared/storage.ts';
 import { detectLanguage, getOwnerLanguage, setOwnerLanguage, sendBotMessage } from '../_shared/botMessage.ts';
 import { converse } from '../_shared/botConversation.ts';
 import { expandSku, getSku, CATALOG } from '../_shared/catalog.ts';
-import { checkRevisionAllowance, findTaskReference } from '../_shared/orders.ts';
+import { applyRevision, findTaskReference } from '../_shared/orders.ts';
 import { resolveOwnerTaskReference, getPlatformSnapshot } from '../_shared/accounts.ts';
 import { describeCandidates } from '../_shared/orderMatch.ts';
 
@@ -218,62 +218,9 @@ async function handleDeliverCommand(publicId: string, url: string): Promise<stri
 }
 
 async function handleReviseCommand(publicId: string, note: string): Promise<string> {
-  const { data: task, error: fetchError } = await supabaseAdmin
-    .from('tasks')
-    .select('id, status, type, sku, version, revisions_used, revisions_allowed, payload')
-    .eq('public_id', publicId)
-    .maybeSingle();
-
-  if (fetchError) {
-    console.error('telegram-webhook: /revise lookup failed', fetchError);
-    return `Could not look up ${publicId}.`;
-  }
-  if (!task) return `No task found with id ${publicId}.`;
-
-  // A website includes two revisions; an image product includes none, because
-  // it already came back as five options and choosing between them IS the
-  // revision. The allowance lives on the task, so it reflects what this client
-  // was sold rather than whatever the catalog says today.
-  const verdict = checkRevisionAllowance(task);
-  if (!verdict.allowed) {
-    return `Can't revise ${publicId} — ${verdict.reason}`;
-  }
-
-  const revisionNo = verdict.used + 1;
-  const payload = (task.payload ?? {}) as Record<string, unknown>;
-  const priorNotes = Array.isArray(payload.revisionNotes) ? (payload.revisionNotes as string[]) : [];
-
-  const { error: updateError } = await supabaseAdmin
-    .from('tasks')
-    .update({
-      status: 'queued',
-      revisions_used: revisionNo,
-      // The version has to move, or the new files land on top of the old ones
-      // at version 1 and the client can't tell which is the revision.
-      version: (task.version ?? 1) + 1,
-      // The note goes into the PAYLOAD, not just the audit log. It used to be
-      // recorded in task_events only, which no worker reads -- so a revision
-      // regenerated the original brief and came back materially unchanged.
-      payload: { ...payload, revisionNotes: [...priorNotes, note] },
-      updated_at: new Date().toISOString()
-    })
-    .eq('id', task.id);
-
-  if (updateError) {
-    console.error('telegram-webhook: /revise update failed', updateError);
-    return `Could not queue a revision for ${publicId}.`;
-  }
-
-  await supabaseAdmin.from('task_events').insert({
-    task_id: task.id,
-    event_type: 'revision_requested',
-    actor: 'owner',
-    detail: { note, revision: revisionNo, allowance: verdict.allowance }
-  });
-
-  triggerDispatch();
-  const left = verdict.allowance - revisionNo;
-  return `${publicId} re-queued for revision ${revisionNo} of ${verdict.allowance}${left > 0 ? ` (${left} left after this)` : ' (last one included)'}.`;
+  const result = await applyRevision(publicId, note, 'owner');
+  if (result.ok) triggerDispatch();
+  return result.message;
 }
 
 async function handleFilesCommand(publicId: string): Promise<string> {

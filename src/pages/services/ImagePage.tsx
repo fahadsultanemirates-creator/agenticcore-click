@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { DashboardShell } from "../../components/dashboard/DashboardShell";
 import { ChipToggle, ErrorNote, inputClass, SectionCard, ServicePageHeader, SubmitBar, SubmittedNote, BrandUrlField, UploadDropzone } from "../../components/dashboard/form";
 import { submitTask } from "../../lib/submitTask";
+import { useReferenceFiles } from "../../lib/useReferenceFiles";
 
 const IMAGE_TYPES = ["Avatar", "Business visual", "Product shot", "Illustration", "Other"];
 
@@ -14,6 +15,7 @@ export function ImagePage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [publicId, setPublicId] = useState("");
+  const references = useReferenceFiles();
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -24,7 +26,7 @@ export function ImagePage() {
     setDescError(false);
     setSubmitError("");
     setSubmitting(true);
-    const result = await submitTask("image", { imageType, description: description.trim(), websiteUrl: websiteUrl.trim() || undefined });
+    const result = await submitTask("image", { imageType, description: description.trim(), websiteUrl: websiteUrl.trim() || undefined, referenceFiles: references.urls });
     setSubmitting(false);
 
     if (!result.ok) {
@@ -82,7 +84,14 @@ export function ImagePage() {
           </SectionCard>
 
           <SectionCard title="Reference">
-            <UploadDropzone label="Upload a reference photo or existing image (optional)" />
+            <UploadDropzone
+              label="Upload a reference photo or existing image (optional)"
+              files={references.files}
+              uploading={references.uploading}
+              error={references.error}
+              onAdd={references.add}
+              onRemove={references.remove}
+            />
           </SectionCard>
 
           <SubmitBar loading={submitting} />

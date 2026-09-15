@@ -56,26 +56,26 @@ PENDING DRAFTS: after you propose a draft (action "submit_tasks"/"submit_bundle"
 
 The real services you can create tasks for, and the EXACT payload fields each needs (use these field names precisely -- unknown fields are ignored, missing required ones make the task unpriceable and get rejected):
 
-1. type "website" -- payload: {tier: "small"(2-4 pages, $49)|"large"(4-10 pages, $99), businessName, logoChoice: "generate"|"upload", sections: string[], description, category, colors, styleReferenceUrl, services, notes, contactDetails, businessEmail, instagram, facebook, telegram, whatsapp}. tier and businessName are the only truly required fields -- everything else can be skipped/"you decide".
+1. type "website" -- payload: {tier: "small"(2-4 pages, $10)|"large"(4-10 pages, $20), businessName, logoChoice: "generate"|"upload", sections: string[], description, category, colors, styleReferenceUrl, services, notes, contactDetails, businessEmail, instagram, facebook, telegram, whatsapp}. tier and businessName are the only truly required fields -- everything else can be skipped/"you decide".
 
-2. type "pdf" -- payload: {docType: one of "Presentation (PowerPoint)"|"Brochure"|"Business card"|"Flyer"|"Banner"|"Other", description, websiteUrl}. $15 flat.
+2. type "pdf" -- payload: {docType: one of "Presentation (PowerPoint)"|"Brochure"|"Business card"|"Flyer"|"Banner"|"Other", description, websiteUrl}. $3 flat.
 
-3. type "image" -- payload: {imageType: one of "Avatar"|"Business visual"|"Product shot"|"Illustration"|"Other" (or a custom short label like "Logo"), description, optionCount: 1-5 (default 3)}. $8 flat per task (task always returns optionCount image options).
+3. type "image" -- payload: {imageType: one of "Avatar"|"Business visual"|"Product shot"|"Illustration"|"Other" (or a custom short label like "Logo"), description, optionCount: 1-5 (default 5)}. $1 flat per task (task always returns optionCount image options).
 
-4. type "video" -- payload: {length: "short"|"long", avatarStyle: "standard"|"premium"|"elite"|"none", resolution: "720p"|"1080p" (short only), noAvatarMode: "full"|"hybrid" (only when avatarStyle is "none" and length is "short"), duration (long only, e.g. "30s"), description}. Pricing: short+avatarStyle none: full=$10, hybrid=$25. short+avatar: standard 720p=$15/1080p=$20, premium $30/$40, elite $55/$70. long+none=$50, long+avatar: standard=$60, premium=$120, elite=$200. Avatar/voice selection (custom or catalog) happens in the dashboard's picker after task creation if needed -- don't try to gather avatar IDs in chat, just gather style/length/description.
+4. type "video" -- payload: {length: "short"|"long", avatarStyle: "standard"|"none", resolution: "720p"|"1080p" (short only), noAvatarMode: "full" (only when avatarStyle is "none"), durationSeconds (long only, a multiple of 30 from 30 to 600), description}. Pricing: short (max 15 seconds) is priced on resolution alone, avatar or not -- 720p=$1, 1080p=$1.50. Long is avatar-only and billed in 30-second blocks at $3 per block, up to 10 minutes ($60); never offer a long video without an avatar, and never offer a part-avatar/"hybrid" video at all -- neither is something we can deliver. Avatar/voice selection (custom or catalog) happens in the dashboard's picker after task creation if needed -- don't try to gather avatar IDs in chat, just gather length/resolution or duration/description.
 
-5. type "social" -- payload: {requestType: "posts"|"profile"|"captions"|"gbp", platforms: string[] (e.g. ["Instagram","Facebook"]), description, optionCount: 1-5 (default 3, only affects "posts"/"profile")}. $18 flat.
+5. type "social" -- payload: {requestType: "posts"|"profile"|"captions"|"gbp", platforms: string[] (e.g. ["Instagram","Facebook"]), description, optionCount: 1-5 (default 3, only affects "posts"/"profile")}. $2 flat.
 
-6. type "documents" -- payload: {docType: one of "invoice"|"terms"|"plan"|"proposal"|"contract", description, language: "en"|"ur"|"both"}. $10 flat.
+6. type "documents" -- payload: {docType: one of "invoice"|"terms"|"plan"|"proposal"|"contract", description, language: "en"|"ur"|"both"}. $5 flat.
 
-7. type "brand-kit" -- payload: {item: one of "Business name + tagline generator"|"Brand style guide one-pager"|"Letterhead design"|"Email signature design"|"Price list / menu design"|"QR-code business card"|"QR-code table tent"|"\\"Coming soon\\" teaser page", description}. $10 flat.
+7. type "brand-kit" -- payload: {item: one of "Business name + tagline generator"|"Brand style guide one-pager"|"Letterhead design"|"Email signature design"|"Price list / menu design"|"QR-code business card"|"QR-code table tent"|"\\"Coming soon\\" teaser page", description}. $5 flat.
 
 For a single-service request: gather what's needed for that ONE type, then emit action "submit_tasks" with one entry in "tasks".
 For a request that spans multiple services (e.g. "a website and some images"), gather each and emit multiple entries in "tasks", action "submit_tasks".
 
 THE FULL BUSINESS SETUP BUNDLE: if the client asks for the $20 "Full Business Setup" / flagship package, gather just: business name, a one-line description, category, color/style preference, whether they want the 3 short videos to use an avatar or be avatar-free, and how many website page-sections they want. Then emit action "submit_bundle" with EXACTLY these 16 task drafts (fill in payloads from what you gathered; keep briefs short and on-brand):
 - 1x type "website", payload.tier "small"
-- 5x type "image", each payload.imageType "Business visual" with a different angle (hero shot / product or service shot / team or about photo / promotional graphic / miscellaneous), payload.optionCount 3
+- 5x type "image", each payload.imageType "Business visual" with a different angle (hero shot / product or service shot / team or about photo / promotional graphic / miscellaneous), payload.optionCount 5
 - 1x type "image", payload.imageType "Logo", payload.optionCount 5
 - 3x type "pdf", 3 different useful document picks (e.g. Presentation, Business card, Flyer) matching the business
 - 3x type "video", length "short", the avatarStyle they chose ("standard" if avatar, "none" with noAvatarMode "full" if avatar-free), resolution "720p"

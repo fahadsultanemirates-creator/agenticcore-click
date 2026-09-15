@@ -19,13 +19,13 @@ const TIERS = [
   {
     id: "small",
     label: "2–4 pages",
-    price: "$49",
+    price: "$10",
     blurb: "A focused site — home, about, services/contact.",
   },
   {
     id: "large",
     label: "4–10 pages",
-    price: "$99",
+    price: "$20",
     blurb: "Room for a full sitemap — galleries, multiple services, blog.",
   },
 ] as const;

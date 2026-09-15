@@ -9,16 +9,15 @@
 // attached reference images), then that prompt is submitted the same
 // async way as HeyGen -- video-poll branches on payload.avatarStyle to
 // know which provider a given in_progress video task is waiting on.
-// grok-imagine-video caps a single clip at 15 seconds, which comfortably
-// covers "short" (5-15s) but not "long" (30s+) -- there's no multi-clip
-// stitching pipeline here, so a long no-avatar request is delivered as a
-// single 15s clip and the owner is notified it may need manual extending.
-// "Hybrid" (avatar for part of the video) still needs manual production:
-// blending an avatar segment with generated b-roll is real video editing,
-// not something either provider does for us. Invoked by the dispatcher
-// with { taskId }.
+// grok-imagine-video caps a single clip at 15 seconds and nothing stitches
+// clips together, which is exactly why no-avatar is a short-only product:
+// long videos are always avatar-presented (HeyGen), billed in 30-second
+// blocks. A part-avatar "hybrid" video is not offered at all -- blending an
+// avatar segment with generated b-roll is real video editing, not something
+// either provider does for us. Invoked by the dispatcher with { taskId }.
 
 import { supabaseAdmin } from '../_shared/storage.ts';
+import { longVideoSeconds } from '../_shared/pricing.ts';
 import { grokChat, grokVisionChat } from '../_shared/grok.ts';
 import { fetchAttachments } from '../_shared/attachments.ts';
 import { submitHeygenVideo, DEFAULT_AVATAR, DEFAULT_VOICE_ID, type VideoDimension, type CharacterChoice } from '../_shared/heygen.ts';
@@ -38,10 +37,6 @@ import { jsonResponse } from '../_shared/cors.ts';
 // other field falls back to the cheapest fully-automated shape the form
 // itself offers: a short, no-avatar clip at 720p. Anything the bot *did*
 // capture in payload.details survives, since that's merged in at intake.
-//
-// Deliberately never defaults to noAvatarMode 'hybrid' -- that path is a
-// manual-production stop (markNeedsInfo below), not something to land on by
-// omission.
 interface VideoDefaulting {
   payload: Record<string, unknown>;
   defaulted: string[];
@@ -59,13 +54,29 @@ function normalizeVideoPayload(raw: Record<string, unknown>): VideoDefaulting {
     defaulted.push('length=short');
   }
 
-  const styles = ['standard', 'premium', 'elite', 'none'];
-  if (!styles.includes(String(payload.avatarStyle))) {
+  // Long is avatar-only: grok-imagine-video caps a clip at 15s and nothing
+  // stitches clips together, so an avatar-free long video isn't deliverable
+  // and isn't sold. Anything that still asks for one is rendered with an
+  // avatar rather than silently cut to 15 seconds.
+  if (payload.length === 'long' && payload.avatarStyle !== 'standard') {
+    payload.avatarStyle = 'standard';
+    defaulted.push('avatarStyle=standard (long is avatar-only)');
+  }
+
+  // The old standard/premium/elite tiers collapsed into one: they never
+  // produced a different video, and price no longer varies by tier.
+  if (payload.avatarStyle === 'premium' || payload.avatarStyle === 'elite') {
+    payload.avatarStyle = 'standard';
+  }
+
+  if (payload.avatarStyle !== 'standard' && payload.avatarStyle !== 'none') {
     payload.avatarStyle = 'none';
     defaulted.push('avatarStyle=none');
   }
 
-  if (payload.avatarStyle === 'none' && payload.noAvatarMode !== 'full' && payload.noAvatarMode !== 'hybrid') {
+  if (payload.avatarStyle === 'none' && payload.noAvatarMode !== 'full') {
+    // 'hybrid' included: a part-avatar video needs real editing that neither
+    // provider does, so it is no longer offered and never inferred.
     payload.noAvatarMode = 'full';
     defaulted.push('noAvatarMode=full');
   }
@@ -75,9 +86,9 @@ function normalizeVideoPayload(raw: Record<string, unknown>): VideoDefaulting {
     defaulted.push('resolution=720p');
   }
 
-  if (payload.length === 'long' && !payload.duration) {
-    payload.duration = '30s';
-    defaulted.push('duration=30s');
+  if (payload.length === 'long' && longVideoSeconds(payload) === null) {
+    payload.durationSeconds = 30;
+    defaulted.push('durationSeconds=30');
   }
 
   return { payload, defaulted };
@@ -105,12 +116,13 @@ function dimensionFor(payload: Record<string, unknown>): VideoDimension {
   return { width: resolution, height: Math.round((resolution * 16) / 9) };
 }
 
+// ~150 spoken words per minute is the usual presenter pace, so the script
+// is sized off the duration the client actually paid for (30-second blocks)
+// rather than three coarse buckets that capped out at 90 seconds.
 function targetWords(payload: Record<string, unknown>): number {
   if (payload.length !== 'long') return 35; // short clip, ~10-15s spoken
-  const duration = String(payload.duration ?? '30s');
-  if (duration.startsWith('30')) return 75;
-  if (duration.startsWith('60')) return 150;
-  return 220; // 90s+
+  const seconds = longVideoSeconds(payload) ?? 30;
+  return Math.max(60, Math.round((seconds / 60) * 150));
 }
 
 async function generateScript(payload: Record<string, unknown>): Promise<string> {
@@ -165,12 +177,9 @@ async function generateNoAvatarPrompt(payload: Record<string, unknown>): Promise
   );
 }
 
-// grok-imagine-video caps a single generation at 15s -- that's a natural
-// fit for "short" (5-15s) but well under a "long" (30s+) request; there's
-// no clip-stitching here, so long delivers at the model's max instead.
-function noAvatarDurationSeconds(payload: Record<string, unknown>): number {
-  return payload.length === 'long' ? 15 : 10;
-}
+// grok-imagine-video caps a single generation at 15s, which is exactly why
+// no-avatar is sold as a short-clip product only.
+const NO_AVATAR_CLIP_SECONDS = 10;
 
 export async function handleRequest(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response(null, { headers: {} });
@@ -205,34 +214,25 @@ export async function handleRequest(req: Request): Promise<Response> {
     });
   }
 
+  // Normalization above guarantees no-avatar implies a short clip at 'full'
+  // -- long is avatar-only, and hybrid is not a product any more -- so this
+  // branch no longer has to handle either case.
   if (payload.avatarStyle === 'none') {
-    if (payload.noAvatarMode === 'hybrid') {
-      await markNeedsInfo(taskId, 'Hybrid avatar/no-avatar videos need manual editing to blend the two styles -- not automated yet.');
-      await notifyOwner(
-        `${task.public_id} needs a hybrid avatar/no-avatar video produced manually -- this path isn't automated yet.\nBrief: ${payload.description}`
-      );
-      return jsonResponse({ ok: true, needsManualProduction: true });
-    }
-
     try {
       const prompt = await generateNoAvatarPrompt(payload);
-      const durationSeconds = noAvatarDurationSeconds(payload);
+      const durationSeconds = NO_AVATAR_CLIP_SECONDS;
+      // Resolution is what the short clip is priced on, so render the one
+      // the client actually paid for rather than always 720p.
+      const resolution = payload.resolution === '1080p' ? '1080p' : '720p';
       const requestId = await submitGrokVideo(prompt, {
         durationSeconds,
-        resolution: payload.length === 'long' ? '1080p' : '720p',
+        resolution,
         aspectRatio: '16:9',
         generateAudio: true
       });
 
       await setProviderJob(taskId, requestId);
-      await logEvent(taskId, 'video_submitted', 'worker', { requestId, provider: 'grok-imagine-video', prompt, durationSeconds });
-
-      if (payload.length === 'long') {
-        await notifyOwner(
-          `${task.public_id} (long, no-avatar) was auto-generated at 15s -- grok-imagine-video's max per clip. ` +
-            `Let the client know if they need it extended to the full requested length; multi-clip stitching isn't wired up yet.`
-        );
-      }
+      await logEvent(taskId, 'video_submitted', 'worker', { requestId, provider: 'grok-imagine-video', prompt, durationSeconds, resolution });
 
       return jsonResponse({ ok: true, requestId });
     } catch (err) {

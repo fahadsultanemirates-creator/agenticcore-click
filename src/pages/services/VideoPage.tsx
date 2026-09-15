@@ -6,40 +6,43 @@ import { AvatarPicker, VoicePicker, type CharacterChoice } from "../../component
 import { submitTask } from "../../lib/submitTask";
 
 type Length = "short" | "long";
-type AvatarStyle = "standard" | "premium" | "elite" | "none";
+// Avatar quality tiers are gone: they never changed the delivered video
+// (every tier fell back to the same house avatar) and they no longer change
+// the price either -- short is priced on resolution, long on duration.
+type AvatarStyle = "standard" | "none";
 type Resolution = "720p" | "1080p";
-type NoAvatarMode = "full" | "hybrid";
 
 const AVATAR_STYLES: { id: AvatarStyle; label: string; blurb: string }[] = [
-  { id: "standard", label: "Standard avatar", blurb: "Clean, reliable avatar delivery." },
-  { id: "premium", label: "Premium avatar", blurb: "Higher-fidelity avatar motion & voice." },
-  { id: "elite", label: "Elite avatar", blurb: "Our best avatar quality available." },
+  { id: "standard", label: "With an avatar", blurb: "A presenter speaks your script to camera." },
   { id: "none", label: "No avatar", blurb: "Business promo — B-roll, graphics, motion only." },
 ];
 
-const SHORT_PRICES: Record<Exclude<AvatarStyle, "none">, Record<Resolution, string>> = {
-  standard: { "720p": "$15", "1080p": "$20" },
-  premium: { "720p": "$30", "1080p": "$40" },
-  elite: { "720p": "$55", "1080p": "$70" },
-};
+// Short clips cost the same whether or not there's an avatar -- only the
+// resolution moves the price.
+const SHORT_PRICES: Record<Resolution, number> = { "720p": 1, "1080p": 1.5 };
 
-const SHORT_NO_AVATAR_PRICES: Record<NoAvatarMode, string> = {
-  full: "$10",
-  hybrid: "$25",
-};
+// Long videos are avatar-only (grok-imagine-video caps a clip at 15s, so a
+// longer no-avatar video isn't something we can actually deliver) and are
+// sold in 30-second blocks up to 10 minutes.
+const LONG_BLOCK_USD = 3;
+const LONG_BLOCK_SECONDS = 30;
+const LONG_MAX_BLOCKS = 20;
+const LONG_BLOCK_CHOICES = [1, 2, 4, 6, 10, 20];
 
-const LONG_PRICES: Record<Exclude<AvatarStyle, "none">, string> = {
-  standard: "$60",
-  premium: "$120",
-  elite: "$200",
-};
+function formatUsd(amount: number): string {
+  return `$${amount % 1 === 0 ? amount.toFixed(0) : amount.toFixed(2)}`;
+}
+
+function blockLabel(blocks: number): string {
+  const seconds = blocks * LONG_BLOCK_SECONDS;
+  return seconds < 60 ? `${seconds}s` : `${seconds / 60} min`;
+}
 
 export function VideoPage() {
   const [length, setLength] = useState<Length>("short");
   const [avatarStyle, setAvatarStyle] = useState<AvatarStyle>("standard");
-  const [resolution, setResolution] = useState<Resolution>("1080p");
-  const [noAvatarMode, setNoAvatarMode] = useState<NoAvatarMode>("full");
-  const [duration, setDuration] = useState("30s");
+  const [resolution, setResolution] = useState<Resolution>("720p");
+  const [blocks, setBlocks] = useState(2);
   const [avatarChoice, setAvatarChoice] = useState<CharacterChoice | null>(null);
   const [voiceChoice, setVoiceChoice] = useState<CharacterChoice | null>(null);
   const [description, setDescription] = useState("");
@@ -49,14 +52,10 @@ export function VideoPage() {
   const [submitError, setSubmitError] = useState("");
   const [publicId, setPublicId] = useState("");
 
-  const price =
-    length === "short"
-      ? avatarStyle === "none"
-        ? SHORT_NO_AVATAR_PRICES[noAvatarMode]
-        : SHORT_PRICES[avatarStyle][resolution]
-      : avatarStyle === "none"
-        ? "from $50"
-        : LONG_PRICES[avatarStyle];
+  // Long videos are always avatar-presented, whatever the style toggle says.
+  const usesAvatar = length === "long" || avatarStyle !== "none";
+  const priceUsd = length === "short" ? SHORT_PRICES[resolution] : blocks * LONG_BLOCK_USD;
+  const price = formatUsd(priceUsd);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -69,16 +68,17 @@ export function VideoPage() {
     setSubmitting(true);
     const result = await submitTask("video", {
       length,
-      avatarStyle,
-      resolution,
-      noAvatarMode,
-      duration: length === "long" ? duration : undefined,
+      // Long is avatar-only, so never send "none" with it.
+      avatarStyle: length === "long" ? "standard" : avatarStyle,
+      resolution: length === "short" ? resolution : undefined,
+      noAvatarMode: length === "short" && avatarStyle === "none" ? "full" : undefined,
+      durationSeconds: length === "long" ? blocks * LONG_BLOCK_SECONDS : undefined,
       description: description.trim(),
-      avatarSource: avatarStyle !== "none" ? avatarChoice?.source : undefined,
-      avatarProviderId: avatarStyle !== "none" ? avatarChoice?.providerId : undefined,
-      avatarType: avatarStyle !== "none" ? avatarChoice?.avatarType : undefined,
-      voiceSource: avatarStyle !== "none" ? voiceChoice?.source : undefined,
-      voiceProviderId: avatarStyle !== "none" ? voiceChoice?.providerId : undefined,
+      avatarSource: usesAvatar ? avatarChoice?.source : undefined,
+      avatarProviderId: usesAvatar ? avatarChoice?.providerId : undefined,
+      avatarType: usesAvatar ? avatarChoice?.avatarType : undefined,
+      voiceSource: usesAvatar ? voiceChoice?.source : undefined,
+      voiceProviderId: usesAvatar ? voiceChoice?.providerId : undefined,
     });
     setSubmitting(false);
 
@@ -95,7 +95,7 @@ export function VideoPage() {
       <div className="mx-auto max-w-3xl py-8 sm:py-10">
         <ServicePageHeader
           serviceId="video"
-          eta={length === "short" ? "~10 min" : "~1–2 days"}
+          eta={length === "short" ? "~10 min" : "~30 min"}
           price={price}
           title="What kind of video do you need?"
           subtitle="Pick a length, then a style — the price updates as you go."
@@ -129,8 +129,8 @@ export function VideoPage() {
                   length === "long" ? "border-yellow-400 bg-yellow-400/5" : "border-border"
                 }`}
               >
-                <p className="font-semibold text-fg">Long video — 30 seconds+</p>
-                <p className="mt-1 text-sm text-fg-muted">Fuller promo or explainer piece.</p>
+                <p className="font-semibold text-fg">Long video — 30 sec to 10 min</p>
+                <p className="mt-1 text-sm text-fg-muted">Avatar-presented, billed in 30-second blocks.</p>
               </button>
             </div>
           </SectionCard>
@@ -138,23 +138,32 @@ export function VideoPage() {
           {length === "long" && (
             <SectionCard title="Duration">
               <div className="flex flex-wrap gap-2">
-                {["30s", "60s", "90s+"].map((d) => (
+                {LONG_BLOCK_CHOICES.map((b) => (
                   <button
-                    key={d}
+                    key={b}
                     type="button"
-                    onClick={() => setDuration(d)}
+                    onClick={() => setBlocks(b)}
                     className={`rounded-full border-2 px-3.5 py-1.5 text-sm font-medium transition-colors ${
-                      duration === d ? "border-yellow-400 bg-yellow-400 text-void" : "border-border text-fg-muted hover:border-yellow-400/50"
+                      blocks === b ? "border-yellow-400 bg-yellow-400 text-void" : "border-border text-fg-muted hover:border-yellow-400/50"
                     }`}
                   >
-                    {d}
+                    {blockLabel(b)} — {formatUsd(b * LONG_BLOCK_USD)}
                   </button>
                 ))}
               </div>
+              <p className="text-xs text-fg-faint">
+                {formatUsd(LONG_BLOCK_USD)} per 30 seconds, up to {blockLabel(LONG_MAX_BLOCKS)}.
+              </p>
             </SectionCard>
           )}
 
-          <SectionCard title="Style">
+          <SectionCard title={length === "long" ? "Presenter" : "Style"}>
+            {length === "long" ? (
+              <p className="text-sm text-fg-muted">
+                Long videos are always avatar-presented — that's the only way we can deliver past 15
+                seconds, so there's no avatar-free option here.
+              </p>
+            ) : (
             <div className="grid gap-3 sm:grid-cols-2">
               {AVATAR_STYLES.map((style) => (
                 <button
@@ -173,8 +182,9 @@ export function VideoPage() {
                 </button>
               ))}
             </div>
+            )}
 
-            {avatarStyle !== "none" && length === "short" && (
+            {length === "short" && (
               <div>
                 <span className="text-xs font-semibold tracking-wide text-fg-muted uppercase">Resolution</span>
                 <div className="mt-2 flex gap-2">
@@ -187,37 +197,9 @@ export function VideoPage() {
                         resolution === r ? "border-yellow-400 bg-yellow-400 text-void" : "border-border text-fg-muted hover:border-yellow-400/50"
                       }`}
                     >
-                      {r}
+                      {r} — {formatUsd(SHORT_PRICES[r])}
                     </button>
                   ))}
-                </div>
-              </div>
-            )}
-
-            {avatarStyle === "none" && length === "short" && (
-              <div>
-                <span className="text-xs font-semibold tracking-wide text-fg-muted uppercase">
-                  How much of the video should use an avatar?
-                </span>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setNoAvatarMode("full")}
-                    className={`rounded-full border-2 px-4 py-1.5 text-sm font-medium transition-colors ${
-                      noAvatarMode === "full" ? "border-yellow-400 bg-yellow-400 text-void" : "border-border text-fg-muted hover:border-yellow-400/50"
-                    }`}
-                  >
-                    None at all
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setNoAvatarMode("hybrid")}
-                    className={`rounded-full border-2 px-4 py-1.5 text-sm font-medium transition-colors ${
-                      noAvatarMode === "hybrid" ? "border-yellow-400 bg-yellow-400 text-void" : "border-border text-fg-muted hover:border-yellow-400/50"
-                    }`}
-                  >
-                    Hybrid — avatar for ~40–50%
-                  </button>
                 </div>
               </div>
             )}
@@ -225,7 +207,7 @@ export function VideoPage() {
             <p className="text-xs text-fg-faint">Charged from your wallet balance once you submit.</p>
           </SectionCard>
 
-          {avatarStyle !== "none" && (
+          {usesAvatar && (
             <>
               <SectionCard title="Choose an avatar">
                 <p className="text-xs text-fg-faint">

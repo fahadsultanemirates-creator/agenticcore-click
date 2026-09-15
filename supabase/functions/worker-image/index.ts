@@ -1,6 +1,6 @@
-// Grok-driven image generation -- always 3 options, per the service's own
-// promise ("Every request comes back with 3 options to pick from"). Invoked
-// by the dispatcher with { taskId }.
+// Grok-driven image generation -- always 5 options, per the service's own
+// promise (one flat price, five images to choose from). Invoked by the
+// dispatcher with { taskId }.
 
 import { supabaseAdmin } from '../_shared/storage.ts';
 import { generateImageOptions } from '../_shared/images.ts';
@@ -8,7 +8,7 @@ import { sendTelegramPhoto } from '../_shared/telegramApi.ts';
 import { logEvent, markDelivered, markFailed } from '../_shared/task.ts';
 import { jsonResponse } from '../_shared/cors.ts';
 
-const DEFAULT_OPTION_COUNT = 3;
+const DEFAULT_OPTION_COUNT = 5;
 
 function buildPrompt(payload: Record<string, unknown>): string {
   const imageType = String(payload.imageType ?? 'image');

@@ -8,7 +8,7 @@ import { supabaseAdmin, uploadDeliverable } from '../_shared/storage.ts';
 import { generateImageOptions } from '../_shared/images.ts';
 import { claudeChat } from '../_shared/claude.ts';
 import { renderDocumentPdf, type DocSpec } from '../_shared/pdf.ts';
-import { sendTelegramDocument } from '../_shared/telegramApi.ts';
+import { sendTelegramDocument, sendTelegramPhoto } from '../_shared/telegramApi.ts';
 import { addTaskFile, logEvent, markDelivered, markFailed } from '../_shared/task.ts';
 import { jsonResponse } from '../_shared/cors.ts';
 
@@ -26,7 +26,13 @@ function resolveOptionCount(payload: Record<string, unknown>): number {
   return Math.min(5, Math.max(1, Math.round(n)));
 }
 
-async function handleImageRequest(taskId: string, version: number, payload: Record<string, unknown>) {
+async function handleImageRequest(
+  taskId: string,
+  publicId: string,
+  version: number,
+  payload: Record<string, unknown>,
+  ownerChannelId: string | null
+) {
   const requestType = String(payload.requestType);
   const prompt =
     requestType === 'profile'
@@ -35,6 +41,15 @@ async function handleImageRequest(taskId: string, version: number, payload: Reco
 
   const urls = await generateImageOptions(taskId, prompt, resolveOptionCount(payload), version, payload.referenceFiles);
   await logEvent(taskId, 'social_images_generated', 'worker', { requestType, count: urls.length });
+
+  if (ownerChannelId) {
+    const chatId = Number(ownerChannelId);
+    for (let i = 0; i < urls.length; i++) {
+      await sendTelegramPhoto(chatId, urls[i], `Option ${i + 1} of ${urls.length} -- ${publicId}`).catch((err) =>
+        console.error(`worker-social: sendTelegramPhoto failed for ${taskId}:`, err)
+      );
+    }
+  }
 }
 
 async function handleCopyRequest(taskId: string, version: number, payload: Record<string, unknown>): Promise<{ url: string; title: string }> {
@@ -93,7 +108,7 @@ export async function handleRequest(req: Request): Promise<Response> {
     const requestType = String(payload.requestType ?? '');
 
     if (IMAGE_REQUEST_TYPES.has(requestType)) {
-      await handleImageRequest(taskId, task.version, payload);
+      await handleImageRequest(taskId, task.public_id, task.version, payload, task.owner_channel_id);
     } else {
       const { url, title } = await handleCopyRequest(taskId, task.version, payload);
       // Owner-created (via Telegram /new) tasks get the actual PDF in the

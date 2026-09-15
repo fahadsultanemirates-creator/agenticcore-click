@@ -4,6 +4,7 @@
 
 import { supabaseAdmin } from '../_shared/storage.ts';
 import { generateImageOptions } from '../_shared/images.ts';
+import { sendTelegramPhoto } from '../_shared/telegramApi.ts';
 import { logEvent, markDelivered, markFailed } from '../_shared/task.ts';
 import { jsonResponse } from '../_shared/cors.ts';
 
@@ -42,6 +43,16 @@ export async function handleRequest(req: Request): Promise<Response> {
     const prompt = buildPrompt(payload);
     const urls = await generateImageOptions(taskId, prompt, resolveOptionCount(payload), task.version, payload.referenceFiles);
     await logEvent(taskId, 'images_generated', 'worker', { count: urls.length });
+
+    if (task.owner_channel_id) {
+      const chatId = Number(task.owner_channel_id);
+      for (let i = 0; i < urls.length; i++) {
+        await sendTelegramPhoto(chatId, urls[i], `Option ${i + 1} of ${urls.length} -- ${taskId}`).catch((err) =>
+          console.error(`worker-image: sendTelegramPhoto failed for ${taskId}:`, err)
+        );
+      }
+    }
+
     await markDelivered(taskId);
     return jsonResponse({ ok: true, urls });
   } catch (err) {

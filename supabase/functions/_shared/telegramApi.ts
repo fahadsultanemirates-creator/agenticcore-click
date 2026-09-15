@@ -50,6 +50,24 @@ export async function sendTelegramDocument(chatId: number, url: string, caption?
   }
 }
 
+// Same URL-mode approach as sendTelegramDocument, but renders inline as a
+// photo in the chat instead of a downloadable file attachment -- the right
+// choice for image-option deliverables (logos, social posts, etc).
+export async function sendTelegramPhoto(chatId: number, url: string, caption?: string): Promise<void> {
+  const resp = await fetch(`${TELEGRAM_API}/sendPhoto`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chat_id: chatId,
+      photo: url,
+      ...(caption ? { caption: caption.slice(0, 1024) } : {})
+    })
+  });
+  if (!resp.ok) {
+    console.error(`Telegram sendPhoto failed (${resp.status}):`, await resp.text().catch(() => ''));
+  }
+}
+
 export async function downloadTelegramFile(fileId: string): Promise<Uint8Array> {
   const metaResp = await fetch(`${TELEGRAM_API}/getFile?file_id=${fileId}`);
   if (!metaResp.ok) {

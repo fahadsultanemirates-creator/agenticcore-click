@@ -1,5 +1,6 @@
-import { Loader2, Sparkles, TriangleAlert } from "lucide-react";
+import { Clock, Loader2, Sparkles, TriangleAlert } from "lucide-react";
 import type { ReactNode } from "react";
+import { getService } from "../../data/services";
 
 export const inputClass =
   "w-full min-w-0 rounded-xl border-2 border-border bg-void px-3.5 py-2.5 text-fg placeholder:text-fg-faint focus:border-yellow-400 focus:outline-none";
@@ -52,26 +53,49 @@ export function SectionCard({ title, children }: { title: string; children: Reac
   );
 }
 
+// Price and turnaround come from src/data/services.ts so the dashboard card
+// and this header can never disagree. `price`/`eta` are overridable for
+// services whose figure depends on what's selected on the page (video).
 export function ServicePageHeader({
-  eta,
-  price,
+  serviceId,
   title,
   subtitle,
+  price,
+  eta,
 }: {
-  eta: string;
-  price: string;
+  serviceId: string;
   title: string;
   subtitle: string;
+  price?: string;
+  eta?: string;
 }) {
+  const service = getService(serviceId);
+
   return (
-    <>
-      <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-yellow-400">
-        <Sparkles className="h-4 w-4" />
-        {eta} &middot; {price}
+    <div className="mb-8">
+      <div className="flex items-start gap-3">
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-yellow-400/10">
+          <service.icon className="h-5 w-5 text-yellow-400" strokeWidth={2.25} />
+        </span>
+        <div className="min-w-0">
+          <p className="text-xs font-semibold tracking-wide text-fg-faint uppercase">
+            {service.label}
+          </p>
+          <h1 className="mt-0.5 font-display text-2xl font-semibold text-fg sm:text-3xl">{title}</h1>
+        </div>
       </div>
-      <h1 className="font-display text-3xl font-semibold text-fg sm:text-4xl">{title}</h1>
-      <p className="mt-2 text-fg-muted">{subtitle}</p>
-    </>
+
+      <p className="mt-3 text-sm text-fg-muted sm:text-base">{subtitle}</p>
+
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        <span className="flex items-center gap-1.5 rounded-full border border-yellow-400/40 bg-yellow-400/10 px-3 py-1.5 text-sm font-semibold text-yellow-400">
+          <Sparkles className="h-3.5 w-3.5" /> {price ?? service.price}
+        </span>
+        <span className="flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-sm font-medium text-fg-muted">
+          <Clock className="h-3.5 w-3.5" /> {eta ?? service.eta}
+        </span>
+      </div>
+    </div>
   );
 }
 

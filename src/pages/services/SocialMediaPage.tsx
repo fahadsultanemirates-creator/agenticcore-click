@@ -47,11 +47,10 @@ export function SocialMediaPage() {
   };
 
   return (
-    <DashboardShell crumb="Dashboard / Social Media" title="Posts, profile kits & captions.">
-      <div className="mx-auto max-w-3xl px-6 py-10 sm:px-10">
+    <DashboardShell title="Social Media">
+      <div className="mx-auto max-w-3xl py-8 sm:py-10">
         <ServicePageHeader
-          eta="~15 min"
-          price="from $18"
+          serviceId="social"
           title="What do you need for social?"
           subtitle="Post and design requests default to at least 3 options — never just one. Need TikTok/Reels/YouTube video content? That's the Video service."
         />

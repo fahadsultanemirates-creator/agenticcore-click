@@ -166,14 +166,14 @@ export function BillingSection() {
   };
 
   return (
-    <section className="border-t border-border px-6 py-10 sm:px-10 lg:px-16">
-      <div className="mx-auto max-w-5xl">
+    <section className="border-t border-border py-10">
+      <div>
         <div className="mb-6 flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
           <div>
             <h2 className="font-display text-2xl font-semibold text-fg">Billing</h2>
             <p className="mt-1 text-sm text-fg-muted">
               No credit system — every service keeps its own real price. Wallet tiers just add a
-              discount on top. Placeholder numbers until launch.
+              discount on top.
             </p>
           </div>
           {walletBalance !== null && (

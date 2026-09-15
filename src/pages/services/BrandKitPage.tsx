@@ -44,11 +44,10 @@ export function BrandKitPage() {
   };
 
   return (
-    <DashboardShell crumb="Dashboard / Brand & Marketing Kit" title="Identity, price lists, QR cards.">
-      <div className="mx-auto max-w-3xl px-6 py-10 sm:px-10">
+    <DashboardShell title="Brand & Marketing Kit">
+      <div className="mx-auto max-w-3xl py-8 sm:py-10">
         <ServicePageHeader
-          eta="~10 min"
-          price="from $10"
+          serviceId="brand-kit"
           title="What are we building for your brand?"
           subtitle="Everything about how your business presents itself — beyond the logo."
         />

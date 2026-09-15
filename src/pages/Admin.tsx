@@ -1,5 +1,6 @@
-import { LogOut } from "lucide-react";
-import { Link, useNavigate } from "react-router-dom";
+import { ArrowLeft } from "lucide-react";
+import { Link } from "react-router-dom";
+import { AccountMenu } from "../components/AccountMenu";
 import { Logo } from "../components/Logo";
 import { useAuth } from "../context/AuthContext";
 import { orders, type OrderStatus } from "../data/orders";
@@ -18,40 +19,39 @@ const dummyBilling = [
 ];
 
 export function Admin() {
-  const { user, logout } = useAuth();
-  const navigate = useNavigate();
-
-  const handleLogout = () => {
-    logout();
-    navigate("/login", { replace: true });
-  };
+  const { user } = useAuth();
 
   return (
     <div className="min-h-screen bg-void">
-      <header className="flex items-center justify-between gap-3 border-b border-border px-4 py-4 sm:px-6">
-        <Link to="/" className="shrink-0">
-          <Logo compact className="sm:hidden" />
-          <Logo className="hidden sm:flex" />
-        </Link>
-        <div className="flex shrink-0 items-center gap-3 sm:gap-4">
-          <Link to="/dashboard" className="text-sm font-semibold whitespace-nowrap text-fg-muted hover:text-fg">
-            Dashboard
-          </Link>
-          <button
-            type="button"
-            onClick={handleLogout}
-            className="flex items-center gap-1.5 text-sm font-semibold whitespace-nowrap text-fg-muted hover:text-fg"
+      <header className="sticky top-0 z-40 border-b border-border bg-void/90 backdrop-blur">
+        <div className="mx-auto flex w-full max-w-6xl items-center gap-2 px-4 py-3 sm:gap-3 sm:px-6">
+          <Link
+            to="/dashboard"
+            aria-label="Back to dashboard"
+            className="flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-border px-2.5 text-sm font-semibold text-fg-muted transition-colors hover:border-yellow-400/50 hover:text-fg sm:px-3.5"
           >
-            <LogOut className="h-3.5 w-3.5" /> Log out
-          </button>
+            <ArrowLeft className="h-4 w-4" />
+            <span className="hidden sm:inline">Dashboard</span>
+          </Link>
+          <Link to="/" className="min-w-0 shrink-0">
+            <Logo compact className="sm:hidden" />
+            <Logo className="hidden sm:flex" />
+          </Link>
+          <span className="hidden min-w-0 items-center gap-2 text-sm text-fg-faint md:flex">
+            <span aria-hidden>/</span>
+            <span className="truncate font-medium text-fg-muted">Admin</span>
+          </span>
+          <div className="ml-auto">
+            <AccountMenu />
+          </div>
         </div>
       </header>
 
-      <div className="mx-auto max-w-6xl px-6 py-10 sm:px-10">
+      <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
         <h1 className="font-display text-3xl font-semibold text-fg">Admin</h1>
         <p className="mt-1 text-sm text-fg-muted">
-          Internal only. Signed in as {user?.email ?? "—"}. Dummy data for this preview — the real
-          version is fed by the Telegram manager bot as tasks move.
+          Internal only. Signed in as {user?.email ?? "—"}. Sample rows for now — this view
+          reads live task data once it's wired to the queue.
         </p>
 
         <section className="mt-8">

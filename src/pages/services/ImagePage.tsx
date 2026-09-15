@@ -35,11 +35,10 @@ export function ImagePage() {
   };
 
   return (
-    <DashboardShell crumb="Dashboard / Image" title="Custom art, avatars & business visuals.">
-      <div className="mx-auto max-w-3xl px-6 py-10 sm:px-10">
+    <DashboardShell title="Image">
+      <div className="mx-auto max-w-3xl py-8 sm:py-10">
         <ServicePageHeader
-          eta="~5 min"
-          price="from $8"
+          serviceId="image"
           title="What image do you need?"
           subtitle="Every request comes back with 3 options to pick from — not just one."
         />

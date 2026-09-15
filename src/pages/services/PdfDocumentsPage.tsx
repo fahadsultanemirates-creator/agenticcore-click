@@ -48,11 +48,10 @@ export function PdfDocumentsPage() {
   };
 
   return (
-    <DashboardShell crumb="Dashboard / PDF & Documents" title="Presentations, brochures, flyers & more.">
-      <div className="mx-auto max-w-3xl px-6 py-10 sm:px-10">
+    <DashboardShell title="PDF & Documents">
+      <div className="mx-auto max-w-3xl py-8 sm:py-10">
         <ServicePageHeader
-          eta="~15 min"
-          price="from $15"
+          serviceId="pdf"
           title="What should we design?"
           subtitle="Pick a document type and describe what you need — a style-reference URL can pull your branding automatically."
         />

@@ -49,11 +49,10 @@ export function BusinessDocumentsPage() {
   };
 
   return (
-    <DashboardShell crumb="Dashboard / Business Documents" title="Invoices, contracts, proposals.">
-      <div className="mx-auto max-w-3xl px-6 py-10 sm:px-10">
+    <DashboardShell title="Business Documents">
+      <div className="mx-auto max-w-3xl py-8 sm:py-10">
         <ServicePageHeader
-          eta="~10 min"
-          price="from $10"
+          serviceId="documents"
           title="Which document do you need?"
           subtitle="The paperwork every business needs but rarely gets around to drafting."
         />

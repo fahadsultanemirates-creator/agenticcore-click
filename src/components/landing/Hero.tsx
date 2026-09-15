@@ -1,7 +1,11 @@
-import { ArrowRight, MousePointerClick } from "lucide-react";
+import { ArrowRight, MousePointerClick, Sparkles } from "lucide-react";
 import { Link } from "react-router-dom";
+import { useAuth } from "../../context/AuthContext";
+import { services } from "../../data/services";
 
 export function Hero() {
+  const { user } = useAuth();
+
   return (
     <section className="relative overflow-hidden">
       <div
@@ -39,22 +43,22 @@ export function Hero() {
 
           <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
             <Link
-              to="/dashboard"
+              to={user ? "/dashboard" : "/signup"}
               className="group inline-flex items-center gap-2 rounded-full bg-yellow-400 px-7 py-3.5 text-base font-semibold text-void shadow-glow-yellow transition-transform hover:-translate-y-0.5 active:translate-y-0"
             >
-              Preview the dashboard
+              {user ? "Open your dashboard" : "Start your business"}
               <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
             </Link>
             <a
-              href="#how-it-works"
+              href="#services"
               className="inline-flex items-center gap-2 rounded-full border-2 border-border px-7 py-3.5 text-base font-semibold text-fg transition-colors hover:border-yellow-400/60"
             >
-              How it works
+              See all 7 services
             </a>
           </div>
 
           <p className="mt-4 text-xs text-fg-faint">
-            $20 is our Full Business Setup package — every other service keeps its own price. Placeholder numbers until launch.
+            $20 is our Full Business Setup package — every other service keeps its own price, from $8.
           </p>
         </div>
 
@@ -78,29 +82,39 @@ function BrowserPreview() {
           agenticcore.click/dashboard
         </span>
       </div>
-      <div className="grid grid-cols-[auto_1fr] gap-2 overflow-hidden rounded-xl border border-border bg-void">
-        <div className="hidden w-36 flex-col gap-1.5 border-r border-border p-3 sm:flex">
-          {["Website", "PDF & Docs", "Image", "Video"].map((label, i) => (
+      {/* Mirrors the real dashboard: a grid of services, not a side rail. */}
+      <div className="overflow-hidden rounded-xl border border-border bg-void p-4 sm:p-6">
+        <div className="flex items-center justify-between gap-3">
+          <p className="font-display text-base font-medium text-fg sm:text-lg">
+            Welcome back — what are we building?
+          </p>
+          <span className="hidden rounded-full border border-border px-2.5 py-1 text-[11px] font-semibold text-fg-muted sm:inline">
+            Wallet $30.00
+          </span>
+        </div>
+
+        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {services.slice(0, 4).map((service, i) => (
             <div
-              key={label}
-              className={`rounded-lg px-2.5 py-2 text-left text-xs font-medium ${
-                i === 0 ? "bg-yellow-400 text-void" : "text-fg-muted"
+              key={service.id}
+              className={`flex flex-col gap-2 rounded-lg border p-2.5 ${
+                i === 0 ? "border-yellow-400/60 bg-yellow-400/10" : "border-border bg-surface"
               }`}
             >
-              {label}
+              <div className="flex items-center justify-between gap-1.5">
+                <service.icon className="h-4 w-4 text-yellow-400" strokeWidth={2.25} />
+                <span className="text-[10px] font-semibold text-yellow-400">{service.price}</span>
+              </div>
+              <span className="truncate text-[11px] font-semibold text-fg">{service.label}</span>
             </div>
           ))}
         </div>
-        <div className="flex flex-col justify-center gap-3 p-6 sm:p-8">
-          <p className="font-display text-lg font-medium text-fg sm:text-xl">
-            What kind of website do you need?
-          </p>
-          <div className="h-16 rounded-lg border border-dashed border-yellow-400/30 bg-surface px-3 py-2 text-xs text-fg-faint">
+
+        <div className="mt-3 flex items-center gap-2 rounded-lg border border-dashed border-yellow-400/30 bg-surface px-3 py-2.5">
+          <Sparkles className="h-3.5 w-3.5 shrink-0 text-yellow-400" />
+          <span className="truncate text-xs text-fg-faint">
             A one-page site for my dog-walking business, warm and friendly...
-          </div>
-          <div className="inline-flex w-fit items-center gap-1.5 rounded-full bg-yellow-400 px-4 py-2 text-xs font-semibold text-void">
-            Generate <ArrowRight className="h-3 w-3" />
-          </div>
+          </span>
         </div>
       </div>
     </div>

@@ -1,7 +1,7 @@
 import { ArrowLeft, Loader2, Mic, Paperclip, Send, Sparkles, Square, Volume2, X } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
-import { Logo } from "../components/Logo";
+import { AccountMenu } from "../components/AccountMenu";
 import {
   fetchActiveConversation,
   sendForgeMessage,
@@ -237,9 +237,10 @@ export function Forge() {
           <Link
             to="/dashboard"
             aria-label="Back to dashboard"
-            className="flex h-9 w-9 items-center justify-center rounded-full text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg"
+            className="flex h-9 shrink-0 items-center gap-1.5 rounded-full border border-border px-2.5 text-sm font-semibold text-fg-muted transition-colors hover:border-yellow-400/50 hover:text-fg sm:px-3.5"
           >
             <ArrowLeft className="h-4 w-4" />
+            <span className="hidden sm:inline">Dashboard</span>
           </Link>
           <div className="flex items-center gap-2.5">
             <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-yellow-400 text-void">
@@ -251,9 +252,7 @@ export function Forge() {
             </div>
           </div>
         </div>
-        <Link to="/" className="hidden sm:block">
-          <Logo compact />
-        </Link>
+        <AccountMenu />
       </header>
 
       <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col overflow-hidden px-4 sm:px-6">

@@ -101,11 +101,10 @@ export function WebsiteIntake() {
   };
 
   return (
-    <DashboardShell crumb="Dashboard / Website" title="A real site, live fast.">
-      <div className="mx-auto max-w-3xl px-6 py-10 sm:px-10">
+    <DashboardShell title="Website">
+      <div className="mx-auto max-w-3xl py-8 sm:py-10">
         <ServicePageHeader
-          eta="~20 min"
-          price="from $49"
+          serviceId="website"
           title="Let's build your website"
           subtitle="Only your business name and a page-count tier are required — skip anything else and tick “you decide” where it applies."
         />

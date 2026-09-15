@@ -91,9 +91,10 @@ export function VideoPage() {
   };
 
   return (
-    <DashboardShell crumb="Dashboard / Video" title="Short avatar clips to full promos.">
-      <div className="mx-auto max-w-3xl px-6 py-10 sm:px-10">
+    <DashboardShell title="Video">
+      <div className="mx-auto max-w-3xl py-8 sm:py-10">
         <ServicePageHeader
+          serviceId="video"
           eta={length === "short" ? "~10 min" : "~1–2 days"}
           price={price}
           title="What kind of video do you need?"

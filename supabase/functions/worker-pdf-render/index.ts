@@ -8,7 +8,7 @@
 // mid-render.
 
 import { supabaseAdmin, uploadDeliverable } from '../_shared/storage.ts';
-import { renderDocumentPdf, type DocSpec, type DocSection } from '../_shared/pdf.ts';
+import { renderDocumentPdf, renderBrandKitAsset, type DocSpec, type DocSection } from '../_shared/pdf.ts';
 import { generateBrandVisual, mapWithConcurrency } from '../_shared/images.ts';
 import { sendTelegramDocument } from '../_shared/telegramApi.ts';
 import { addTaskFile, logEvent, markDelivered, markFailed } from '../_shared/task.ts';
@@ -60,9 +60,12 @@ export async function handleRequest(req: Request): Promise<Response> {
   }
 
   try {
-    await generateSectionVisuals(taskId, spec.sections);
-    const pdfBytes = await renderDocumentPdf(spec);
-    const { url } = await uploadDeliverable(taskId, 'document.pdf', pdfBytes, 'application/pdf');
+    const isAsset = spec.kind === 'asset';
+    if (!isAsset) {
+      await generateSectionVisuals(taskId, spec.sections);
+    }
+    const pdfBytes = isAsset ? await renderBrandKitAsset(spec) : await renderDocumentPdf(spec);
+    const { url } = await uploadDeliverable(taskId, isAsset ? 'brand-asset.pdf' : 'document.pdf', pdfBytes, 'application/pdf');
 
     if (String(payload.docType) === 'Presentation (PowerPoint)') {
       await logEvent(taskId, 'pptx_delivered_as_pdf', 'worker', {

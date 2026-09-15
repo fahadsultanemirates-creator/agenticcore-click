@@ -45,6 +45,18 @@ export interface DocSpec {
   // A hero image for the cover page (top ~45% of the page, faded into
   // the void background so the title stays legible over it).
   coverImageUrl?: string;
+  // 'report' (default, renderDocumentPdf): a multi-page .click-branded deck
+  // -- pdf/documents/business-report/social-copy. 'asset' (renderBrandKitAsset):
+  // a single clean page that IS the finished brand-kit deliverable itself
+  // (letterhead, email signature, price list, ...) -- this is the CLIENT's
+  // own artifact, not .click's marketing collateral, so it deliberately
+  // carries none of the void/yellow report theme.
+  kind?: 'report' | 'asset';
+  // Real hex colors pulled from the client's own referenced website (see
+  // worker-pdf's describeReferenceWebsiteBrand) -- applied as actual CSS in
+  // renderBrandKitAsset, never as prose the content model would otherwise
+  // have to (mis)describe in the page text itself.
+  brand?: { primaryColor?: string; accentColor?: string };
 }
 
 // A generic modern phone's logical viewport -- wide/tall enough for
@@ -211,4 +223,56 @@ ${FONT_LINK}
 </html>`;
 
   return renderHtmlToPdf(html, { format: `${PAGE_WIDTH}x${PAGE_HEIGHT}` });
+}
+
+// A4-at-96dpi -- brand-kit assets are real print/use items (a letterhead,
+// an email signature, a price list), so they get real print proportions
+// instead of the phone-sized report deck above.
+const ASSET_PAGE_WIDTH = 794;
+const ASSET_PAGE_HEIGHT = 1123;
+
+export async function renderBrandKitAsset(spec: DocSpec): Promise<Uint8Array> {
+  const section = spec.sections[0];
+  const rtl = (section.language ?? spec.language) === 'ur';
+  const fontFamily = rtl ? "'Noto Nastaliq Urdu', serif" : "'Inter', sans-serif";
+  const titleColor = spec.brand?.primaryColor ?? '#14161b';
+  const ruleColor = spec.brand?.accentColor ?? '#c7cad1';
+
+  const html = `<!doctype html>
+<html lang="${spec.language ?? 'en'}">
+<head>
+<meta charset="utf-8">
+${FONT_LINK}
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #ffffff; color: #14161b; font-family: 'Inter', sans-serif; }
+  .page {
+    width: ${ASSET_PAGE_WIDTH}px; min-height: ${ASSET_PAGE_HEIGHT}px;
+    padding: 64px 72px; display: flex; flex-direction: column;
+  }
+  h1 {
+    font-family: ${fontFamily}; font-weight: 700; font-size: 22px;
+    margin: 0 0 14px; color: ${titleColor}; text-align: ${rtl ? 'right' : 'left'};
+  }
+  .rule {
+    width: 56px; height: 3px; background: ${ruleColor}; border-radius: 2px;
+    margin: 0 0 28px; ${rtl ? 'margin-left: auto;' : ''}
+  }
+  .body {
+    font-family: ${fontFamily}; font-size: 14px; line-height: 1.7; color: #2b2d33;
+    text-align: ${rtl ? 'right' : 'left'};
+  }
+  .body p { margin: 0 0 14px; }
+</style>
+</head>
+<body>
+  <section class="page" dir="${rtl ? 'rtl' : 'ltr'}">
+    <h1>${escapeHtml(spec.title)}</h1>
+    <div class="rule"></div>
+    <div class="body">${bodyToHtml(section.body)}</div>
+  </section>
+</body>
+</html>`;
+
+  return renderHtmlToPdf(html, { format: `${ASSET_PAGE_WIDTH}x${ASSET_PAGE_HEIGHT}` });
 }

@@ -21,6 +21,7 @@ import { claudeChat, claudeVisionChat } from '../_shared/claude.ts';
 import { fetchAttachments } from '../_shared/attachments.ts';
 import { generateBrandVisual } from '../_shared/images.ts';
 import { generateQrSvg } from '../_shared/qrcode.ts';
+import { screenshotUrl } from '../_shared/htmlPdf.ts';
 import { addTaskFile, logEvent, markDelivered, markFailed } from '../_shared/task.ts';
 import { jsonResponse } from '../_shared/cors.ts';
 import type { DocSpec } from '../_shared/pdf.ts';
@@ -32,6 +33,96 @@ const QR_ITEMS = new Set(['QR-code business card', 'QR-code table tent']);
 
 function isQrItem(type: string, payload: Record<string, unknown>): boolean {
   return type === 'brand-kit' && QR_ITEMS.has(String(payload.item ?? ''));
+}
+
+function extractUrl(text: string): string | undefined {
+  const httpMatch = text.match(/https?:\/\/[^\s)]+/i);
+  if (httpMatch) return httpMatch[0];
+  const bareMatch = text.match(/\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:agency|click|com|io|co|net|org|ai)\b/i);
+  return bareMatch ? `https://${bareMatch[0]}` : undefined;
+}
+
+// Best-effort real-branding match: screenshots the referenced site and asks
+// Claude to pick out its two defining hex colors, so a brand-kit asset can
+// carry a real accent instead of a generic gray one. Structured (not prose)
+// on purpose -- renderBrandKitAsset applies these as real CSS, so the
+// content model never has to describe colors/layout in the text itself
+// (which produced fake design-annotation text like "(navy header band,
+// cyan rule)" printed as if it were real page content). Never blocks the
+// task on failure -- an unreachable/odd URL just means no brand colors.
+interface WebsiteBrand {
+  primaryColor?: string;
+  accentColor?: string;
+}
+
+async function describeReferenceWebsiteBrand(url: string): Promise<WebsiteBrand> {
+  try {
+    const png = await screenshotUrl(url, '1440x900', false);
+    const raw = await claudeVisionChat(
+      "Identify this website's two most defining brand colors as hex codes: a primary/dark color and an " +
+        'accent color used for highlights, links, or buttons. Respond with ONLY a JSON object of the exact ' +
+        'shape {"primaryColor": "#rrggbb", "accentColor": "#rrggbb"} -- no markdown fences, no commentary. If ' +
+        'you genuinely cannot tell, respond with {}.',
+      "Identify this website's brand colors.",
+      [{ bytes: png, mimeType: 'image/png' }],
+      { maxTokens: 150 }
+    );
+    const cleaned = raw.trim().replace(/^```(?:json)?\n?/i, '').replace(/```$/i, '').trim();
+    const parsed = JSON.parse(cleaned);
+    const hex = /^#[0-9a-f]{6}$/i;
+    return {
+      primaryColor: typeof parsed?.primaryColor === 'string' && hex.test(parsed.primaryColor) ? parsed.primaryColor : undefined,
+      accentColor: typeof parsed?.accentColor === 'string' && hex.test(parsed.accentColor) ? parsed.accentColor : undefined
+    };
+  } catch (err) {
+    console.error('worker-pdf: describeReferenceWebsiteBrand failed', err);
+    return {};
+  }
+}
+
+// Brand-kit's non-QR items (letterhead, email signature, price list,
+// "coming soon" page, style guide one-pager, name/tagline generator) are
+// each meant to be one small, immediately usable asset -- per the service's
+// own framing ("~10 min", "from $10") -- not a multi-page specification
+// document. This produces exactly one section of real, finished content
+// (never a report), and rendered via renderBrandKitAsset carries none of
+// .click's own report theme, since the deliverable is the CLIENT's brand,
+// not ours.
+async function generateBrandKitAssetSpec(payload: Record<string, unknown>): Promise<DocSpec> {
+  const item = String(payload.item ?? 'Brand asset');
+  const description = String(payload.description ?? payload.brief ?? '');
+  const url = typeof payload.websiteUrl === 'string' ? payload.websiteUrl : extractUrl(description);
+  const brand = url ? await describeReferenceWebsiteBrand(url) : {};
+
+  const systemPrompt =
+    'You produce the ACTUAL finished asset requested, ready to use immediately -- not a specification, not an ' +
+    'explanation, not a design brief. Write ONLY the real words a person reads: names, dates, addresses, body ' +
+    'copy, signatures, prices, headlines. NEVER describe colors, fonts, layout, spacing, logos, or any other ' +
+    'visual design element in the text, even in brackets or parentheses -- design is handled separately, ' +
+    'outside your output, so writing about it just prints as garbage placeholder text on the page. Keep it ' +
+    'exactly as short as the real item actually is: a letterhead needs only a header line and a footer contact ' +
+    'block; an email signature needs 4-6 lines; a price list needs real items and prices; a "coming soon" page ' +
+    'needs a short headline and one line of body copy; a style guide one-pager needs a few punchy points, not ' +
+    'paragraphs; a name/tagline generator needs a short list of options. Respond with ONLY a JSON object of the ' +
+    'exact shape {"title": string, "sections": [{"heading": string, "body": string}]} with EXACTLY ONE entry in ' +
+    '"sections" -- no markdown fences, no commentary.';
+
+  const userBrief = [`Brand kit item: ${item}`, `Brief: ${description}`].filter(Boolean).join('\n');
+
+  const raw = await claudeChat(
+    [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userBrief }
+    ],
+    { maxTokens: 1500 }
+  );
+
+  const cleaned = raw.trim().replace(/^```(?:json)?\n?/i, '').replace(/```$/i, '').trim();
+  const parsed = JSON.parse(cleaned);
+  if (!parsed?.title || !Array.isArray(parsed?.sections) || parsed.sections.length === 0) {
+    throw new Error('Claude returned an unexpected asset shape');
+  }
+  return { title: String(parsed.title), sections: [parsed.sections[0]], kind: 'asset', brand };
 }
 
 function describeBrief(type: string, payload: Record<string, unknown>): string {
@@ -158,6 +249,21 @@ export async function handleRequest(req: Request): Promise<Response> {
       await logEvent(taskId, 'qr_generated', 'worker', { url });
       await markDelivered(taskId);
       return jsonResponse({ ok: true, url });
+    }
+
+    if (task.type === 'brand-kit') {
+      const spec = await generateBrandKitAssetSpec(payload);
+
+      const { error: assetUpdateError } = await supabaseAdmin
+        .from('tasks')
+        .update({ payload: { ...payload, pendingSpec: spec }, updated_at: new Date().toISOString() })
+        .eq('id', taskId);
+      if (assetUpdateError) throw new Error(`Could not persist asset spec: ${assetUpdateError.message}`);
+
+      await logEvent(taskId, 'doc_spec_ready', 'worker', { title: spec.title, kind: 'asset' });
+      triggerPdfRender(taskId);
+
+      return jsonResponse({ ok: true, phase: 'spec_ready' });
     }
 
     const [spec, coverImageUrl] = await Promise.all([

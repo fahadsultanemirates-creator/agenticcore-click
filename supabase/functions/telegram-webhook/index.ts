@@ -119,7 +119,18 @@ async function handleQueueCommand(): Promise<string> {
   return `Queue (website tasks always ahead of owner tasks):\n\n${lines.join('\n')}`;
 }
 
-async function handleNewCommand(chatId: number, type: string, brief: string, referenceFiles?: string[]): Promise<string> {
+// `details` holds whatever structured choices the owner actually stated
+// (avatarStyle, platforms, docType...), extracted by the classifier -- see
+// _shared/botConversation.ts. Merged under the brief so a stated choice
+// always beats the worker's own fallback, while an unstated one stays
+// absent and lets the worker default it.
+async function handleNewCommand(
+  chatId: number,
+  type: string,
+  brief: string,
+  referenceFiles?: string[],
+  details?: Record<string, unknown>
+): Promise<string> {
   const normalizedType = type.toLowerCase();
   if (!TASK_TYPES.has(normalizedType)) {
     return `Unknown type "${type}". Use one of: ${[...TASK_TYPES].join(', ')}`;
@@ -135,7 +146,11 @@ async function handleNewCommand(chatId: number, type: string, brief: string, ref
       status: 'queued',
       wallet_confirmed: true,
       owner_channel_id: String(chatId),
-      payload: referenceFiles && referenceFiles.length > 0 ? { brief, referenceFiles } : { brief }
+      payload: {
+        brief,
+        ...(details && typeof details === 'object' ? details : {}),
+        ...(referenceFiles && referenceFiles.length > 0 ? { referenceFiles } : {})
+      }
     })
     .select('id')
     .single();
@@ -387,7 +402,7 @@ async function routeMessage(chatId: number, text: string, attachmentUrls: string
     case 'help':
       return helpText();
     case 'new':
-      return handleNewCommand(chatId, parsed.type, parsed.brief, parsed.referenceFiles);
+      return handleNewCommand(chatId, parsed.type, parsed.brief, parsed.referenceFiles, parsed.details);
     case 'revise':
       return handleReviseCommand(parsed.taskId.toUpperCase(), parsed.note);
     case 'files':

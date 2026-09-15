@@ -1,3 +1,4 @@
+import { functionErrorMessage } from "./functionError";
 import { supabase } from "./supabase";
 
 export type SubmitTaskResult =
@@ -30,7 +31,12 @@ export async function submitTask(
 
   if (error || !data) {
     console.error("submit-task failed:", error);
-    return { ok: false, error: "Could not submit this request. Please try again." };
+    // The function's own message (insufficient balance, unpriceable
+    // options) lives on the error's Response, not in `data`.
+    return {
+      ok: false,
+      error: await functionErrorMessage(error, "Could not submit this request. Please try again."),
+    };
   }
   if (data.error) {
     return { ok: false, error: data.error };

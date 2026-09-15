@@ -9,11 +9,58 @@ import { generateImageOptions } from '../_shared/images.ts';
 import { claudeChat } from '../_shared/claude.ts';
 import { renderDocumentPdf, type DocSpec } from '../_shared/pdf.ts';
 import { sendTelegramDocument, sendTelegramPhoto } from '../_shared/telegramApi.ts';
-import { addTaskFile, logEvent, markDelivered, markFailed } from '../_shared/task.ts';
+import { notifyOwner } from '../_shared/telegram.ts';
+import { addTaskFile, logEvent, markDelivered, markFailed, markNeedsInfo } from '../_shared/task.ts';
 import { jsonResponse } from '../_shared/cors.ts';
 
 const IMAGE_REQUEST_TYPES = new Set(['posts', 'profile']);
 const DEFAULT_OPTION_COUNT = 3;
+const REQUEST_TYPES = ['posts', 'profile', 'captions', 'gbp'];
+const DEFAULT_PLATFORMS = ['Instagram', 'Facebook'];
+
+// Owner-sourced tasks (Telegram /new, or a free-text brief the bot's
+// classifier turned into a task) carry only payload.brief, so requestType,
+// platforms and description were all missing here. Unnormalized that didn't
+// fail -- it produced a caption pack whose prompt literally read "for
+// undefined ... Brief: undefined", which is worse than an error because it
+// still marks the task delivered. The brief becomes the description (same
+// `?? payload.brief` convention as worker-image/worker-pdf); requestType is
+// read off the brief's own wording when the form didn't set it, since the
+// four kinds produce genuinely different deliverables (images vs. copy) and
+// guessing "posts" for an obvious caption request would hand back the wrong
+// thing entirely.
+function inferRequestType(description: string): string {
+  const text = description.toLowerCase();
+  if (/google business|gbp|google profile/.test(text)) return 'gbp';
+  if (/caption|hashtag/.test(text)) return 'captions';
+  if (/profile (pic|picture|kit)|banner|cover photo|avatar/.test(text)) return 'profile';
+  return 'posts';
+}
+
+interface SocialDefaulting {
+  payload: Record<string, unknown>;
+  defaulted: string[];
+}
+
+function normalizeSocialPayload(raw: Record<string, unknown>): SocialDefaulting {
+  const payload = { ...raw };
+  const defaulted: string[] = [];
+
+  const description = String(payload.description ?? payload.brief ?? '').trim();
+  if (description) payload.description = description;
+
+  if (!REQUEST_TYPES.includes(String(payload.requestType))) {
+    payload.requestType = inferRequestType(description);
+    defaulted.push(`requestType=${payload.requestType}`);
+  }
+
+  if (!Array.isArray(payload.platforms) || payload.platforms.length === 0) {
+    payload.platforms = DEFAULT_PLATFORMS;
+    defaulted.push(`platforms=${DEFAULT_PLATFORMS.join('/')}`);
+  }
+
+  return { payload, defaulted };
+}
 
 function platformList(payload: Record<string, unknown>): string {
   const platforms = payload.platforms;
@@ -104,8 +151,23 @@ export async function handleRequest(req: Request): Promise<Response> {
   if (error || !task) return jsonResponse({ error: 'Task not found' }, 404);
 
   try {
-    const payload = task.payload ?? {};
+    const { payload, defaulted } = normalizeSocialPayload(task.payload ?? {});
     const requestType = String(payload.requestType ?? '');
+
+    // No brief at all means there is nothing to design or write from --
+    // stop before generating images off an empty prompt.
+    if (!payload.description) {
+      await markNeedsInfo(taskId, 'No description/brief on this social task -- nothing to generate from.');
+      await notifyOwner(`${task.public_id} has no brief text, so there's nothing to build social content from. Send the brief and re-queue it.`);
+      return jsonResponse({ ok: true, needsInfo: true });
+    }
+
+    if (defaulted.length > 0) {
+      await logEvent(taskId, 'social_options_defaulted', 'worker', {
+        defaulted,
+        note: 'Task arrived without these structured choices (owner/free-text intake) -- filled from the brief text and defaults.'
+      });
+    }
 
     if (IMAGE_REQUEST_TYPES.has(requestType)) {
       await handleImageRequest(taskId, task.public_id, task.version, payload, task.owner_channel_id);

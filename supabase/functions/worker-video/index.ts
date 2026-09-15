@@ -27,6 +27,62 @@ import { notifyOwner } from '../_shared/telegram.ts';
 import { logEvent, markNeedsInfo, markFailed, setProviderJob } from '../_shared/task.ts';
 import { jsonResponse } from '../_shared/cors.ts';
 
+// Owner-sourced tasks (Telegram /new, or a free-text brief the bot's
+// classifier turned into a task) carry only payload.brief -- none of the
+// structured choices the dashboard's video form collects. Left unnormalized
+// every read below silently degraded instead of failing: `description`
+// undefined made Grok write a script from the literal string "undefined",
+// and a missing `avatarStyle` fell through to the HeyGen avatar branch,
+// spending real render credits on it. So the brief becomes the description
+// (same `?? payload.brief` convention as worker-image/worker-pdf), and every
+// other field falls back to the cheapest fully-automated shape the form
+// itself offers: a short, no-avatar clip at 720p. Anything the bot *did*
+// capture in payload.details survives, since that's merged in at intake.
+//
+// Deliberately never defaults to noAvatarMode 'hybrid' -- that path is a
+// manual-production stop (markNeedsInfo below), not something to land on by
+// omission.
+interface VideoDefaulting {
+  payload: Record<string, unknown>;
+  defaulted: string[];
+}
+
+function normalizeVideoPayload(raw: Record<string, unknown>): VideoDefaulting {
+  const payload = { ...raw };
+  const defaulted: string[] = [];
+
+  const description = String(payload.description ?? payload.brief ?? '').trim();
+  if (description) payload.description = description;
+
+  if (payload.length !== 'short' && payload.length !== 'long') {
+    payload.length = 'short';
+    defaulted.push('length=short');
+  }
+
+  const styles = ['standard', 'premium', 'elite', 'none'];
+  if (!styles.includes(String(payload.avatarStyle))) {
+    payload.avatarStyle = 'none';
+    defaulted.push('avatarStyle=none');
+  }
+
+  if (payload.avatarStyle === 'none' && payload.noAvatarMode !== 'full' && payload.noAvatarMode !== 'hybrid') {
+    payload.noAvatarMode = 'full';
+    defaulted.push('noAvatarMode=full');
+  }
+
+  if (payload.length === 'short' && payload.resolution !== '720p' && payload.resolution !== '1080p') {
+    payload.resolution = '720p';
+    defaulted.push('resolution=720p');
+  }
+
+  if (payload.length === 'long' && !payload.duration) {
+    payload.duration = '30s';
+    defaulted.push('duration=30s');
+  }
+
+  return { payload, defaulted };
+}
+
 // submit-task already verified ownership of any custom/catalog pick
 // (see validateVideoCharacterChoice) -- this just falls back to the house
 // default when the client didn't choose anything specific.
@@ -132,7 +188,22 @@ export async function handleRequest(req: Request): Promise<Response> {
   const { data: task, error } = await supabaseAdmin.from('tasks').select('*').eq('id', taskId).maybeSingle();
   if (error || !task) return jsonResponse({ error: 'Task not found' }, 404);
 
-  const payload = task.payload ?? {};
+  const { payload, defaulted } = normalizeVideoPayload(task.payload ?? {});
+
+  // No brief at all means there is nothing to make a video from -- stop
+  // before spending a HeyGen render or a Grok video generation on it.
+  if (!payload.description) {
+    await markNeedsInfo(taskId, 'No description/brief on this video task -- nothing to generate from.');
+    await notifyOwner(`${task.public_id} has no brief text, so there's nothing to build a video from. Send the brief and re-queue it.`);
+    return jsonResponse({ ok: true, needsInfo: true });
+  }
+
+  if (defaulted.length > 0) {
+    await logEvent(taskId, 'video_options_defaulted', 'worker', {
+      defaulted,
+      note: 'Task arrived without these structured choices (owner/free-text intake) -- filled with the cheapest fully-automated defaults.'
+    });
+  }
 
   if (payload.avatarStyle === 'none') {
     if (payload.noAvatarMode === 'hybrid') {

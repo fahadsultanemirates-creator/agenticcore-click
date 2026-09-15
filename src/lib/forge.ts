@@ -1,3 +1,4 @@
+import { functionErrorMessage } from "./functionError";
 import { supabase } from "./supabase";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
@@ -65,7 +66,7 @@ export async function sendForgeMessage(
     body: { conversationId, message, attachmentUrls },
     headers,
   });
-  if (error || !data) throw new Error("Could not reach Forge. Please try again.");
+  if (error || !data) throw new Error(await functionErrorMessage(error, "Could not reach Forge. Please try again."));
   if (data.error) throw new Error(data.error);
   return data;
 }
@@ -79,7 +80,7 @@ export async function uploadForgeFile(conversationId: string, file: File): Promi
     body: form,
     headers,
   });
-  if (error || !data) throw new Error("Could not upload that file.");
+  if (error || !data) throw new Error(await functionErrorMessage(error, "Could not upload that file."));
   if (data.error) throw new Error(data.error);
   if (!data.url) throw new Error("Unexpected response from the server.");
   return { url: data.url, mimeType: data.mimeType ?? "" };
@@ -95,7 +96,7 @@ export async function submitForgeTasks(
     "forge-submit",
     { body: { conversationId, tasks, bundle }, headers },
   );
-  if (error || !data) throw new Error("Could not submit. Please try again.");
+  if (error || !data) throw new Error(await functionErrorMessage(error, "Could not submit. Please try again."));
   if (data.error) throw new Error(data.error);
   if (!data.publicIds) throw new Error("Unexpected response from the server.");
   return { publicIds: data.publicIds, totalCharged: data.totalCharged ?? 0 };
@@ -109,7 +110,7 @@ export async function transcribeForgeVoice(blob: Blob): Promise<string> {
     body: form,
     headers,
   });
-  if (error || !data) throw new Error("Could not transcribe that.");
+  if (error || !data) throw new Error(await functionErrorMessage(error, "Could not transcribe that."));
   if (data.error) throw new Error(data.error);
   if (typeof data.text !== "string") throw new Error("Unexpected response from the server.");
   return data.text;

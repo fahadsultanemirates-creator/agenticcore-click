@@ -91,7 +91,7 @@ export function PdfDocumentsPage() {
               {descError && <span className="text-xs text-yellow-400">Tell us a bit about what you need.</span>}
             </label>
 
-            <Field label="Your website URL (auto-pulls logo, colors, copy & socials)">
+            <Field label="Your website (optional — we'll match your branding)">
               <input name="websiteUrl" placeholder="https://yourbusiness.com" className={inputClass} />
             </Field>
           </SectionCard>

@@ -18,6 +18,7 @@
 
 import { supabaseAdmin } from '../_shared/storage.ts';
 import { longVideoSeconds } from '../_shared/pricing.ts';
+import { getBrandProfile, brandFactsForPrompt, brandStyleForPrompt, extractUrl, normalizeUrl } from '../_shared/brandProfile.ts';
 import { grokChat, grokVisionChat } from '../_shared/grok.ts';
 import { fetchAttachments } from '../_shared/attachments.ts';
 import { submitHeygenVideo, DEFAULT_AVATAR, DEFAULT_VOICE_ID, type VideoDimension, type CharacterChoice } from '../_shared/heygen.ts';
@@ -37,6 +38,14 @@ import { jsonResponse } from '../_shared/cors.ts';
 // other field falls back to the cheapest fully-automated shape the form
 // itself offers: a short, no-avatar clip at 720p. Anything the bot *did*
 // capture in payload.details survives, since that's merged in at intake.
+
+// The client's site is the brand reference for every product that carries
+// their branding -- explicit field first, then any URL in the brief.
+function brandUrlFor(payload: Record<string, unknown>): string | null {
+  const explicit = typeof payload.websiteUrl === 'string' ? payload.websiteUrl : null;
+  return normalizeUrl(explicit ?? '') ?? extractUrl(String(payload.description ?? payload.brief ?? ''));
+}
+
 interface VideoDefaulting {
   payload: Record<string, unknown>;
   defaulted: string[];
@@ -127,8 +136,9 @@ function targetWords(payload: Record<string, unknown>): number {
 
 async function generateScript(payload: Record<string, unknown>): Promise<string> {
   const words = targetWords(payload);
+  const profile = await getBrandProfile(brandUrlFor(payload));
   const systemPrompt = `Write a natural, spoken-word video script of approximately ${words} words. Output ONLY the script text -- no stage directions, no scene headings, no markdown.`;
-  const brief = String(payload.description ?? '');
+  const brief = String(payload.description ?? '') + brandFactsForPrompt(profile);
 
   const attachments = await fetchAttachments(payload.referenceFiles);
   if (attachments.length > 0) {
@@ -152,7 +162,8 @@ async function generateScript(payload: Record<string, unknown>): Promise<string>
 // grok-imagine-video takes one visual prompt, not a spoken script -- no
 // dialogue or on-screen text, since there's no avatar to say it.
 async function generateNoAvatarPrompt(payload: Record<string, unknown>): Promise<string> {
-  const brief = String(payload.description ?? '');
+  const profile = await getBrandProfile(brandUrlFor(payload));
+  const brief = String(payload.description ?? '') + brandStyleForPrompt(profile);
   const systemPrompt =
     'Write a single, vivid visual prompt for an AI video generator producing a short business promo clip -- ' +
     'no dialogue, no avatar, no on-screen text. Describe the scene/subject, camera movement, lighting, and mood ' +

@@ -7,6 +7,7 @@
 import { supabaseAdmin, uploadDeliverable } from '../_shared/storage.ts';
 import { generateImageOptions } from '../_shared/images.ts';
 import { resolveSku } from '../_shared/catalog.ts';
+import { getBrandProfile, brandFactsForPrompt, brandStyleForPrompt, extractUrl, normalizeUrl } from '../_shared/brandProfile.ts';
 import { claudeChat } from '../_shared/claude.ts';
 import { renderDocumentPdf, type DocSpec } from '../_shared/pdf.ts';
 import { sendTelegramDocument, sendTelegramPhoto } from '../_shared/telegramApi.ts';
@@ -63,6 +64,14 @@ function normalizeSocialPayload(raw: Record<string, unknown>): SocialDefaulting 
   return { payload, defaulted };
 }
 
+
+// The client's site is the brand reference for every product that carries
+// their branding -- explicit field first, then any URL in the brief.
+function brandUrlFor(payload: Record<string, unknown>): string | null {
+  const explicit = typeof payload.websiteUrl === 'string' ? payload.websiteUrl : null;
+  return normalizeUrl(explicit ?? '') ?? extractUrl(String(payload.description ?? payload.brief ?? ''));
+}
+
 function platformList(payload: Record<string, unknown>): string {
   const platforms = payload.platforms;
   return Array.isArray(platforms) ? platforms.join(', ') : String(platforms ?? '');
@@ -90,7 +99,8 @@ async function handleImageRequest(
       : `Social media post design for ${platformList(payload)}: ${payload.description}. Eye-catching, scroll-stopping, on-brand.`;
 
   const product = resolveSku('social', payload);
-  const urls = await generateImageOptions(taskId, prompt, resolveOptionCount(payload, product?.output.options), version, payload.referenceFiles);
+  const profile = product?.urlUse === 'brand' ? await getBrandProfile(brandUrlFor(payload)) : null;
+  const urls = await generateImageOptions(taskId, prompt + brandStyleForPrompt(profile), resolveOptionCount(payload, product?.output.options), version, payload.referenceFiles);
   await logEvent(taskId, 'social_images_generated', 'worker', { requestType, count: urls.length });
 
   if (ownerChannelId) {
@@ -110,6 +120,9 @@ async function handleCopyRequest(taskId: string, version: number, payload: Recor
       ? `Write Google Business Profile content: a business description, suggested categories, and an opening post. Brief: ${payload.description}. Platforms context: ${platformList(payload)}.`
       : `Write a caption & hashtag pack (at least 4 distinct caption options with matching hashtags) for ${platformList(payload)}. Brief: ${payload.description}.`;
 
+  const profile = await getBrandProfile(brandUrlFor(payload));
+  const briefWithBrand = brief + brandFactsForPrompt(profile);
+
   const raw = await claudeChat(
     [
       {
@@ -120,7 +133,7 @@ async function handleCopyRequest(taskId: string, version: number, payload: Recor
           '{"title": string, "subtitle": string | null, "sections": [{"heading": string, "body": string}]} ' +
           '-- each section is one distinct option/post -- no markdown fences, no commentary.'
       },
-      { role: 'user', content: brief }
+      { role: 'user', content: briefWithBrand }
     ],
     { maxTokens: 4000 }
   );

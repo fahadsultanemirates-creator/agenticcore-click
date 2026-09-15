@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { DashboardShell } from "../../components/dashboard/DashboardShell";
-import { ChipToggle, ErrorNote, inputClass, SectionCard, ServicePageHeader, SubmitBar, SubmittedNote, UploadDropzone } from "../../components/dashboard/form";
+import { ChipToggle, ErrorNote, inputClass, SectionCard, ServicePageHeader, SubmitBar, SubmittedNote, BrandUrlField, UploadDropzone } from "../../components/dashboard/form";
 import { submitTask } from "../../lib/submitTask";
 
 const IMAGE_TYPES = ["Avatar", "Business visual", "Product shot", "Illustration", "Other"];
@@ -8,6 +8,7 @@ const IMAGE_TYPES = ["Avatar", "Business visual", "Product shot", "Illustration"
 export function ImagePage() {
   const [imageType, setImageType] = useState("Avatar");
   const [description, setDescription] = useState("");
+  const [websiteUrl, setWebsiteUrl] = useState("");
   const [descError, setDescError] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -23,7 +24,7 @@ export function ImagePage() {
     setDescError(false);
     setSubmitError("");
     setSubmitting(true);
-    const result = await submitTask("image", { imageType, description: description.trim() });
+    const result = await submitTask("image", { imageType, description: description.trim(), websiteUrl: websiteUrl.trim() || undefined });
     setSubmitting(false);
 
     if (!result.ok) {
@@ -77,6 +78,7 @@ export function ImagePage() {
               />
               {descError && <span className="text-xs text-yellow-400">Tell us a bit about what you need.</span>}
             </label>
+            <BrandUrlField value={websiteUrl} onChange={setWebsiteUrl} />
           </SectionCard>
 
           <SectionCard title="Reference">

@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { DashboardShell } from "../../components/dashboard/DashboardShell";
-import { ChipToggle, ErrorNote, inputClass, SectionCard, ServicePageHeader, SubmitBar, SubmittedNote } from "../../components/dashboard/form";
+import { ChipToggle, ErrorNote, inputClass, SectionCard, ServicePageHeader, SubmitBar, SubmittedNote, BrandUrlField } from "../../components/dashboard/form";
 import { submitTask } from "../../lib/submitTask";
 
 const KIT_ITEMS = [
@@ -17,6 +17,7 @@ const KIT_ITEMS = [
 export function BrandKitPage() {
   const [item, setItem] = useState(KIT_ITEMS[0]);
   const [description, setDescription] = useState("");
+  const [websiteUrl, setWebsiteUrl] = useState("");
   const [descError, setDescError] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -32,7 +33,7 @@ export function BrandKitPage() {
     setDescError(false);
     setSubmitError("");
     setSubmitting(true);
-    const result = await submitTask("brand-kit", { item, description: description.trim() });
+    const result = await submitTask("brand-kit", { item, description: description.trim(), websiteUrl: websiteUrl.trim() || undefined });
     setSubmitting(false);
 
     if (!result.ok) {
@@ -86,6 +87,7 @@ export function BrandKitPage() {
               />
               {descError && <span className="text-xs text-yellow-400">Tell us a bit about what you need.</span>}
             </label>
+            <BrandUrlField value={websiteUrl} onChange={setWebsiteUrl} />
           </SectionCard>
 
           <SubmitBar loading={submitting} />

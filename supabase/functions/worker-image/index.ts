@@ -5,11 +5,20 @@
 import { supabaseAdmin } from '../_shared/storage.ts';
 import { generateImageOptions } from '../_shared/images.ts';
 import { resolveSku } from '../_shared/catalog.ts';
+import { getBrandProfile, brandStyleForPrompt, extractUrl, normalizeUrl } from '../_shared/brandProfile.ts';
 import { sendTelegramPhoto } from '../_shared/telegramApi.ts';
 import { logEvent, markDelivered, markFailed } from '../_shared/task.ts';
 import { jsonResponse } from '../_shared/cors.ts';
 
 const DEFAULT_OPTION_COUNT = 5;
+
+
+// The client's site is the brand reference for every product that carries
+// their branding -- explicit field first, then any URL in the brief.
+function brandUrlFor(payload: Record<string, unknown>): string | null {
+  const explicit = typeof payload.websiteUrl === 'string' ? payload.websiteUrl : null;
+  return normalizeUrl(explicit ?? '') ?? extractUrl(String(payload.description ?? payload.brief ?? ''));
+}
 
 function buildPrompt(payload: Record<string, unknown>): string {
   const imageType = String(payload.imageType ?? 'image');
@@ -47,7 +56,8 @@ export async function handleRequest(req: Request): Promise<Response> {
     const payload = task.payload ?? {};
     const prompt = buildPrompt(payload);
     const product = resolveSku(task.type, payload);
-    const urls = await generateImageOptions(taskId, prompt, resolveOptionCount(payload, product?.output.options), task.version, payload.referenceFiles);
+    const profile = product?.urlUse === 'brand' ? await getBrandProfile(brandUrlFor(payload)) : null;
+    const urls = await generateImageOptions(taskId, prompt + brandStyleForPrompt(profile), resolveOptionCount(payload, product?.output.options), task.version, payload.referenceFiles);
     await logEvent(taskId, 'images_generated', 'worker', { count: urls.length });
 
     if (task.owner_channel_id) {

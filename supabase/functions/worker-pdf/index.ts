@@ -26,70 +26,32 @@ import { addTaskFile, logEvent, markDelivered, markFailed } from '../_shared/tas
 import { jsonResponse } from '../_shared/cors.ts';
 import type { DocSpec } from '../_shared/pdf.ts';
 import { resolveSku, shapeInstruction, type CatalogItem } from '../_shared/catalog.ts';
+import { getBrandProfile, brandFactsForPrompt, extractUrl, normalizeUrl, type BrandProfile } from '../_shared/brandProfile.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
 
 
-function extractUrl(text: string): string | undefined {
-  const httpMatch = text.match(/https?:\/\/[^\s)]+/i);
-  if (httpMatch) return httpMatch[0];
-  const bareMatch = text.match(/\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:agency|click|com|io|co|net|org|ai)\b/i);
-  return bareMatch ? `https://${bareMatch[0]}` : undefined;
+// Which URL this product should learn the client's brand from: the explicit
+// field when the form collected one, otherwise a URL mentioned in the brief,
+// so "a letterhead for mybakery.com" works without a separate field.
+function brandUrlFor(payload: Record<string, unknown>): string | null {
+  const explicit = typeof payload.websiteUrl === 'string' ? payload.websiteUrl : null;
+  return normalizeUrl(explicit ?? '') ?? extractUrl(String(payload.description ?? payload.brief ?? ''));
 }
 
-// Best-effort real-branding match: screenshots the referenced site and asks
-// Claude to pick out its two defining hex colors, so a brand-kit asset can
-// carry a real accent instead of a generic gray one. Structured (not prose)
-// on purpose -- renderBrandKitAsset applies these as real CSS, so the
-// content model never has to describe colors/layout in the text itself
-// (which produced fake design-annotation text like "(navy header band,
-// cyan rule)" printed as if it were real page content). Never blocks the
-// task on failure -- an unreachable/odd URL just means no brand colors.
-interface WebsiteBrand {
-  primaryColor?: string;
-  accentColor?: string;
+// Design values go to the renderer only. A generator told about colours
+// writes about colours -- that is how "(deep navy header band)" ended up
+// printed as body text on a letterhead.
+function brandColors(profile: BrandProfile | null): { primaryColor?: string; accentColor?: string } {
+  return { primaryColor: profile?.primaryColor, accentColor: profile?.accentColor };
 }
 
-async function describeReferenceWebsiteBrand(url: string): Promise<WebsiteBrand> {
-  try {
-    const png = await screenshotUrl(url, '1440x900', false);
-    const raw = await claudeVisionChat(
-      "Identify this website's two most defining brand colors as hex codes: a primary/dark color and an " +
-        'accent color used for highlights, links, or buttons. Respond with ONLY a JSON object of the exact ' +
-        'shape {"primaryColor": "#rrggbb", "accentColor": "#rrggbb"} -- no markdown fences, no commentary. If ' +
-        'you genuinely cannot tell, respond with {}.',
-      "Identify this website's brand colors.",
-      [{ bytes: png, mimeType: 'image/png' }],
-      { maxTokens: 150 }
-    );
-    const cleaned = raw.trim().replace(/^```(?:json)?\n?/i, '').replace(/```$/i, '').trim();
-    const parsed = JSON.parse(cleaned);
-    const hex = /^#[0-9a-f]{6}$/i;
-    return {
-      primaryColor: typeof parsed?.primaryColor === 'string' && hex.test(parsed.primaryColor) ? parsed.primaryColor : undefined,
-      accentColor: typeof parsed?.accentColor === 'string' && hex.test(parsed.accentColor) ? parsed.accentColor : undefined
-    };
-  } catch (err) {
-    console.error('worker-pdf: describeReferenceWebsiteBrand failed', err);
-    return {};
-  }
-}
-
-// Brand-kit's non-QR items (letterhead, email signature, price list,
-// "coming soon" page, style guide one-pager, name/tagline generator) are
-// each meant to be one small, immediately usable asset -- per the service's
-// own framing ("~10 min", "from $10") -- not a multi-page specification
-// document. This produces exactly one section of real, finished content
-// (never a report), and rendered via renderBrandKitAsset carries none of
-// .click's own report theme, since the deliverable is the CLIENT's brand,
-// not ours.
 async function generateAssetSpec(catalogItem: CatalogItem, payload: Record<string, unknown>): Promise<DocSpec> {
   const item = catalogItem.name;
   const description = String(payload.description ?? payload.brief ?? '');
-  const url = typeof payload.websiteUrl === 'string' ? payload.websiteUrl : extractUrl(description);
-  const brand = url ? await describeReferenceWebsiteBrand(url) : {};
+  const profile = catalogItem.urlUse === 'brand' ? await getBrandProfile(brandUrlFor(payload)) : null;
 
   const systemPrompt =
     `${shapeInstruction(catalogItem)} ` +
@@ -105,7 +67,7 @@ async function generateAssetSpec(catalogItem: CatalogItem, payload: Record<strin
     'exact shape {"title": string, "sections": [{"heading": string, "body": string}]} with EXACTLY ONE entry in ' +
     '"sections" -- no markdown fences, no commentary.';
 
-  const userBrief = [`Brand kit item: ${item}`, `Brief: ${description}`].filter(Boolean).join('\n');
+  const userBrief = [`Product: ${item}`, `Brief: ${description}`].filter(Boolean).join('\n') + brandFactsForPrompt(profile);
 
   const raw = await claudeChat(
     [
@@ -121,7 +83,7 @@ async function generateAssetSpec(catalogItem: CatalogItem, payload: Record<strin
     throw new Error('Claude returned an unexpected asset shape');
   }
   // One section, enforced here rather than trusted from the model.
-  return { title: String(parsed.title), sections: [parsed.sections[0]], kind: 'asset', brand };
+  return { title: String(parsed.title), sections: [parsed.sections[0]], kind: 'asset', brand: brandColors(profile) };
 }
 
 function describeBrief(type: string, payload: Record<string, unknown>): string {
@@ -165,7 +127,8 @@ async function generateDocSpec(catalogItem: CatalogItem, type: string, payload: 
     'Respond with ONLY a JSON object of the exact shape ' +
     '{"title": string, "subtitle": string | null, "sections": [{"heading": string, "body": string, "language": "en"|"ur"}]} ' +
     '-- no markdown fences, no commentary.';
-  const userBrief = describeBrief(type, payload);
+  const profile = catalogItem.urlUse === 'brand' ? await getBrandProfile(brandUrlFor(payload)) : null;
+  const userBrief = describeBrief(type, payload) + brandFactsForPrompt(profile);
 
   const attachments = await fetchAttachments(payload.referenceFiles);
   const raw = attachments.length > 0
@@ -189,6 +152,7 @@ async function generateDocSpec(catalogItem: CatalogItem, type: string, payload: 
     throw new Error('Claude returned an unexpected document shape');
   }
   parsed.language = language === 'both' ? 'en' : language;
+  parsed.brand = brandColors(profile);
 
   // The prompt asks for the cap; this enforces it. Bilingual documents carry
   // each section twice, so the ceiling doubles for them.

@@ -1,7 +1,7 @@
 import { Check } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { DashboardShell } from "../../components/dashboard/DashboardShell";
-import { ErrorNote, inputClass, SectionCard, ServicePageHeader, SubmitBar, SubmittedNote, UploadDropzone } from "../../components/dashboard/form";
+import { ErrorNote, inputClass, SectionCard, ServicePageHeader, SubmitBar, SubmittedNote, BrandUrlField, UploadDropzone } from "../../components/dashboard/form";
 import { AvatarPicker, VoicePicker, type CharacterChoice } from "../../components/dashboard/CharacterPicker";
 import { submitTask } from "../../lib/submitTask";
 
@@ -46,6 +46,7 @@ export function VideoPage() {
   const [avatarChoice, setAvatarChoice] = useState<CharacterChoice | null>(null);
   const [voiceChoice, setVoiceChoice] = useState<CharacterChoice | null>(null);
   const [description, setDescription] = useState("");
+  const [websiteUrl, setWebsiteUrl] = useState("");
   const [descError, setDescError] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -74,6 +75,7 @@ export function VideoPage() {
       noAvatarMode: length === "short" && avatarStyle === "none" ? "full" : undefined,
       durationSeconds: length === "long" ? blocks * LONG_BLOCK_SECONDS : undefined,
       description: description.trim(),
+      websiteUrl: websiteUrl.trim() || undefined,
       avatarSource: usesAvatar ? avatarChoice?.source : undefined,
       avatarProviderId: usesAvatar ? avatarChoice?.providerId : undefined,
       avatarType: usesAvatar ? avatarChoice?.avatarType : undefined,
@@ -242,6 +244,7 @@ export function VideoPage() {
               />
               {descError && <span className="text-xs text-yellow-400">Tell us a bit about what you need.</span>}
             </label>
+            <BrandUrlField value={websiteUrl} onChange={setWebsiteUrl} />
           </SectionCard>
 
           <SectionCard title="Assets">

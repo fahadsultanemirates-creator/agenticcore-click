@@ -140,6 +140,30 @@ export function ErrorNote({ children }: { children: ReactNode }) {
   );
 }
 
+// Offered on every service whose deliverable carries the client's own
+// branding. One URL is enough for us to match their colours, copy, services
+// and contact details across everything they order -- see
+// supabase/functions/_shared/brandProfile.ts.
+export function BrandUrlField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  return (
+    <label className="flex min-w-0 flex-col gap-1.5">
+      <span className="text-xs font-semibold tracking-wide text-fg-muted uppercase">
+        Your website <span className="text-fg-faint normal-case">(optional — we'll match your branding)</span>
+      </span>
+      <input
+        type="url"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="https://yourbusiness.com"
+        className={inputClass}
+      />
+      <span className="text-xs text-fg-faint">
+        We read your colours, wording, services and contact details from it, so this comes back looking like you.
+      </span>
+    </label>
+  );
+}
+
 export function UploadDropzone({ label }: { label: string }) {
   return (
     <label className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border-2 border-dashed border-border bg-void px-4 py-6 text-sm text-fg-faint transition-colors hover:border-yellow-400/50">

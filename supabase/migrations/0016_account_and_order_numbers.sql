@@ -56,9 +56,15 @@ declare
   v_account integer;
   v_order integer;
 begin
-  insert into public.client_accounts (user_id)
-  values (p_user_id)
-  on conflict (user_id) do nothing;
+  -- The existence check is not redundant with ON CONFLICT: account_no defaults
+  -- to nextval(), and a column default is evaluated before the conflict is
+  -- detected, so an unguarded insert burns an account number on EVERY order.
+  -- Left unguarded, the third client to sign up was handed account 1047.
+  if not exists (select 1 from public.client_accounts c where c.user_id = p_user_id) then
+    insert into public.client_accounts (user_id)
+    values (p_user_id)
+    on conflict (user_id) do nothing;
+  end if;
 
   update public.client_accounts c
     set next_order_no = c.next_order_no + 1

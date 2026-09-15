@@ -25,13 +25,10 @@ export function formatClientReference(accountNo: number, orderNo: number): strin
   return `AC-${accountNo}-${String(orderNo).padStart(2, '0')}`;
 }
 
-// Matches both the account-scoped form and the older global one, so ids issued
-// before this change keep working in the bot and in conversation.
-export const TASK_REFERENCE_PATTERN = /\b(?:AC-\d{4}-\d{2,}|AC-CLICK-\d{4}(?:-[0-9a-f]{4})?)\b/i;
-
-export function findTaskReference(text: string): string | null {
-  return text.match(TASK_REFERENCE_PATTERN)?.[0]?.toUpperCase() ?? null;
-}
+// The one reference pattern lives in orderMatch.ts (which stays free of any
+// database import so it can be tested directly); re-exported here because
+// this is where callers already look for it.
+export { findReference as findTaskReference, REFERENCE_PATTERN as TASK_REFERENCE_PATTERN } from './orderMatch.ts';
 
 // Allocates the next order number for a client and returns everything the task
 // row needs to describe itself. revisionsAllowed is copied from the catalog at
@@ -127,6 +124,8 @@ export function checkRevisionAllowance(task: {
 export interface OrderSummary {
   publicId: string;
   orderNo: number | null;
+  /** The catalog number, so callers can match on product without re-querying. */
+  sku: number | null;
   product: string;
   status: string;
   revisionsUsed: number;
@@ -135,24 +134,16 @@ export interface OrderSummary {
   files: number;
 }
 
-export async function listAccountOrders(userId: string, limit = 25): Promise<OrderSummary[]> {
-  const { data, error } = await supabaseAdmin
-    .from('tasks')
-    .select('public_id, order_no, sku, type, status, revisions_used, revisions_allowed, payload, created_at, task_files(count)')
-    .eq('user_id', userId)
-    .order('created_at', { ascending: false })
-    .limit(limit);
+const ORDER_COLUMNS =
+  'public_id, order_no, sku, type, status, revisions_used, revisions_allowed, payload, created_at, task_files(count)';
 
-  if (error) {
-    console.error('listAccountOrders failed', error);
-    return [];
-  }
-
-  return (data ?? []).map((row: any) => {
+function toSummaries(rows: any[]): OrderSummary[] {
+  return rows.map((row: any) => {
     const product = (row.sku != null ? getSku(row.sku) : null) ?? resolveSku(row.type, row.payload ?? {});
     return {
       publicId: row.public_id,
       orderNo: row.order_no ?? null,
+      sku: product?.sku ?? null,
       product: product?.name ?? row.type,
       status: row.status,
       revisionsUsed: row.revisions_used ?? 0,
@@ -161,4 +152,37 @@ export async function listAccountOrders(userId: string, limit = 25): Promise<Ord
       files: row.task_files?.[0]?.count ?? 0
     };
   });
+}
+
+export async function listAccountOrders(userId: string, limit = 25): Promise<OrderSummary[]> {
+  const { data, error } = await supabaseAdmin
+    .from('tasks')
+    .select(ORDER_COLUMNS)
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    console.error('listAccountOrders failed', error);
+    return [];
+  }
+  return toSummaries(data ?? []);
+}
+
+// The owner's own tasks -- those raised from Telegram rather than bought
+// through the dashboard. The bot resolves "that letterhead" against this the
+// same way Forge resolves it against a client's order book.
+export async function listOwnerTasks(limit = 25): Promise<OrderSummary[]> {
+  const { data, error } = await supabaseAdmin
+    .from('tasks')
+    .select(ORDER_COLUMNS)
+    .not('owner_channel_id', 'is', null)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+
+  if (error) {
+    console.error('listOwnerTasks failed', error);
+    return [];
+  }
+  return toSummaries(data ?? []);
 }

@@ -14,6 +14,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { claudeChat } from '../_shared/claude.ts';
 import { calculatePriceUsd, FULL_BUSINESS_SETUP_USD } from '../_shared/pricing.ts';
 import { catalogMenu, expandSku } from '../_shared/catalog.ts';
+import { accountBriefForPrompt } from '../_shared/accounts.ts';
 import { jsonResponse, CORS_HEADERS } from '../_shared/cors.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
@@ -83,6 +84,8 @@ Do not compute a price for the bundle -- it's a flat $20 regardless of contents,
 
 Never invent a product number outside the catalog above (the business report is owner-only and deliberately absent from it). If the client's request doesn't map to a real service, say so honestly in "reply" and ask what they'd actually like, action "ask".
 
+EXISTING ORDERS AND REVISIONS: the client's live account and order book is appended below this prompt. It is the truth about what they have bought; the conversation is not. When they mention something they already ordered, match it to an entry there and refer to it by its reference number -- never ask them to look up or quote a reference number themselves, because they don't know them. If two entries fit equally well, name both and ask which. Never promise a revision on an order the book says has none left, and never quote a balance from memory. If they ask for a revision on something that can be revised, say so and tell them how many they have left; if it can't (an image, a video, a QR code -- things that can only be regenerated, not edited), explain that it came back as options to choose from and offer to run a fresh one instead.
+
 ATTACHMENTS: when the client's message contains "[attached files: <urls>]", those are real uploaded file URLs (a logo, photo, or reference document). Copy the exact URL(s) into payload.referenceFiles (an array of strings) on whichever task they're relevant to -- website (logo/brand photos), image (a reference to match), video (product shots), documents/brand-kit/pdf (an existing logo or brand asset). Never invent, guess, or alter a URL -- copy it byte-for-byte from what appears in the message, and never put a URL in "reply" itself (it's shown as an attachment chip already, not readable text).`;
 
 export async function handleRequest(req: Request): Promise<Response> {
@@ -147,8 +150,14 @@ export async function handleRequest(req: Request): Promise<Response> {
     .order('created_at', { ascending: true })
     .limit(60);
 
+  // Read fresh every turn rather than summarised into the history: a balance
+  // or a revision count that was true when it was first mentioned may not be
+  // true now, and the model must never answer either from what it remembers.
+  const accountBrief = await accountBriefForPrompt(caller.id);
+
   const messages: { role: 'system' | 'user' | 'assistant'; content: string }[] = [
     { role: 'system', content: SYSTEM_PROMPT },
+    { role: 'system', content: accountBrief },
     ...((history ?? []) as { role: 'user' | 'assistant'; content: string }[])
   ];
 

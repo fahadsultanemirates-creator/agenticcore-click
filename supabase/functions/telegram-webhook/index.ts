@@ -26,7 +26,9 @@ import { uploadClientMedia } from '../_shared/storage.ts';
 import { detectLanguage, getOwnerLanguage, setOwnerLanguage, sendBotMessage } from '../_shared/botMessage.ts';
 import { converse } from '../_shared/botConversation.ts';
 import { expandSku, getSku, CATALOG } from '../_shared/catalog.ts';
-import { checkRevisionAllowance, findTaskReference, TASK_REFERENCE_PATTERN } from '../_shared/orders.ts';
+import { checkRevisionAllowance, findTaskReference } from '../_shared/orders.ts';
+import { resolveOwnerTaskReference, getPlatformSnapshot } from '../_shared/accounts.ts';
+import { describeCandidates } from '../_shared/orderMatch.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -77,6 +79,7 @@ function helpText(): string {
   return [
     'Commands:',
     '/queue — list queued/in-progress tasks',
+    '/stats — accounts, balances and delivered volume across the platform',
     '/products — list every product and its number',
     '/new <product number> <brief> — create an owner task (e.g. /new 72 letterhead for agenticcore.agency)',
     '/revise <task id> <note> — re-queue a delivered task for revision',
@@ -390,10 +393,69 @@ async function handleReportCommand(chatId: number, url: string): Promise<string>
   return `${publicId} queued — business report for ${normalizedUrl}. I'll send the PDF here once it's ready (usually a few minutes).`;
 }
 
+
+// The conversational path hands back whatever task id the model produced, and
+// a model asked for a task id when none was stated will produce a plausible
+// one -- "AC-CLICK-0007" is a very guessable string. Acting on that revises
+// somebody else's task and reports success, so the id is checked against real
+// rows before any handler runs.
+//
+// When it doesn't exist, the original message is re-read against the owner's
+// actual task list (the same recogniser Forge uses on the client side), so
+// "revise that letterhead" still works -- and when the list genuinely doesn't
+// decide, the answer is a question rather than a guess.
+interface ResolvedTaskId {
+  publicId?: string;
+  reply?: string;
+}
+
+async function resolveTaskId(proposed: string, originalText: string): Promise<ResolvedTaskId> {
+  const candidate = proposed?.toUpperCase?.() ?? '';
+  if (candidate) {
+    const { data } = await supabaseAdmin.from('tasks').select('public_id').eq('public_id', candidate).maybeSingle();
+    if (data) return { publicId: data.public_id };
+  }
+
+  const match = await resolveOwnerTaskReference(originalText);
+  if (match.order) return { publicId: match.order.publicId };
+
+  if (match.candidates.length > 0) {
+    return {
+      reply: `Which one do you mean?\n${describeCandidates(match.candidates)}`
+    };
+  }
+
+  return {
+    reply: candidate
+      ? `No task found with id ${candidate}, and I couldn't work out which one you meant. Send /queue to see what's open.`
+      : "I couldn't work out which task you meant. Send /queue to see what's open."
+  };
+}
+
+
+// The account desk's owner-facing view. Asked often enough in plain words
+// ("how many clients do we have with money in?") that it gets a command too.
+async function handleStatsCommand(): Promise<string> {
+  const stats = await getPlatformSnapshot();
+
+  const products = stats.topProducts.length
+    ? stats.topProducts.map((p) => `  ${p.sku} ${p.name} — ${p.count}`).join('\n')
+    : '  (nothing ordered yet)';
+
+  return [
+    `Accounts: ${stats.accountsTotal} total, ${stats.accountsWithBalance} funded, ${stats.accountsActive30d} active in the last 30 days`,
+    `Balance held: $${stats.balanceHeldUsd.toFixed(2)}`,
+    `Tasks: ${stats.tasksTotal} total — ${stats.tasksDelivered} delivered, ${stats.tasksInFlight} in flight, ${stats.tasksNeedingInfo} need info, ${stats.tasksFailed} failed`,
+    'Most ordered:',
+    products
+  ].join('\n');
+}
+
 async function routeMessage(chatId: number, text: string, attachmentUrls: string[] = []): Promise<string> {
   if (HELP_PATTERN.test(text)) return helpText();
   if (QUEUE_PATTERN.test(text)) return handleQueueCommand();
   if (/^\/products(?:@\S+)?$/i.test(text)) return handleProductsCommand();
+  if (/^\/stats(?:@\S+)?$/i.test(text)) return handleStatsCommand();
 
   const newMatch = text.match(NEW_PATTERN);
   if (newMatch) return handleNewCommand(chatId, Number(newMatch[1]), newMatch[2].trim());
@@ -436,14 +498,22 @@ async function routeMessage(chatId: number, text: string, attachmentUrls: string
       return handleQueueCommand();
     case 'help':
       return helpText();
+    case 'stats':
+      return handleStatsCommand();
     case 'new':
       return handleNewCommand(chatId, parsed.sku, parsed.brief, parsed.referenceFiles, parsed.details);
-    case 'revise':
-      return handleReviseCommand(parsed.taskId.toUpperCase(), parsed.note);
-    case 'files':
-      return handleFilesCommand(parsed.taskId.toUpperCase());
-    case 'deliver':
-      return handleDeliverCommand(parsed.taskId.toUpperCase(), parsed.url);
+    case 'revise': {
+      const resolved = await resolveTaskId(parsed.taskId, text);
+      return resolved.publicId ? handleReviseCommand(resolved.publicId, parsed.note) : resolved.reply!;
+    }
+    case 'files': {
+      const resolved = await resolveTaskId(parsed.taskId, text);
+      return resolved.publicId ? handleFilesCommand(resolved.publicId) : resolved.reply!;
+    }
+    case 'deliver': {
+      const resolved = await resolveTaskId(parsed.taskId, text);
+      return resolved.publicId ? handleDeliverCommand(resolved.publicId, parsed.url) : resolved.reply!;
+    }
     case 'avatars':
       return handleAvatarsCommand(parsed.gender);
     case 'voices':

@@ -25,15 +25,12 @@ import { screenshotUrl } from '../_shared/htmlPdf.ts';
 import { addTaskFile, logEvent, markDelivered, markFailed } from '../_shared/task.ts';
 import { jsonResponse } from '../_shared/cors.ts';
 import type { DocSpec } from '../_shared/pdf.ts';
+import { resolveSku, shapeInstruction, type CatalogItem } from '../_shared/catalog.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
-const QR_ITEMS = new Set(['QR-code business card', 'QR-code table tent']);
 
-function isQrItem(type: string, payload: Record<string, unknown>): boolean {
-  return type === 'brand-kit' && QR_ITEMS.has(String(payload.item ?? ''));
-}
 
 function extractUrl(text: string): string | undefined {
   const httpMatch = text.match(/https?:\/\/[^\s)]+/i);
@@ -88,13 +85,14 @@ async function describeReferenceWebsiteBrand(url: string): Promise<WebsiteBrand>
 // (never a report), and rendered via renderBrandKitAsset carries none of
 // .click's own report theme, since the deliverable is the CLIENT's brand,
 // not ours.
-async function generateBrandKitAssetSpec(payload: Record<string, unknown>): Promise<DocSpec> {
-  const item = String(payload.item ?? 'Brand asset');
+async function generateAssetSpec(catalogItem: CatalogItem, payload: Record<string, unknown>): Promise<DocSpec> {
+  const item = catalogItem.name;
   const description = String(payload.description ?? payload.brief ?? '');
   const url = typeof payload.websiteUrl === 'string' ? payload.websiteUrl : extractUrl(description);
   const brand = url ? await describeReferenceWebsiteBrand(url) : {};
 
   const systemPrompt =
+    `${shapeInstruction(catalogItem)} ` +
     'You produce the ACTUAL finished asset requested, ready to use immediately -- not a specification, not an ' +
     'explanation, not a design brief. Write ONLY the real words a person reads: names, dates, addresses, body ' +
     'copy, signatures, prices, headlines. NEVER describe colors, fonts, layout, spacing, logos, or any other ' +
@@ -122,6 +120,7 @@ async function generateBrandKitAssetSpec(payload: Record<string, unknown>): Prom
   if (!parsed?.title || !Array.isArray(parsed?.sections) || parsed.sections.length === 0) {
     throw new Error('Claude returned an unexpected asset shape');
   }
+  // One section, enforced here rather than trusted from the model.
   return { title: String(parsed.title), sections: [parsed.sections[0]], kind: 'asset', brand };
 }
 
@@ -146,7 +145,7 @@ function describeBrief(type: string, payload: Record<string, unknown>): string {
 // the same content twice, English sections first then Urdu, each section
 // tagged with which language it's in so renderDocumentPdf can switch font
 // and RTL direction per section within one document.
-async function generateDocSpec(type: string, payload: Record<string, unknown>): Promise<DocSpec> {
+async function generateDocSpec(catalogItem: CatalogItem, type: string, payload: Record<string, unknown>): Promise<DocSpec> {
   const language = (payload.language as string) === 'ur' || (payload.language as string) === 'both' ? (payload.language as 'ur' | 'both') : 'en';
 
   const languageInstruction =
@@ -158,10 +157,10 @@ async function generateDocSpec(type: string, payload: Record<string, unknown>): 
         : 'Write the entire document in English.';
 
   const systemPrompt =
+    `${shapeInstruction(catalogItem)} ` +
     'You are a professional business copywriter and document designer. Given a brief, produce the ' +
     'complete, ready-to-use content for the requested document (no placeholder/lorem ipsum text). ' +
-    'Produce 3 to 6 sections total (up to 12 if writing in both languages) -- enough to properly cover the ' +
-    'brief, never padded just to add more. ' +
+    'Use only as many sections as the brief genuinely needs, never padded just to add more. ' +
     `${languageInstruction} ` +
     'Respond with ONLY a JSON object of the exact shape ' +
     '{"title": string, "subtitle": string | null, "sections": [{"heading": string, "body": string, "language": "en"|"ur"}]} ' +
@@ -190,6 +189,16 @@ async function generateDocSpec(type: string, payload: Record<string, unknown>): 
     throw new Error('Claude returned an unexpected document shape');
   }
   parsed.language = language === 'both' ? 'en' : language;
+
+  // The prompt asks for the cap; this enforces it. Bilingual documents carry
+  // each section twice, so the ceiling doubles for them.
+  const cap = catalogItem.output.maxPages;
+  if (cap !== undefined) {
+    const limit = language === 'both' ? cap * 2 : cap;
+    if (parsed.sections.length > limit) {
+      parsed.sections = parsed.sections.slice(0, limit);
+    }
+  }
   return parsed as DocSpec;
 }
 
@@ -243,7 +252,24 @@ export async function handleRequest(req: Request): Promise<Response> {
   try {
     const payload = task.payload ?? {};
 
-    if (isQrItem(task.type, payload)) {
+    // Which product this is decides the shape, the renderer and whose brand
+    // it wears -- not the task type, which covers several different products.
+    // A business card and a brochure are both type "pdf" but one is a single
+    // finished page and the other a multi-page booklet.
+    const catalogItem = resolveSku(task.type, payload);
+    if (!catalogItem) {
+      await markFailed(taskId, `No catalog product matches ${task.type} with this payload -- cannot determine the deliverable's shape.`);
+      return jsonResponse({ ok: false, error: 'Unrecognized product' });
+    }
+    await logEvent(taskId, 'product_identified', 'worker', {
+      sku: catalogItem.sku,
+      code: catalogItem.code,
+      renderer: catalogItem.renderer,
+      branding: catalogItem.branding,
+      output: catalogItem.output
+    });
+
+    if (catalogItem.renderer === 'qr') {
       const url = await generateQrDeliverable(taskId, payload);
       await addTaskFile(taskId, { url, fileType: 'image/svg+xml', optionIndex: 1, version: task.version });
       await logEvent(taskId, 'qr_generated', 'worker', { url });
@@ -251,8 +277,12 @@ export async function handleRequest(req: Request): Promise<Response> {
       return jsonResponse({ ok: true, url });
     }
 
-    if (task.type === 'brand-kit') {
-      const spec = await generateBrandKitAssetSpec(payload);
+    // Single-page finished artifacts: letterheads, business cards, flyers,
+    // banners, invoices, one-page plans. Previously only brand-kit reached
+    // this path, so a "Business card" PDF was built as a multi-page deck in
+    // our own theme -- the same failure as the letterhead, just unreported.
+    if (catalogItem.renderer === 'asset') {
+      const spec = await generateAssetSpec(catalogItem, payload);
 
       const { error: assetUpdateError } = await supabaseAdmin
         .from('tasks')
@@ -260,14 +290,14 @@ export async function handleRequest(req: Request): Promise<Response> {
         .eq('id', taskId);
       if (assetUpdateError) throw new Error(`Could not persist asset spec: ${assetUpdateError.message}`);
 
-      await logEvent(taskId, 'doc_spec_ready', 'worker', { title: spec.title, kind: 'asset' });
+      await logEvent(taskId, 'doc_spec_ready', 'worker', { title: spec.title, kind: 'asset', sku: catalogItem.sku });
       triggerPdfRender(taskId);
 
       return jsonResponse({ ok: true, phase: 'spec_ready' });
     }
 
     const [spec, coverImageUrl] = await Promise.all([
-      generateDocSpec(task.type, payload),
+      generateDocSpec(catalogItem, task.type, payload),
       generateBrandVisual(
         taskId,
         `A professional cover visual for a business document about: ${describeBrief(task.type, payload)}. Abstract, on-topic imagery -- not literal text or icons of the topic name.`,
@@ -282,7 +312,7 @@ export async function handleRequest(req: Request): Promise<Response> {
       .eq('id', taskId);
     if (updateError) throw new Error(`Could not persist doc spec: ${updateError.message}`);
 
-    await logEvent(taskId, 'doc_spec_ready', 'worker', { title: spec.title, sections: spec.sections.length });
+    await logEvent(taskId, 'doc_spec_ready', 'worker', { title: spec.title, sections: spec.sections.length, sku: catalogItem.sku });
     triggerPdfRender(taskId);
 
     return jsonResponse({ ok: true, phase: 'spec_ready' });

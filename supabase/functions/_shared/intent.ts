@@ -5,7 +5,7 @@
 export type BotIntent =
   | { intent: 'queue' }
   | { intent: 'help' }
-  | { intent: 'new'; type: string; brief: string; referenceFiles?: string[]; details?: Record<string, unknown> }
+  | { intent: 'new'; sku: number; brief: string; referenceFiles?: string[]; details?: Record<string, unknown> }
   | { intent: 'revise'; taskId: string; note: string }
   | { intent: 'files'; taskId: string }
   | { intent: 'deliver'; taskId: string; url: string }

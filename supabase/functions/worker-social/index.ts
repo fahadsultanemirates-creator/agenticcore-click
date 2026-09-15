@@ -6,6 +6,7 @@
 
 import { supabaseAdmin, uploadDeliverable } from '../_shared/storage.ts';
 import { generateImageOptions } from '../_shared/images.ts';
+import { resolveSku } from '../_shared/catalog.ts';
 import { claudeChat } from '../_shared/claude.ts';
 import { renderDocumentPdf, type DocSpec } from '../_shared/pdf.ts';
 import { sendTelegramDocument, sendTelegramPhoto } from '../_shared/telegramApi.ts';
@@ -67,10 +68,12 @@ function platformList(payload: Record<string, unknown>): string {
   return Array.isArray(platforms) ? platforms.join(', ') : String(platforms ?? '');
 }
 
-function resolveOptionCount(payload: Record<string, unknown>): number {
+// As in worker-image: the catalog states what the product promises.
+function resolveOptionCount(payload: Record<string, unknown>, catalogCount?: number): number {
+  const promised = catalogCount ?? DEFAULT_OPTION_COUNT;
   const n = Number(payload.optionCount);
-  if (!Number.isFinite(n)) return DEFAULT_OPTION_COUNT;
-  return Math.min(5, Math.max(1, Math.round(n)));
+  if (!Number.isFinite(n)) return promised;
+  return Math.min(promised, Math.max(1, Math.round(n)));
 }
 
 async function handleImageRequest(
@@ -86,7 +89,8 @@ async function handleImageRequest(
       ? `Social media profile kit (profile picture + cover/banner concept) for ${platformList(payload)}: ${payload.description}. Clean, professional, on-brand.`
       : `Social media post design for ${platformList(payload)}: ${payload.description}. Eye-catching, scroll-stopping, on-brand.`;
 
-  const urls = await generateImageOptions(taskId, prompt, resolveOptionCount(payload), version, payload.referenceFiles);
+  const product = resolveSku('social', payload);
+  const urls = await generateImageOptions(taskId, prompt, resolveOptionCount(payload, product?.output.options), version, payload.referenceFiles);
   await logEvent(taskId, 'social_images_generated', 'worker', { requestType, count: urls.length });
 
   if (ownerChannelId) {

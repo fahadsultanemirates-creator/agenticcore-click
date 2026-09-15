@@ -8,6 +8,7 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { claudeChat } from './claude.ts';
+import { catalogMenu } from './catalog.ts';
 import type { BotIntent } from './intent.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
@@ -21,10 +22,14 @@ const SYSTEM_PROMPT = `You route messages (typed or voice-transcribed, in any la
 Determine the intent and extract its arguments. Valid intents and their exact argument shapes:
 {"intent":"queue"}
 {"intent":"help"}
-{"intent":"new","type":one of [${TASK_TYPES.join(', ')}],"brief":string,"referenceFiles":string[]|omit,"details":object|omit} -- if the conversation includes "[attached: <urls>]", copy those exact URLs into referenceFiles when creating a task that benefits from them (website/image/video/documents/brand-kit); never invent a URL
+{"intent":"new","sku":number,"brief":string,"referenceFiles":string[]|omit,"details":object|omit} -- if the conversation includes "[attached: <urls>]", copy those exact URLs into referenceFiles when creating a task that benefits from them (website/image/video/documents/brand-kit); never invent a URL
   "details" carries the structured choices a task type needs, and ONLY the ones the owner actually stated -- never guess or fill one in to look complete; anything omitted gets a sensible default downstream. Per type: "video" -> {length:"short"|"long", avatarStyle:"standard"|"premium"|"elite"|"none", resolution:"720p"|"1080p" (short only), noAvatarMode:"full"|"hybrid" (only when avatarStyle is "none"), duration:e.g."30s" (long only)}. "social" -> {requestType:"posts"|"profile"|"captions"|"gbp", platforms:string[], optionCount:1-5}. "image" -> {imageType:string, optionCount:1-5}. "pdf" -> {docType:"Presentation (PowerPoint)"|"Brochure"|"Business card"|"Flyer"|"Banner"|"Other"}. "documents" -> {docType:"invoice"|"terms"|"plan"|"proposal"|"contract", language:"en"|"ur"|"both"}. "brand-kit" -> {item:one of the brand-kit items}. "website" -> {tier:"small"|"large", businessName:string}. If a detail matters and the owner did not say it, prefer asking (intent "ask") over inventing it.
 
-  Type guide (pick carefully, these are NOT interchangeable): "image" = a standalone graphic delivered as several picked image files -- logos, single social/product graphics, any "make me a picture/logo/graphic of X" request goes here. "brand-kit" = everything about brand identity OTHER than the logo itself (style guide, letterhead, email signature, price list/menu design, QR-code business card/table tent, business name+tagline, "coming soon" page) delivered as a written document -- never use "brand-kit" for a plain logo request. "pdf"/"documents" = written business documents, reports, or presentations. "social" = social media post/profile image packs or caption copy. "video" = a short or long promotional video. "website" = a full website build.
+  "sku" is the product NUMBER from the catalog below. Pick the single number whose product is what was actually asked for. The catalog is a closed list -- never invent a number, and never route to a near-miss because it sounds similar. A logo is 30, not a brand-kit item. A letterhead is 72, not a presentation. If two numbers seem possible, ask (intent "ask") rather than guessing.
+
+PRODUCT CATALOG:
+${catalogMenu(true)}
+
 {"intent":"revise","taskId":"AC-CLICK-####","note":string}
 {"intent":"files","taskId":"AC-CLICK-####"}
 {"intent":"deliver","taskId":"AC-CLICK-####","url":string}

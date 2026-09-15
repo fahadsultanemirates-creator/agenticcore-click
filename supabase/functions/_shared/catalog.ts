@@ -535,6 +535,53 @@ export function resolveSku(type: string, payload: Record<string, unknown>): Cata
   return best;
 }
 
+// Turns a routed SKU back into the task shape the queue already stores. The
+// selector fields ARE the payload fields, so routing by number also fills in
+// the discriminator correctly -- picking 72 guarantees
+// `item: 'Letterhead design'` rather than a near-miss string the model typed
+// from memory, which is how "logo" ended up filed as brand-kit.
+export function expandSku(
+  sku: number,
+  payload: Record<string, unknown> = {}
+): { type: string; payload: Record<string, unknown> } | null {
+  const item = getSku(sku);
+  if (!item) return null;
+  return {
+    type: item.service,
+    payload: { ...payload, ...item.selector, sku: item.sku }
+  };
+}
+
+// The hard shape contract, phrased for a generation prompt. This is the
+// sentence that stops a one-page letterhead becoming a fifteen-page deck:
+// the page count is stated as a requirement, not left to the model's taste.
+export function shapeInstruction(item: CatalogItem): string {
+  const parts: string[] = [`You are producing: ${item.name}.`];
+
+  if (item.output.pages === 1) {
+    parts.push(
+      'This is a SINGLE PAGE deliverable. Produce exactly one section. It is a finished, ready-to-use ' +
+        'artifact, never a report, a specification, or a multi-page document.'
+    );
+  } else if (item.output.maxPages !== undefined) {
+    parts.push(
+      `This is a multi-page document of AT MOST ${item.output.maxPages} pages, so produce at most ` +
+        `${item.output.maxPages} sections. Use only as many as the brief genuinely needs -- never pad to reach the limit.`
+    );
+  }
+
+  if (item.branding === 'client') {
+    parts.push(
+      "This deliverable belongs to the CLIENT and carries THEIR branding. Never reference agenticcore, .click, " +
+        'or our own colours anywhere in it.'
+    );
+  } else {
+    parts.push('This is our own analysis document and correctly carries agenticcore branding.');
+  }
+
+  return parts.join(' ');
+}
+
 // A compact, model-readable menu. Given to Forge and the Telegram classifier
 // so routing picks a NUMBER out of a closed list instead of inventing a shape.
 export function catalogMenu(includeOwnerOnly = false): string {

@@ -25,6 +25,7 @@ import { downloadTelegramFile } from '../_shared/telegramApi.ts';
 import { uploadClientMedia } from '../_shared/storage.ts';
 import { detectLanguage, getOwnerLanguage, setOwnerLanguage, sendBotMessage } from '../_shared/botMessage.ts';
 import { converse } from '../_shared/botConversation.ts';
+import { expandSku, getSku, CATALOG } from '../_shared/catalog.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -32,9 +33,8 @@ const TELEGRAM_WEBHOOK_SECRET = Deno.env.get('TELEGRAM_WEBHOOK_SECRET')!;
 // Unset means nobody can use owner commands (fails closed, not open).
 const OWNER_TELEGRAM_ID = Deno.env.get('OWNER_TELEGRAM_ID') || undefined;
 
-const TASK_TYPES = new Set(['website', 'pdf', 'image', 'video', 'social', 'documents', 'brand-kit']);
 const TASK_ID_PATTERN = /AC-CLICK-\d{4}/i;
-const NEW_PATTERN = /^\/new(?:@\S+)?\s+(\S+)\s+([\s\S]+)$/i;
+const NEW_PATTERN = /^\/new(?:@\S+)?\s+(\d{2,3})\s+([\s\S]+)$/i;
 const REVISE_PATTERN = /^\/revise(?:@\S+)?\s+(AC-CLICK-\d{4})\s+([\s\S]+)$/i;
 const FILES_PATTERN = /^\/files(?:@\S+)?\s+(AC-CLICK-\d{4})\b/i;
 const DELIVER_PATTERN = /^\/deliver(?:@\S+)?\s+(AC-CLICK-\d{4})\s+(\S+)$/i;
@@ -76,7 +76,8 @@ function helpText(): string {
   return [
     'Commands:',
     '/queue — list queued/in-progress tasks',
-    '/new <type> <brief> — create an owner task (queues behind client tasks)',
+    '/products — list every product and its number',
+    '/new <product number> <brief> — create an owner task (e.g. /new 72 letterhead for agenticcore.agency)',
     '/revise <task id> <note> — re-queue a delivered task for revision',
     "/files <task id> — list a task's deliverable files",
     '/deliver <task id> <url> — manually attach a file and mark delivered',
@@ -86,7 +87,7 @@ function helpText(): string {
     '/addavatar <id> <name> — add an avatar to the client-facing picker',
     '/addvoice <id> <name> — add a voice to the client-facing picker',
     '',
-    `Valid task types: ${[...TASK_TYPES].join(', ')}`,
+    'Send /products for the numbered list.',
     'You can also just type or speak what you want in plain English or Urdu.'
   ].join('\n');
 }
@@ -124,17 +125,27 @@ async function handleQueueCommand(): Promise<string> {
 // _shared/botConversation.ts. Merged under the brief so a stated choice
 // always beats the worker's own fallback, while an unstated one stays
 // absent and lets the worker default it.
+function handleProductsCommand(): string {
+  const lines = CATALOG.filter((p) => !p.ownerOnly).map((p) => `${p.sku} — ${p.name}`);
+  const owner = CATALOG.filter((p) => p.ownerOnly).map((p) => `${p.sku} — ${p.name} (owner only)`);
+  return ['Products (order with /new <number> <brief>):', '', ...lines, '', ...owner].join('\n');
+}
+
 async function handleNewCommand(
   chatId: number,
-  type: string,
+  sku: number,
   brief: string,
   referenceFiles?: string[],
   details?: Record<string, unknown>
 ): Promise<string> {
-  const normalizedType = type.toLowerCase();
-  if (!TASK_TYPES.has(normalizedType)) {
-    return `Unknown type "${type}". Use one of: ${[...TASK_TYPES].join(', ')}`;
+  // The SKU decides both the task type and the payload discriminator, so a
+  // routed number can't produce a task whose type and item disagree.
+  const expanded = expandSku(sku, { brief, ...(details ?? {}) });
+  if (!expanded) {
+    return `Unknown product number ${sku}. Send /products to see the list.`;
   }
+  const product = getSku(sku)!;
+  const normalizedType = expanded.type;
 
   const publicId = await generatePublicId();
   const { data: task, error } = await supabaseAdmin
@@ -147,8 +158,7 @@ async function handleNewCommand(
       wallet_confirmed: true,
       owner_channel_id: String(chatId),
       payload: {
-        brief,
-        ...(details && typeof details === 'object' ? details : {}),
+        ...expanded.payload,
         ...(referenceFiles && referenceFiles.length > 0 ? { referenceFiles } : {})
       }
     })
@@ -164,11 +174,11 @@ async function handleNewCommand(
     task_id: task.id,
     event_type: 'created',
     actor: 'owner',
-    detail: { type: normalizedType, brief }
+    detail: { type: normalizedType, sku, product: product.name, brief }
   });
 
   triggerDispatch();
-  return `${publicId} queued (owner task — will run after any pending client tasks).`;
+  return `${publicId} queued — ${product.name} (product ${sku}). Owner task, runs after any pending client tasks.`;
 }
 
 async function handleDeliverCommand(publicId: string, url: string): Promise<string> {
@@ -360,9 +370,10 @@ async function handleReportCommand(chatId: number, url: string): Promise<string>
 async function routeMessage(chatId: number, text: string, attachmentUrls: string[] = []): Promise<string> {
   if (HELP_PATTERN.test(text)) return helpText();
   if (QUEUE_PATTERN.test(text)) return handleQueueCommand();
+  if (/^\/products(?:@\S+)?$/i.test(text)) return handleProductsCommand();
 
   const newMatch = text.match(NEW_PATTERN);
-  if (newMatch) return handleNewCommand(chatId, newMatch[1], newMatch[2].trim());
+  if (newMatch) return handleNewCommand(chatId, Number(newMatch[1]), newMatch[2].trim());
 
   const reviseMatch = text.match(REVISE_PATTERN);
   if (reviseMatch) return handleReviseCommand(reviseMatch[1].toUpperCase(), reviseMatch[2].trim());
@@ -402,7 +413,7 @@ async function routeMessage(chatId: number, text: string, attachmentUrls: string
     case 'help':
       return helpText();
     case 'new':
-      return handleNewCommand(chatId, parsed.type, parsed.brief, parsed.referenceFiles, parsed.details);
+      return handleNewCommand(chatId, parsed.sku, parsed.brief, parsed.referenceFiles, parsed.details);
     case 'revise':
       return handleReviseCommand(parsed.taskId.toUpperCase(), parsed.note);
     case 'files':

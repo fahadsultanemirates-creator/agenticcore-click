@@ -22,6 +22,7 @@ Determine the intent and extract its arguments. Valid intents and their exact ar
 {"intent":"queue"}
 {"intent":"help"}
 {"intent":"new","type":one of [${TASK_TYPES.join(', ')}],"brief":string,"referenceFiles":string[]|omit} -- if the conversation includes "[attached: <urls>]", copy those exact URLs into referenceFiles when creating a task that benefits from them (website/image/video/documents/brand-kit); never invent a URL
+  Type guide (pick carefully, these are NOT interchangeable): "image" = a standalone graphic delivered as several picked image files -- logos, single social/product graphics, any "make me a picture/logo/graphic of X" request goes here. "brand-kit" = everything about brand identity OTHER than the logo itself (style guide, letterhead, email signature, price list/menu design, QR-code business card/table tent, business name+tagline, "coming soon" page) delivered as a written document -- never use "brand-kit" for a plain logo request. "pdf"/"documents" = written business documents, reports, or presentations. "social" = social media post/profile image packs or caption copy. "video" = a short or long promotional video. "website" = a full website build.
 {"intent":"revise","taskId":"AC-CLICK-####","note":string}
 {"intent":"files","taskId":"AC-CLICK-####"}
 {"intent":"deliver","taskId":"AC-CLICK-####","url":string}

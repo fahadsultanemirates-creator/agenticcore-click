@@ -27,19 +27,20 @@ function isQrItem(type: string, payload: Record<string, unknown>): boolean {
 }
 
 function describeBrief(type: string, payload: Record<string, unknown>): string {
+  const description = String(payload.description ?? payload.brief ?? '');
   if (type === 'pdf') {
     return [
-      `Document type: ${payload.docType}`,
-      `Brief: ${payload.description}`,
+      `Document type: ${payload.docType ?? 'General document'}`,
+      `Brief: ${description}`,
       payload.websiteUrl ? `Reference website (pull branding/copy if useful): ${payload.websiteUrl}` : ''
     ]
       .filter(Boolean)
       .join('\n');
   }
   if (type === 'documents') {
-    return `Document type: ${payload.docType}\nBrief: ${payload.description}`;
+    return `Document type: ${payload.docType ?? 'General document'}\nBrief: ${description}`;
   }
-  return `Brand kit item: ${payload.item}\nBrief: ${payload.description}`;
+  return `Brand kit item: ${payload.item ?? 'Brand kit item'}\nBrief: ${description}`;
 }
 
 // language: 'en' (default), 'ur', or 'both' -- for 'both', Claude produces

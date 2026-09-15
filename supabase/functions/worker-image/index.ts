@@ -12,7 +12,7 @@ const DEFAULT_OPTION_COUNT = 3;
 
 function buildPrompt(payload: Record<string, unknown>): string {
   const imageType = String(payload.imageType ?? 'image');
-  const description = String(payload.description ?? '');
+  const description = String(payload.description ?? payload.brief ?? '');
   return `${imageType}: ${description}. High quality, professional, ready to use commercially.`;
 }
 

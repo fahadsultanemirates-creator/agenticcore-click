@@ -1,24 +1,32 @@
-// Handles the three text/document services (pdf, documents, brand-kit):
-// Claude drafts the content, pdf-lib lays it out as a real PDF. QR-code brand-
-// kit items are the one exception -- they're delivered as a plain SVG QR
-// code rather than forced into a page layout. Invoked by the dispatcher
-// with { taskId }.
+// Handles the three text/document services (pdf, documents, brand-kit).
+// Split into two phases to stay under the edge function execution limit --
+// document content generation (Claude, the slow non-deterministic step) can
+// alone take most of a 150s budget, and the old single-call version
+// (content + cover + per-section images + PDFShift render, all in one
+// invocation) silently hit that limit and got killed mid-flight, leaving
+// the task stuck in_progress forever with no error logged. Phase 1 (here)
+// generates the content + cover image and hands off to worker-pdf-render
+// for the section images/layout/PDF render/delivery, so each phase gets
+// its own fresh execution window. QR-code brand-kit items are the one
+// exception -- fast enough to stay a single phase. Invoked by the
+// dispatcher with { taskId }.
 //
 // Note: "Presentation (PowerPoint)" is still delivered as a PDF (one
 // section per page) -- there is no solid pure-JS/Deno .pptx writer to lean
 // on, and a fake .pptx extension around PDF bytes would be worse than an
 // honest PDF. Flagged in task_events so this isn't a silent gap.
 
-import { supabaseAdmin } from '../_shared/storage.ts';
+import { supabaseAdmin, uploadDeliverable } from '../_shared/storage.ts';
 import { claudeChat, claudeVisionChat } from '../_shared/claude.ts';
 import { fetchAttachments } from '../_shared/attachments.ts';
-import { renderDocumentPdf, type DocSpec, type DocSection } from '../_shared/pdf.ts';
-import { generateBrandVisual, mapWithConcurrency } from '../_shared/images.ts';
+import { generateBrandVisual } from '../_shared/images.ts';
 import { generateQrSvg } from '../_shared/qrcode.ts';
-import { uploadDeliverable } from '../_shared/storage.ts';
-import { sendTelegramDocument } from '../_shared/telegramApi.ts';
 import { addTaskFile, logEvent, markDelivered, markFailed } from '../_shared/task.ts';
 import { jsonResponse } from '../_shared/cors.ts';
+import type { DocSpec } from '../_shared/pdf.ts';
+
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
+const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
 const QR_ITEMS = new Set(['QR-code business card', 'QR-code table tent']);
 
@@ -61,6 +69,8 @@ async function generateDocSpec(type: string, payload: Record<string, unknown>): 
   const systemPrompt =
     'You are a professional business copywriter and document designer. Given a brief, produce the ' +
     'complete, ready-to-use content for the requested document (no placeholder/lorem ipsum text). ' +
+    'Produce 3 to 6 sections total (up to 12 if writing in both languages) -- enough to properly cover the ' +
+    'brief, never padded just to add more. ' +
     `${languageInstruction} ` +
     'Respond with ONLY a JSON object of the exact shape ' +
     '{"title": string, "subtitle": string | null, "sections": [{"heading": string, "body": string, "language": "en"|"ur"}]} ' +
@@ -92,23 +102,6 @@ async function generateDocSpec(type: string, payload: Record<string, unknown>): 
   return parsed as DocSpec;
 }
 
-// One real illustration per section, tied to that section's own heading/body
-// -- the same fix applied to the business report -- so a short section
-// doesn't leave the rest of its page blank once the body text runs out.
-async function generateSectionVisuals(taskId: string, sections: DocSection[]): Promise<void> {
-  const images = await mapWithConcurrency(sections, 4, (section, i) =>
-    generateBrandVisual(
-      taskId,
-      `A small abstract illustration for this specific point from a business document: "${section.heading}" -- ` +
-        `${section.body} Represent the concrete idea itself, not literal text or icons of the words.`,
-      `section-${i + 1}.png`
-    )
-  );
-  sections.forEach((section, i) => {
-    section.imageUrl = images[i];
-  });
-}
-
 async function generateQrDeliverable(taskId: string, payload: Record<string, unknown>): Promise<string> {
   const content = await claudeChat(
     [
@@ -126,6 +119,18 @@ async function generateQrDeliverable(taskId: string, payload: Record<string, unk
   const svg = generateQrSvg(content.trim());
   const { url } = await uploadDeliverable(taskId, 'qr-code.svg', new TextEncoder().encode(svg), 'image/svg+xml');
   return url;
+}
+
+// Fire-and-forget hand-off to phase 2 (section images + PDF layout +
+// delivery) -- gives it its own fresh execution window instead of sharing
+// this call's. A pg_cron safety net (pdf-render-sweep) retries this if the
+// call gets dropped or worker-pdf-render itself dies mid-render.
+function triggerPdfRender(taskId: string): void {
+  fetch(`${SUPABASE_URL}/functions/v1/worker-pdf-render`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ taskId })
+  }).catch((err) => console.error('worker-pdf: triggerPdfRender failed', err));
 }
 
 export async function handleRequest(req: Request): Promise<Response> {
@@ -164,31 +169,17 @@ export async function handleRequest(req: Request): Promise<Response> {
       )
     ]);
     spec.coverImageUrl = coverImageUrl;
-    await generateSectionVisuals(taskId, spec.sections);
-    const pdfBytes = await renderDocumentPdf(spec);
-    const { url } = await uploadDeliverable(taskId, 'document.pdf', pdfBytes, 'application/pdf');
 
-    if (String(payload.docType) === 'Presentation (PowerPoint)') {
-      await logEvent(taskId, 'pptx_delivered_as_pdf', 'worker', {
-        note: 'No Deno-compatible .pptx writer yet -- delivered as a PDF (one section per page) instead.'
-      });
-    }
+    const { error: updateError } = await supabaseAdmin
+      .from('tasks')
+      .update({ payload: { ...payload, pendingSpec: spec }, updated_at: new Date().toISOString() })
+      .eq('id', taskId);
+    if (updateError) throw new Error(`Could not persist doc spec: ${updateError.message}`);
 
-    await addTaskFile(taskId, { url, fileType: 'application/pdf', optionIndex: 1, version: task.version });
-    await logEvent(taskId, 'document_generated', 'worker', { url, title: spec.title });
-    await markDelivered(taskId);
+    await logEvent(taskId, 'doc_spec_ready', 'worker', { title: spec.title, sections: spec.sections.length });
+    triggerPdfRender(taskId);
 
-    // Owner-created (via Telegram /new) tasks get the actual file in the
-    // chat, not just a Dashboard entry -- website-sourced ones have no
-    // owner_channel_id and are unaffected (the client sees it in their
-    // own Dashboard instead).
-    if (task.owner_channel_id) {
-      await sendTelegramDocument(Number(task.owner_channel_id), url, `${task.public_id} — ${spec.title}`).catch((err) =>
-        console.error('worker-pdf: sendTelegramDocument failed', err)
-      );
-    }
-
-    return jsonResponse({ ok: true, url });
+    return jsonResponse({ ok: true, phase: 'spec_ready' });
   } catch (err) {
     console.error(`worker-pdf failed for ${taskId}:`, err);
     await markFailed(taskId, err instanceof Error ? err.message : String(err));

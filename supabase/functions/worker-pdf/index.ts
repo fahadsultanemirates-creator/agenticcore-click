@@ -15,6 +15,7 @@ import { fetchAttachments } from '../_shared/attachments.ts';
 import { renderDocumentPdf, type DocSpec } from '../_shared/pdf.ts';
 import { generateQrSvg } from '../_shared/qrcode.ts';
 import { uploadDeliverable } from '../_shared/storage.ts';
+import { sendTelegramDocument } from '../_shared/telegramApi.ts';
 import { addTaskFile, logEvent, markDelivered, markFailed } from '../_shared/task.ts';
 import { jsonResponse } from '../_shared/cors.ts';
 
@@ -148,6 +149,17 @@ export async function handleRequest(req: Request): Promise<Response> {
     await addTaskFile(taskId, { url, fileType: 'application/pdf', optionIndex: 1, version: task.version });
     await logEvent(taskId, 'document_generated', 'worker', { url, title: spec.title });
     await markDelivered(taskId);
+
+    // Owner-created (via Telegram /new) tasks get the actual file in the
+    // chat, not just a Dashboard entry -- website-sourced ones have no
+    // owner_channel_id and are unaffected (the client sees it in their
+    // own Dashboard instead).
+    if (task.owner_channel_id) {
+      await sendTelegramDocument(Number(task.owner_channel_id), url, `${task.public_id} — ${spec.title}`).catch((err) =>
+        console.error('worker-pdf: sendTelegramDocument failed', err)
+      );
+    }
+
     return jsonResponse({ ok: true, url });
   } catch (err) {
     console.error(`worker-pdf failed for ${taskId}:`, err);

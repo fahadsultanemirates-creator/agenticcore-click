@@ -31,6 +31,25 @@ export async function sendTelegramVoice(chatId: number, mp3Bytes: Uint8Array): P
   }
 }
 
+// Sends the actual file into the chat (not just a link) -- Telegram
+// fetches the URL itself server-side, so no download/re-upload needed
+// here as long as the URL is publicly reachable (our deliverables bucket
+// is public-read).
+export async function sendTelegramDocument(chatId: number, url: string, caption?: string): Promise<void> {
+  const resp = await fetch(`${TELEGRAM_API}/sendDocument`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chat_id: chatId,
+      document: url,
+      ...(caption ? { caption: caption.slice(0, 1024) } : {})
+    })
+  });
+  if (!resp.ok) {
+    console.error(`Telegram sendDocument failed (${resp.status}):`, await resp.text().catch(() => ''));
+  }
+}
+
 export async function downloadTelegramFile(fileId: string): Promise<Uint8Array> {
   const metaResp = await fetch(`${TELEGRAM_API}/getFile?file_id=${fileId}`);
   if (!metaResp.ok) {

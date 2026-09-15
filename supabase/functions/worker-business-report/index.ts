@@ -9,6 +9,7 @@ import { grokVisionChat } from '../_shared/grok.ts';
 import { screenshotUrl } from '../_shared/htmlPdf.ts';
 import { renderDocumentPdf, type DocSection } from '../_shared/pdf.ts';
 import { sendBotMessage, getOwnerLanguage } from '../_shared/botMessage.ts';
+import { sendTelegramDocument } from '../_shared/telegramApi.ts';
 import { addTaskFile, logEvent, markDelivered, markFailed } from '../_shared/task.ts';
 import { jsonResponse } from '../_shared/cors.ts';
 
@@ -118,11 +119,15 @@ export async function handleRequest(req: Request): Promise<Response> {
 
     const language = await getOwnerLanguage();
     if (task.owner_channel_id) {
-      await sendBotMessage(
-        Number(task.owner_channel_id),
-        `${task.public_id} business report for ${url} is ready: ${fileUrl}`,
-        language
-      ).catch((err) => console.error('worker-business-report: notify failed', err));
+      const chatId = Number(task.owner_channel_id);
+      await sendBotMessage(chatId, `${task.public_id} business report for ${url} is ready.`, language).catch((err) =>
+        console.error('worker-business-report: notify failed', err)
+      );
+      // The actual PDF, not just a link -- Telegram fetches the public
+      // deliverables URL itself and attaches the real file to the chat.
+      await sendTelegramDocument(chatId, fileUrl, `${task.public_id} — business report for ${url}`).catch((err) =>
+        console.error('worker-business-report: sendTelegramDocument failed', err)
+      );
     }
 
     return jsonResponse({ ok: true, url: fileUrl });

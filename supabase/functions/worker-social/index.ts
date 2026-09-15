@@ -8,6 +8,7 @@ import { supabaseAdmin, uploadDeliverable } from '../_shared/storage.ts';
 import { generateImageOptions } from '../_shared/images.ts';
 import { grokChat } from '../_shared/grok.ts';
 import { renderDocumentPdf, type DocSpec } from '../_shared/pdf.ts';
+import { sendTelegramDocument } from '../_shared/telegramApi.ts';
 import { addTaskFile, logEvent, markDelivered, markFailed } from '../_shared/task.ts';
 import { jsonResponse } from '../_shared/cors.ts';
 
@@ -36,7 +37,7 @@ async function handleImageRequest(taskId: string, version: number, payload: Reco
   await logEvent(taskId, 'social_images_generated', 'worker', { requestType, count: urls.length });
 }
 
-async function handleCopyRequest(taskId: string, version: number, payload: Record<string, unknown>) {
+async function handleCopyRequest(taskId: string, version: number, payload: Record<string, unknown>): Promise<{ url: string; title: string }> {
   const requestType = String(payload.requestType);
   const brief =
     requestType === 'gbp'
@@ -68,6 +69,7 @@ async function handleCopyRequest(taskId: string, version: number, payload: Recor
   const { url } = await uploadDeliverable(taskId, 'social-content.pdf', pdfBytes, 'application/pdf');
   await addTaskFile(taskId, { url, fileType: 'application/pdf', optionIndex: 1, version });
   await logEvent(taskId, 'social_copy_generated', 'worker', { requestType, url });
+  return { url, title: spec.title };
 }
 
 export async function handleRequest(req: Request): Promise<Response> {
@@ -93,7 +95,14 @@ export async function handleRequest(req: Request): Promise<Response> {
     if (IMAGE_REQUEST_TYPES.has(requestType)) {
       await handleImageRequest(taskId, task.version, payload);
     } else {
-      await handleCopyRequest(taskId, task.version, payload);
+      const { url, title } = await handleCopyRequest(taskId, task.version, payload);
+      // Owner-created (via Telegram /new) tasks get the actual PDF in the
+      // chat, not just a Dashboard entry.
+      if (task.owner_channel_id) {
+        await sendTelegramDocument(Number(task.owner_channel_id), url, `${task.public_id} — ${title}`).catch((err) =>
+          console.error('worker-social: sendTelegramDocument failed', err)
+        );
+      }
     }
 
     await markDelivered(taskId);

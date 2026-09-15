@@ -11,11 +11,17 @@
 // generic light "business document" theme. The page itself is sized to a
 // phone screen (not A4): PDFShift's `format` accepts "{width}x{height}"
 // in CSS px, and Chromium's print-to-pdf maps that 1:1 to real CSS pixels
-// on the page, so a 20px font on a 420px-wide page reads as genuinely
-// 20px on a 420px-wide phone screen -- the actual fix for text that used
+// on the page, so a font sized for a 430px-wide page reads as genuinely
+// that size on a 430px-wide phone screen -- the fix for text that used
 // to render tiny once an A4 page got squeezed into a phone's width. Each
 // section is its own page (a "slide"), so a phone reader sees one full
 // screen at a time instead of a shrunk, zoomed-out A4 sheet.
+//
+// These PDFs are a client-facing marketing artifact, not an internal
+// report -- callers (worker-pdf, worker-business-report) generate real
+// Grok images and pass them in as coverImageUrl/section.imageUrl so a
+// deck actually looks designed instead of a plain heading+paragraph
+// dump. This module only lays them out; it never calls Grok itself.
 import { renderHtmlToPdf } from './htmlPdf.ts';
 
 export interface DocSection {
@@ -24,6 +30,8 @@ export interface DocSection {
   // Defaults to the doc-level language -- lets one document mix English
   // and Urdu sections (the "both languages" legal-agreement case).
   language?: 'en' | 'ur';
+  // A real generated image banner shown above the heading on this slide.
+  imageUrl?: string;
 }
 
 export interface DocSpec {
@@ -34,13 +42,17 @@ export interface DocSpec {
   // Accepted for backward compatibility with older callers -- every spec
   // renders with the one .click brand look regardless of this value.
   theme?: 'document' | 'deck';
+  // A hero image for the cover page (top ~45% of the page, faded into
+  // the void background so the title stays legible over it).
+  coverImageUrl?: string;
 }
 
-// A generic modern phone's logical viewport -- wide/tall enough to be
-// comfortably readable, narrow enough that a real phone shows one page
-// edge-to-edge without pinch-zooming.
-const PAGE_WIDTH = 420;
-const PAGE_HEIGHT = 900;
+// A generic modern phone's logical viewport -- wide/tall enough for
+// bold, presentation-scale type and a real image banner per slide,
+// narrow enough that a real phone shows one page edge-to-edge without
+// pinch-zooming.
+const PAGE_WIDTH = 430;
+const PAGE_HEIGHT = 932;
 
 const FONT_LINK =
   '<link rel="preconnect" href="https://fonts.googleapis.com">' +
@@ -87,6 +99,7 @@ function renderSection(section: DocSection, docLanguage: 'en' | 'ur', index: num
   return `
     <section class="page slide" dir="${rtl ? 'rtl' : 'ltr'}" style="font-family:${fontFamily}; text-align:${rtl ? 'right' : 'left'};">
       <div class="slide-body">
+        ${section.imageUrl ? `<img class="slide-image" src="${escapeHtml(section.imageUrl)}" alt="" />` : ''}
         <div class="badge" style="${rtl ? 'margin-left:auto;' : ''}">${String(index).padStart(2, '0')}</div>
         <div class="rule" style="${rtl ? 'margin-left:auto;' : ''}"></div>
         <h2>${escapeHtml(section.heading)}</h2>
@@ -102,6 +115,7 @@ export async function renderDocumentPdf(spec: DocSpec): Promise<Uint8Array> {
   const titleFont = rtl ? "'Noto Nastaliq Urdu', serif" : "'Fraunces', serif";
   const total = spec.sections.length + 1;
   const brandLabel = escapeHtml(spec.title.length > 28 ? spec.title.slice(0, 28) + '…' : spec.title);
+  const hasHero = Boolean(spec.coverImageUrl);
 
   const html = `<!doctype html>
 <html lang="${language}">
@@ -115,7 +129,7 @@ ${FONT_LINK}
 
   .page {
     width: ${PAGE_WIDTH}px; min-height: ${PAGE_HEIGHT}px;
-    padding: 40px 32px 24px; position: relative; overflow: hidden;
+    padding: 44px 36px 26px; position: relative; overflow: hidden;
     display: flex; flex-direction: column;
     page-break-after: always;
   }
@@ -124,51 +138,64 @@ ${FONT_LINK}
 
   /* Cover */
   .cover {
-    justify-content: center;
-    background: radial-gradient(120% 90% at 100% 0%, rgba(255,212,0,0.16), transparent 60%), var(--void);
+    justify-content: flex-end;
+    background: ${hasHero ? 'var(--void)' : 'radial-gradient(120% 90% at 100% 0%, rgba(255,212,0,0.18), transparent 60%), var(--void)'};
+    padding-top: 0;
   }
+  .cover-hero { position: absolute; top: 0; left: 0; width: 100%; height: 46%; object-fit: cover; }
+  .cover-scrim {
+    position: absolute; top: 0; left: 0; width: 100%; height: 58%;
+    background: linear-gradient(to bottom, rgba(9,9,13,0.15) 0%, var(--void) 92%);
+  }
+  .cover-content { position: relative; padding-top: ${hasHero ? '0' : '120px'}; }
   .cover .eyebrow {
-    font-family: 'Inter', sans-serif; font-size: 13px; font-weight: 600; letter-spacing: 0.14em;
-    text-transform: uppercase; color: var(--yellow-400); margin: 0 0 18px;
+    font-family: 'Inter', sans-serif; font-size: 14px; font-weight: 700; letter-spacing: 0.16em;
+    text-transform: uppercase; color: var(--yellow-400); margin: 0 0 20px;
   }
-  .cover h1 { font-family: ${titleFont}; font-weight: 700; font-size: 38px; line-height: 1.12; margin: 0 0 16px; color: var(--fg); }
-  .cover p.subtitle { font-size: 17px; line-height: 1.5; color: var(--fg-muted); margin: 0; }
-  .cover .accent-bar { width: 56px; height: 5px; background: var(--yellow-400); border-radius: 3px; margin: 0 0 22px; }
+  .cover h1 { font-family: ${titleFont}; font-weight: 800; font-size: 46px; line-height: 1.08; margin: 0 0 18px; color: var(--fg); }
+  .cover p.subtitle { font-size: 19px; line-height: 1.55; color: var(--fg-muted); margin: 0; }
+  .cover .accent-bar { width: 64px; height: 6px; background: var(--yellow-400); border-radius: 3px; margin: 0 0 24px; }
   .cover .cover-blob {
-    position: absolute; width: 260px; height: 260px; border-radius: 50%;
-    background: var(--yellow-400); opacity: 0.14; filter: blur(50px);
-    bottom: -80px; ${rtl ? 'left' : 'right'}: -80px;
+    position: absolute; width: 280px; height: 280px; border-radius: 50%;
+    background: var(--yellow-400); opacity: 0.14; filter: blur(55px);
+    bottom: -90px; ${rtl ? 'left' : 'right'}: -90px;
   }
 
   /* Section slides */
   .slide-body { flex: 1; }
-  .badge {
-    width: 40px; height: 40px; border-radius: 10px; background: var(--yellow-400);
-    color: var(--void); font-family: 'Inter', sans-serif; font-weight: 700; font-size: 16px;
-    display: flex; align-items: center; justify-content: center; margin-bottom: 18px;
+  .slide-image {
+    width: 100%; height: 200px; object-fit: cover; border-radius: 16px;
+    margin-bottom: 24px; border: 1px solid var(--border);
   }
-  .rule { width: 44px; height: 4px; background: var(--yellow-400); border-radius: 2px; margin-bottom: 18px; }
-  h2 { font-family: ${titleFont}; font-weight: 700; font-size: 26px; line-height: 1.25; margin: 0 0 16px; color: var(--fg); }
-  .body p { font-size: 17px; line-height: 1.7; color: var(--fg-muted); margin: 0 0 14px; }
+  .badge {
+    width: 46px; height: 46px; border-radius: 12px; background: var(--yellow-400);
+    color: var(--void); font-family: 'Inter', sans-serif; font-weight: 800; font-size: 18px;
+    display: flex; align-items: center; justify-content: center; margin-bottom: 20px;
+  }
+  .rule { width: 48px; height: 5px; background: var(--yellow-400); border-radius: 3px; margin-bottom: 20px; }
+  h2 { font-family: ${titleFont}; font-weight: 700; font-size: 32px; line-height: 1.2; margin: 0 0 18px; color: var(--fg); }
+  .body p { font-size: 19px; line-height: 1.75; color: var(--fg-muted); margin: 0 0 16px; }
   .body p:first-child { color: var(--fg); }
 
   .footer {
     display: flex; align-items: center; justify-content: space-between;
-    padding-top: 14px; margin-top: 16px; border-top: 1px solid var(--border);
-    font-family: 'Inter', sans-serif; font-size: 11px; color: var(--fg-faint);
+    padding-top: 16px; margin-top: 18px; border-top: 1px solid var(--border);
+    font-family: 'Inter', sans-serif; font-size: 12px; color: var(--fg-faint);
   }
-  .wordmark { font-weight: 600; letter-spacing: 0.02em; }
+  .wordmark { font-weight: 700; letter-spacing: 0.02em; }
   .wordmark-accent { color: var(--yellow-400); }
   .page-index { letter-spacing: 0.04em; }
 </style>
 </head>
 <body>
   <section class="page cover" dir="${rtl ? 'rtl' : 'ltr'}" style="font-family:${titleFont};">
-    <div class="cover-blob"></div>
-    <p class="eyebrow" style="font-family:'Inter',sans-serif;">AgenticCore Click</p>
-    <div class="accent-bar"></div>
-    <h1>${escapeHtml(spec.title)}</h1>
-    ${spec.subtitle ? `<p class="subtitle" style="font-family:'Inter',sans-serif;">${escapeHtml(spec.subtitle)}</p>` : ''}
+    ${hasHero ? `<img class="cover-hero" src="${escapeHtml(spec.coverImageUrl!)}" alt="" /><div class="cover-scrim"></div>` : '<div class="cover-blob"></div>'}
+    <div class="cover-content">
+      <p class="eyebrow" style="font-family:'Inter',sans-serif;">AgenticCore Click</p>
+      <div class="accent-bar"></div>
+      <h1>${escapeHtml(spec.title)}</h1>
+      ${spec.subtitle ? `<p class="subtitle" style="font-family:'Inter',sans-serif;">${escapeHtml(spec.subtitle)}</p>` : ''}
+    </div>
     ${footer(1, total, brandLabel, rtl)}
   </section>
   ${spec.sections.map((s, i) => renderSection(s, language, i + 2, total, brandLabel)).join('')}

@@ -3,6 +3,23 @@ import { fetchAttachments, type FetchedAttachment } from './attachments.ts';
 import { uploadDeliverable } from './storage.ts';
 import { addTaskFile } from './task.ts';
 
+// Keeps every generated PDF's imagery visually consistent with the
+// .click brand (dark void background, yellow-400 accent light) instead
+// of each caller guessing a style. Used for the real cover/section
+// visuals in renderDocumentPdf specs (see worker-pdf, worker-business-report)
+// -- not stored as a task_files row/option since these are decorative
+// document assets, not a deliverable the client picks between.
+const BRAND_VISUAL_STYLE =
+  'Dark, minimalist, premium business/tech aesthetic: near-black background, subtle golden-yellow accent ' +
+  'lighting or geometric shapes, soft depth and glow, high-end abstract illustration. No text, no logos, no ' +
+  "watermarks, no readable words, no people's faces.";
+
+export async function generateBrandVisual(taskId: string, prompt: string, filename: string): Promise<string> {
+  const bytes = await grokImage(`${prompt} ${BRAND_VISUAL_STYLE}`);
+  const { url } = await uploadDeliverable(taskId, filename, bytes, 'image/png');
+  return url;
+}
+
 // xAI's image endpoint is text-to-image only -- there's no image-reference
 // input to hand it a client's logo/photo directly. So when a reference is
 // attached, one vision call first produces a detailed visual description

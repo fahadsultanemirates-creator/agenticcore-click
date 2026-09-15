@@ -7,6 +7,7 @@
 import { supabaseAdmin, uploadDeliverable } from '../_shared/storage.ts';
 import { grokVisionChat } from '../_shared/grok.ts';
 import { screenshotUrl } from '../_shared/htmlPdf.ts';
+import { generateBrandVisual } from '../_shared/images.ts';
 import { renderDocumentPdf, type DocSection } from '../_shared/pdf.ts';
 import { sendBotMessage, getOwnerLanguage } from '../_shared/botMessage.ts';
 import { sendTelegramDocument } from '../_shared/telegramApi.ts';
@@ -62,16 +63,31 @@ async function analyzeSite(url: string, desktopShot: Uint8Array, mobileShot: Uin
   return parsed as ReportContent;
 }
 
-function toSections(content: ReportContent): DocSection[] {
-  const divider = (title: string): DocSection => ({ heading: title, body: '' });
+function toSections(content: ReportContent, dividerImages: [string, string, string]): DocSection[] {
+  const divider = (title: string, imageUrl: string): DocSection => ({ heading: title, body: '', imageUrl });
   return [
-    divider('Part 1 — Website & Theme Flaws'),
+    divider('Part 1 — Website & Theme Flaws', dividerImages[0]),
     ...content.flaws,
-    divider('Part 2 — Recommended Improvements'),
+    divider('Part 2 — Recommended Improvements', dividerImages[1]),
     ...content.improvements,
-    divider('Part 3 — Social Media Marketing Plan'),
+    divider('Part 3 — Social Media Marketing Plan', dividerImages[2]),
     ...content.marketingPlan
   ];
+}
+
+// Real generated visuals, not stock icons -- a cover hero plus one image
+// per report part, all in the same brand style so the deck reads as
+// designed rather than a plain text dump. Generated in parallel with the
+// screenshot/analysis flow (they don't depend on its output) to avoid
+// adding extra wall-clock time.
+async function generateReportVisuals(taskId: string): Promise<{ cover: string; dividers: [string, string, string] }> {
+  const [cover, flaws, improvements, marketing] = await Promise.all([
+    generateBrandVisual(taskId, 'A professional website audit and business report cover visual: abstract dashboard screens, growth charts, and analytical data elements.', 'cover.png'),
+    generateBrandVisual(taskId, 'An abstract visual representing finding flaws and problems in a design review: a magnifying glass, warning marks, subtle cracked geometric shapes.', 'divider-flaws.png'),
+    generateBrandVisual(taskId, 'An abstract visual representing growth and improvement: upward arrows, ascending bars, a glowing lightbulb, positive transformation.', 'divider-improvements.png'),
+    generateBrandVisual(taskId, 'An abstract visual representing social media marketing and digital campaigns: connected network nodes, engagement icons, a megaphone shape.', 'divider-marketing.png')
+  ]);
+  return { cover, dividers: [flaws, improvements, marketing] };
 }
 
 export async function handleRequest(req: Request): Promise<Response> {
@@ -95,20 +111,22 @@ export async function handleRequest(req: Request): Promise<Response> {
   try {
     if (!url) throw new Error('No URL provided for this business report');
 
-    const [desktopShot, mobileShot, html] = await Promise.all([
+    const [desktopShot, mobileShot, html, visuals] = await Promise.all([
       screenshotUrl(url, '1440x900', true),
       screenshotUrl(url, '390x844', true),
-      fetchPageText(url)
+      fetchPageText(url),
+      generateReportVisuals(taskId)
     ]);
 
     const content = await analyzeSite(url, desktopShot, mobileShot, html);
-    const sections = toSections(content);
+    const sections = toSections(content, visuals.dividers);
 
     const pdfBytes = await renderDocumentPdf({
       title: 'Business Report',
       subtitle: url,
       theme: 'deck',
       language: 'en',
+      coverImageUrl: visuals.cover,
       sections
     });
 

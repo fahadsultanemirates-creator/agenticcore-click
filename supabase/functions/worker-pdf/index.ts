@@ -13,6 +13,7 @@ import { supabaseAdmin } from '../_shared/storage.ts';
 import { grokChat, grokVisionChat } from '../_shared/grok.ts';
 import { fetchAttachments } from '../_shared/attachments.ts';
 import { renderDocumentPdf, type DocSpec } from '../_shared/pdf.ts';
+import { generateBrandVisual } from '../_shared/images.ts';
 import { generateQrSvg } from '../_shared/qrcode.ts';
 import { uploadDeliverable } from '../_shared/storage.ts';
 import { sendTelegramDocument } from '../_shared/telegramApi.ts';
@@ -136,7 +137,15 @@ export async function handleRequest(req: Request): Promise<Response> {
       return jsonResponse({ ok: true, url });
     }
 
-    const spec = await generateDocSpec(task.type, payload);
+    const [spec, coverImageUrl] = await Promise.all([
+      generateDocSpec(task.type, payload),
+      generateBrandVisual(
+        taskId,
+        `A professional cover visual for a business document about: ${describeBrief(task.type, payload)}. Abstract, on-topic imagery -- not literal text or icons of the topic name.`,
+        'cover.png'
+      )
+    ]);
+    spec.coverImageUrl = coverImageUrl;
     const pdfBytes = await renderDocumentPdf(spec);
     const { url } = await uploadDeliverable(taskId, 'document.pdf', pdfBytes, 'application/pdf');
 

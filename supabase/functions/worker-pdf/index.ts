@@ -1,5 +1,5 @@
 // Handles the three text/document services (pdf, documents, brand-kit):
-// Grok drafts the content, pdf-lib lays it out as a real PDF. QR-code brand-
+// Claude drafts the content, pdf-lib lays it out as a real PDF. QR-code brand-
 // kit items are the one exception -- they're delivered as a plain SVG QR
 // code rather than forced into a page layout. Invoked by the dispatcher
 // with { taskId }.
@@ -10,7 +10,7 @@
 // honest PDF. Flagged in task_events so this isn't a silent gap.
 
 import { supabaseAdmin } from '../_shared/storage.ts';
-import { grokChat, grokVisionChat } from '../_shared/grok.ts';
+import { claudeChat, claudeVisionChat } from '../_shared/claude.ts';
 import { fetchAttachments } from '../_shared/attachments.ts';
 import { renderDocumentPdf, type DocSpec, type DocSection } from '../_shared/pdf.ts';
 import { generateBrandVisual, mapWithConcurrency } from '../_shared/images.ts';
@@ -42,7 +42,7 @@ function describeBrief(type: string, payload: Record<string, unknown>): string {
   return `Brand kit item: ${payload.item}\nBrief: ${payload.description}`;
 }
 
-// language: 'en' (default), 'ur', or 'both' -- for 'both', Grok produces
+// language: 'en' (default), 'ur', or 'both' -- for 'both', Claude produces
 // the same content twice, English sections first then Urdu, each section
 // tagged with which language it's in so renderDocumentPdf can switch font
 // and RTL direction per section within one document.
@@ -68,24 +68,24 @@ async function generateDocSpec(type: string, payload: Record<string, unknown>): 
 
   const attachments = await fetchAttachments(payload.referenceFiles);
   const raw = attachments.length > 0
-    ? await grokVisionChat(
+    ? await claudeVisionChat(
         `${systemPrompt} You are also given reference image(s) (e.g. an existing logo or brand photos) -- reflect their branding/style in the content and any visual description you write.`,
         userBrief,
         attachments,
-        { maxTokens: 6000 }
+        { maxTokens: 8000 }
       )
-    : await grokChat(
+    : await claudeChat(
         [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userBrief }
         ],
-        { maxTokens: 6000 }
+        { maxTokens: 8000 }
       );
 
   const cleaned = raw.trim().replace(/^```(?:json)?\n?/i, '').replace(/```$/i, '').trim();
   const parsed = JSON.parse(cleaned);
   if (!parsed?.title || !Array.isArray(parsed?.sections)) {
-    throw new Error('Grok returned an unexpected document shape');
+    throw new Error('Claude returned an unexpected document shape');
   }
   parsed.language = language === 'both' ? 'en' : language;
   return parsed as DocSpec;
@@ -109,7 +109,7 @@ async function generateSectionVisuals(taskId: string, sections: DocSection[]): P
 }
 
 async function generateQrDeliverable(taskId: string, payload: Record<string, unknown>): Promise<string> {
-  const content = await grokChat(
+  const content = await claudeChat(
     [
       {
         role: 'system',
@@ -119,7 +119,7 @@ async function generateQrDeliverable(taskId: string, payload: Record<string, unk
       },
       { role: 'user', content: String(payload.description ?? '') }
     ],
-    { maxTokens: 200, temperature: 0.3 }
+    { maxTokens: 200, effort: 'low' }
   );
 
   const svg = generateQrSvg(content.trim());

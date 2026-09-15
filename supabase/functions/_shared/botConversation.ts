@@ -7,7 +7,7 @@
 // only the NLU layer gained memory, task-creation logic didn't change.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { grokChat } from './grok.ts';
+import { claudeChat } from './claude.ts';
 import type { BotIntent } from './intent.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
@@ -60,12 +60,12 @@ export async function converse(chatId: string, text: string, attachmentUrls: str
 
   let intent: BotIntent = { intent: 'unknown' };
   try {
-    const raw = await grokChat(messages, { maxTokens: 400, temperature: 0.1 });
+    const raw = await claudeChat(messages, { maxTokens: 1000, effort: 'medium' });
     const cleaned = raw.trim().replace(/^```(?:json)?\n?/i, '').replace(/```$/i, '').trim();
     const parsed = JSON.parse(cleaned);
     if (typeof parsed?.intent === 'string') intent = parsed as BotIntent;
   } catch (err) {
-    console.error('converse: Grok call/parse failed', err);
+    console.error('converse: Claude call/parse failed', err);
   }
 
   await supabaseAdmin.from('bot_messages').insert({

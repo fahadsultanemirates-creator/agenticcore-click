@@ -6,7 +6,7 @@
 
 import { supabaseAdmin, uploadDeliverable } from '../_shared/storage.ts';
 import { generateImageOptions } from '../_shared/images.ts';
-import { grokChat } from '../_shared/grok.ts';
+import { claudeChat } from '../_shared/claude.ts';
 import { renderDocumentPdf, type DocSpec } from '../_shared/pdf.ts';
 import { sendTelegramDocument } from '../_shared/telegramApi.ts';
 import { addTaskFile, logEvent, markDelivered, markFailed } from '../_shared/task.ts';
@@ -44,7 +44,7 @@ async function handleCopyRequest(taskId: string, version: number, payload: Recor
       ? `Write Google Business Profile content: a business description, suggested categories, and an opening post. Brief: ${payload.description}. Platforms context: ${platformList(payload)}.`
       : `Write a caption & hashtag pack (at least 4 distinct caption options with matching hashtags) for ${platformList(payload)}. Brief: ${payload.description}.`;
 
-  const raw = await grokChat(
+  const raw = await claudeChat(
     [
       {
         role: 'system',
@@ -62,7 +62,7 @@ async function handleCopyRequest(taskId: string, version: number, payload: Recor
   const cleaned = raw.trim().replace(/^```(?:json)?\n?/i, '').replace(/```$/i, '').trim();
   const spec = JSON.parse(cleaned) as DocSpec;
   if (!spec?.title || !Array.isArray(spec?.sections)) {
-    throw new Error('Grok returned an unexpected document shape');
+    throw new Error('Claude returned an unexpected document shape');
   }
 
   const pdfBytes = await renderDocumentPdf(spec);

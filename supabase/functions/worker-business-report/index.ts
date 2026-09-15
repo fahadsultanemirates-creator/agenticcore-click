@@ -1,11 +1,11 @@
-// Owner-only: given a URL, screenshots it (desktop + mobile) so Grok can
+// Owner-only: given a URL, screenshots it (desktop + mobile) so Claude can
 // actually see the site rather than just reason about raw markup, then
 // produces a three-part deck -- flaws, improvements, social marketing
 // plan -- rendered as a .click-branded PDF (dark theme, big mobile-legible
 // type, one topic per page). Invoked by the dispatcher with { taskId }.
 
 import { supabaseAdmin, uploadDeliverable } from '../_shared/storage.ts';
-import { grokVisionChat } from '../_shared/grok.ts';
+import { claudeVisionChat } from '../_shared/claude.ts';
 import { screenshotUrl } from '../_shared/htmlPdf.ts';
 import { generateBrandVisual, mapWithConcurrency } from '../_shared/images.ts';
 import { renderDocumentPdf, type DocSection } from '../_shared/pdf.ts';
@@ -37,7 +37,7 @@ async function fetchPageText(url: string): Promise<string> {
 }
 
 async function analyzeSite(url: string, desktopShot: Uint8Array, mobileShot: Uint8Array, html: string): Promise<ReportContent> {
-  const raw = await grokVisionChat(
+  const raw = await claudeVisionChat(
     'You are a senior web design, UX, and digital marketing consultant preparing a client-facing report. ' +
       'You are given a desktop screenshot, a mobile screenshot, and the raw HTML of a business website. ' +
       'Produce a report in exactly three parts: (1) flaws -- concrete problems with the design, theme, layout, ' +
@@ -59,7 +59,7 @@ async function analyzeSite(url: string, desktopShot: Uint8Array, mobileShot: Uin
   const cleaned = raw.trim().replace(/^```(?:json)?\n?/i, '').replace(/```$/i, '').trim();
   const parsed = JSON.parse(cleaned);
   if (!Array.isArray(parsed?.flaws) || !Array.isArray(parsed?.improvements) || !Array.isArray(parsed?.marketingPlan)) {
-    throw new Error('Grok returned an unexpected report shape');
+    throw new Error('Claude returned an unexpected report shape');
   }
   return parsed as ReportContent;
 }

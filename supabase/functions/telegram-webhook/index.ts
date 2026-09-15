@@ -12,8 +12,8 @@
 // message and a short spoken voice note, in whichever of English/Urdu the
 // owner last used (see _shared/botMessage.ts). Slash commands are matched
 // first for speed/determinism; anything else (free text, or any voice
-// transcript, which never contains a literal "/") falls back to Grok-based
-// intent classification (_shared/intent.ts).
+// transcript, which never contains a literal "/") falls back to Claude-based
+// intent classification (_shared/botConversation.ts, shapes: _shared/intent.ts).
 //
 // Public endpoint (verify_jwt = false in ../../config.toml) -- Telegram
 // doesn't send a Supabase JWT.

@@ -1,5 +1,5 @@
 // Forge -- the client-facing conversational intake. Holds a real multi-turn
-// conversation (full history replayed to Grok each turn), gathers whatever
+// conversation (full history replayed to Claude each turn), gathers whatever
 // a given service needs, and -- once it has enough -- hands back a
 // structured set of task drafts for the client to confirm. This function
 // never creates a task or touches the wallet itself; forge-submit does
@@ -11,7 +11,7 @@
 // questions it needs, the same way a human intake person would.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { grokChat } from '../_shared/grok.ts';
+import { claudeChat } from '../_shared/claude.ts';
 import { calculatePriceUsd, FULL_BUSINESS_SETUP_USD } from '../_shared/pricing.ts';
 import { jsonResponse, CORS_HEADERS } from '../_shared/cors.ts';
 
@@ -157,7 +157,7 @@ export async function handleRequest(req: Request): Promise<Response> {
 
   let envelope: ForgeEnvelope;
   try {
-    const raw = await grokChat(messages, { maxTokens: 2000, temperature: 0.4 });
+    const raw = await claudeChat(messages, { maxTokens: 4000 });
     const cleaned = raw.trim().replace(/^```(?:json)?\n?/i, '').replace(/```$/i, '').trim();
     const parsed = JSON.parse(cleaned);
     if (typeof parsed?.reply !== 'string' || typeof parsed?.action !== 'string') {
@@ -165,7 +165,7 @@ export async function handleRequest(req: Request): Promise<Response> {
     }
     envelope = parsed as ForgeEnvelope;
   } catch (err) {
-    console.error('forge-chat: Grok call/parse failed', err);
+    console.error('forge-chat: Claude call/parse failed', err);
     envelope = { reply: "Sorry, I didn't quite catch that -- could you rephrase?", action: 'ask' };
   }
 

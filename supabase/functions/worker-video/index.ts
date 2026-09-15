@@ -4,15 +4,25 @@
 // leaves the task in_progress with provider_job_id set -- video-poll
 // (cron) picks up completion and delivers the file.
 //
-// No-avatar video (pure b-roll/motion/promo) has no automated provider
-// wired up yet -- rather than fake a deliverable, the task is marked
-// needs_info and the owner is pinged to produce it manually. Invoked by
-// the dispatcher with { taskId }.
+// No-avatar video (pure b-roll/motion/promo) is generated via xAI's
+// grok-imagine-video: Grok first writes a visual scene prompt (using any
+// attached reference images), then that prompt is submitted the same
+// async way as HeyGen -- video-poll branches on payload.avatarStyle to
+// know which provider a given in_progress video task is waiting on.
+// grok-imagine-video caps a single clip at 15 seconds, which comfortably
+// covers "short" (5-15s) but not "long" (30s+) -- there's no multi-clip
+// stitching pipeline here, so a long no-avatar request is delivered as a
+// single 15s clip and the owner is notified it may need manual extending.
+// "Hybrid" (avatar for part of the video) still needs manual production:
+// blending an avatar segment with generated b-roll is real video editing,
+// not something either provider does for us. Invoked by the dispatcher
+// with { taskId }.
 
 import { supabaseAdmin } from '../_shared/storage.ts';
 import { grokChat, grokVisionChat } from '../_shared/grok.ts';
 import { fetchAttachments } from '../_shared/attachments.ts';
 import { submitHeygenVideo, DEFAULT_AVATAR, DEFAULT_VOICE_ID, type VideoDimension, type CharacterChoice } from '../_shared/heygen.ts';
+import { submitGrokVideo } from '../_shared/grokVideo.ts';
 import { notifyOwner } from '../_shared/telegram.ts';
 import { logEvent, markNeedsInfo, markFailed, setProviderJob } from '../_shared/task.ts';
 import { jsonResponse } from '../_shared/cors.ts';
@@ -71,6 +81,41 @@ async function generateScript(payload: Record<string, unknown>): Promise<string>
   );
 }
 
+// grok-imagine-video takes one visual prompt, not a spoken script -- no
+// dialogue or on-screen text, since there's no avatar to say it.
+async function generateNoAvatarPrompt(payload: Record<string, unknown>): Promise<string> {
+  const brief = String(payload.description ?? '');
+  const systemPrompt =
+    'Write a single, vivid visual prompt for an AI video generator producing a short business promo clip -- ' +
+    'no dialogue, no avatar, no on-screen text. Describe the scene/subject, camera movement, lighting, and mood ' +
+    'in 2-3 sentences. Output ONLY the prompt text.';
+
+  const attachments = await fetchAttachments(payload.referenceFiles);
+  if (attachments.length > 0) {
+    return await grokVisionChat(
+      `${systemPrompt} Reference image(s) are attached -- let their real subject/style/colors inform the scene.`,
+      brief,
+      attachments,
+      { maxTokens: 400, temperature: 0.7 }
+    );
+  }
+
+  return await grokChat(
+    [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: brief }
+    ],
+    { maxTokens: 400, temperature: 0.7 }
+  );
+}
+
+// grok-imagine-video caps a single generation at 15s -- that's a natural
+// fit for "short" (5-15s) but well under a "long" (30s+) request; there's
+// no clip-stitching here, so long delivers at the model's max instead.
+function noAvatarDurationSeconds(payload: Record<string, unknown>): number {
+  return payload.length === 'long' ? 15 : 10;
+}
+
 export async function handleRequest(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response(null, { headers: {} });
 
@@ -90,11 +135,40 @@ export async function handleRequest(req: Request): Promise<Response> {
   const payload = task.payload ?? {};
 
   if (payload.avatarStyle === 'none') {
-    await markNeedsInfo(taskId, 'No-avatar video generation is not automated yet -- needs manual production.');
-    await notifyOwner(
-      `${task.public_id} needs a no-avatar video produced manually -- this path isn't automated yet.\nBrief: ${payload.description}`
-    );
-    return jsonResponse({ ok: true, needsManualProduction: true });
+    if (payload.noAvatarMode === 'hybrid') {
+      await markNeedsInfo(taskId, 'Hybrid avatar/no-avatar videos need manual editing to blend the two styles -- not automated yet.');
+      await notifyOwner(
+        `${task.public_id} needs a hybrid avatar/no-avatar video produced manually -- this path isn't automated yet.\nBrief: ${payload.description}`
+      );
+      return jsonResponse({ ok: true, needsManualProduction: true });
+    }
+
+    try {
+      const prompt = await generateNoAvatarPrompt(payload);
+      const durationSeconds = noAvatarDurationSeconds(payload);
+      const requestId = await submitGrokVideo(prompt, {
+        durationSeconds,
+        resolution: payload.length === 'long' ? '1080p' : '720p',
+        aspectRatio: '16:9',
+        generateAudio: true
+      });
+
+      await setProviderJob(taskId, requestId);
+      await logEvent(taskId, 'video_submitted', 'worker', { requestId, provider: 'grok-imagine-video', prompt, durationSeconds });
+
+      if (payload.length === 'long') {
+        await notifyOwner(
+          `${task.public_id} (long, no-avatar) was auto-generated at 15s -- grok-imagine-video's max per clip. ` +
+            `Let the client know if they need it extended to the full requested length; multi-clip stitching isn't wired up yet.`
+        );
+      }
+
+      return jsonResponse({ ok: true, requestId });
+    } catch (err) {
+      console.error(`worker-video (no-avatar) failed for ${taskId}:`, err);
+      await markFailed(taskId, err instanceof Error ? err.message : String(err));
+      return jsonResponse({ ok: false, error: 'No-avatar video generation failed' });
+    }
   }
 
   try {

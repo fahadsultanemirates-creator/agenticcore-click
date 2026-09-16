@@ -14,6 +14,11 @@
 // rendered page rather than the markup.
 
 import { claudeVisionChat } from './claude.ts';
+import { scrapeHtml } from './brandScrape.ts';
+
+// Parsing lives in brandScrape.ts (pure, and tested); re-exported here because
+// this is where callers already look for it.
+export { scrapeHtml } from './brandScrape.ts';
 import { screenshotUrl } from './htmlPdf.ts';
 import { supabaseAdmin } from './storage.ts';
 
@@ -65,54 +70,6 @@ export function extractUrl(text: string): string | null {
   return bareMatch ? normalizeUrl(bareMatch[0]) : null;
 }
 
-function absolute(href: string, base: string): string | undefined {
-  try {
-    return new URL(href, base).toString();
-  } catch {
-    return undefined;
-  }
-}
-
-// Exact facts, parsed rather than guessed.
-export function scrapeHtml(html: string, baseUrl: string): Partial<BrandProfile> {
-  const pick = (re: RegExp): string | undefined => html.match(re)?.[1]?.trim();
-
-  const logoCandidate =
-    pick(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i) ??
-    pick(/<link[^>]+rel=["'][^"']*apple-touch-icon[^"']*["'][^>]+href=["']([^"']+)["']/i) ??
-    pick(/<img[^>]+(?:class|id|alt)=["'][^"']*logo[^"']*["'][^>]*src=["']([^"']+)["']/i) ??
-    pick(/<link[^>]+rel=["'][^"']*icon[^"']*["'][^>]+href=["']([^"']+)["']/i);
-
-  const socials: Record<string, string> = {};
-  const socialHosts: [string, RegExp][] = [
-    ['instagram', /https?:\/\/(?:www\.)?instagram\.com\/[A-Za-z0-9_.\-\/]+/i],
-    ['facebook', /https?:\/\/(?:www\.)?facebook\.com\/[A-Za-z0-9_.\-\/]+/i],
-    ['linkedin', /https?:\/\/(?:www\.)?linkedin\.com\/[A-Za-z0-9_.\-\/]+/i],
-    ['x', /https?:\/\/(?:www\.)?(?:twitter|x)\.com\/[A-Za-z0-9_.\-\/]+/i],
-    ['tiktok', /https?:\/\/(?:www\.)?tiktok\.com\/[@A-Za-z0-9_.\-\/]+/i],
-    ['youtube', /https?:\/\/(?:www\.)?youtube\.com\/[A-Za-z0-9_.\-\/@]+/i],
-    ['whatsapp', /https?:\/\/(?:wa\.me|api\.whatsapp\.com)\/[^\s"'<>]+/i]
-  ];
-  for (const [name, re] of socialHosts) {
-    const found = html.match(re)?.[0];
-    if (found) socials[name] = found;
-  }
-
-  const email = html.match(/mailto:([^\s"'<>?]+@[^\s"'<>?]+)/i)?.[1];
-  const phone = html.match(/tel:([+0-9()\-\s]{6,})/i)?.[1]?.trim();
-
-  return {
-    businessName:
-      pick(/<meta[^>]+property=["']og:site_name["'][^>]+content=["']([^"']+)["']/i) ??
-      pick(/<title[^>]*>([^<]+)<\/title>/i),
-    description:
-      pick(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i) ??
-      pick(/<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']+)["']/i),
-    logoUrl: logoCandidate ? absolute(logoCandidate, baseUrl) : undefined,
-    socials: Object.keys(socials).length > 0 ? socials : undefined,
-    contact: email || phone ? { email, phone, whatsapp: socials.whatsapp } : undefined
-  };
-}
 
 const HEX = /^#[0-9a-f]{6}$/i;
 
@@ -215,6 +172,8 @@ export function brandFactsForPrompt(profile: BrandProfile | null): string {
   if (profile.tone) lines.push(`Their tone of voice (match it): ${profile.tone}`);
   if (profile.contact?.email) lines.push(`Email: ${profile.contact.email}`);
   if (profile.contact?.phone) lines.push(`Phone: ${profile.contact.phone}`);
+  if (profile.contact?.whatsapp) lines.push(`WhatsApp: ${profile.contact.whatsapp}`);
+  if (profile.contact?.address) lines.push(`Address: ${profile.contact.address}`);
   if (profile.socials) {
     for (const [name, link] of Object.entries(profile.socials)) lines.push(`${name}: ${link}`);
   }

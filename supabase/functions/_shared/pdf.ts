@@ -318,7 +318,9 @@ ${FONT_LINK}
     text-align: ${rtl ? 'right' : 'left'};
   }
   .head { display: flex; align-items: center; gap: 18px; ${rtl ? 'flex-direction: row-reverse;' : ''} }
-  .logo { max-height: 56px; max-width: 200px; }
+  /* Roomy enough that a wide wordmark stays readable at print size -- 56px
+     tall reduced anything but a tight square icon to a smudge. */
+  .logo { max-height: 76px; max-width: 280px; object-fit: contain; }
   .name { font-family: ${fontFamily}; font-weight: 700; font-size: 20px; color: ${nameColor}; margin: 0; }
   .sub { font-family: ${fontFamily}; font-size: 12px; color: #5a5e68; margin: 4px 0 0; line-height: 1.5; }
   .head-rule { height: 3px; background: ${ruleColor}; border-radius: 2px; margin: 18px 0 0; }

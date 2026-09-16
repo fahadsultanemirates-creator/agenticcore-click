@@ -150,3 +150,67 @@ export function whatsappNumber(link: string | undefined): string | undefined {
   const digits = link.match(/(?:wa\.me|api\.whatsapp\.com\/send\?phone=)\/?(\d{7,15})/i)?.[1];
   return digits ? `+${digits}` : undefined;
 }
+
+// A social link, written the way it belongs on paper: the platform named, then
+// the handle. "@AgenticCoreHQ" alone tells a reader nothing about where to
+// find it.
+const SOCIAL_LABELS: Record<string, string> = {
+  instagram: 'Instagram',
+  facebook: 'Facebook',
+  linkedin: 'LinkedIn',
+  x: 'X',
+  tiktok: 'TikTok',
+  youtube: 'YouTube'
+};
+
+export function socialHandle(platform: string, url: string): string | undefined {
+  const label = SOCIAL_LABELS[platform];
+  if (!label) return undefined;
+
+  // Everything after the host, minus tracking noise and trailing slashes.
+  const path = url
+    .replace(/^https?:\/\/(?:www\.)?[^/]+\/?/i, '')
+    .split(/[?#]/)[0]
+    .replace(/\/+$/, '')
+    .trim();
+  if (!path) return label;
+
+  // Facebook share links are opaque ids -- naming the platform alone is more
+  // use on paper than printing /share/1HppKFetgD.
+  if (/^share\//i.test(path)) return label;
+
+  const handle = path.startsWith('@') ? path : `@${path.split('/').pop()}`;
+  return `${label} ${handle}`;
+}
+
+// The contact strip on a piece of stationery, built from what the site states
+// rather than composed by a model.
+//
+// Composed by a model, it dropped one of four social channels to fit an
+// instruction about line count -- and which of a business's own channels
+// appear on its letterhead is not a writing decision. This is mechanical, so
+// it is done mechanically, and nothing can be quietly left out.
+export function stationeryFooterLines(profile: BrandProfile | null): string[] {
+  if (!profile) return [];
+  const lines: string[] = [];
+
+  const primary = [
+    profile.contact?.email,
+    profile.url?.replace(/^https?:\/\/(?:www\.)?/i, '').replace(/\/+$/, ''),
+    profile.contact?.phone,
+    whatsappNumber(profile.contact?.whatsapp ?? profile.socials?.whatsapp)
+      ? `WhatsApp ${whatsappNumber(profile.contact?.whatsapp ?? profile.socials?.whatsapp)}`
+      : undefined,
+    profile.contact?.address
+  ].filter((part): part is string => !!part && part.trim() !== '');
+  if (primary.length > 0) lines.push(primary.join(' · '));
+
+  const socials = Object.entries(profile.socials ?? {})
+    .map(([platform, url]) => socialHandle(platform, url))
+    .filter((entry): entry is string => !!entry);
+  if (socials.length > 0) lines.push(socials.join(' · '));
+
+  if (profile.services?.length) lines.push(profile.services.join(' · '));
+
+  return lines;
+}

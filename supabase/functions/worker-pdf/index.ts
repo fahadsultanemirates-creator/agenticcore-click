@@ -27,6 +27,7 @@ import { jsonResponse } from '../_shared/cors.ts';
 import type { DocSpec } from '../_shared/pdf.ts';
 import { resolveSku, shapeInstruction, type CatalogItem } from '../_shared/catalog.ts';
 import { getBrandProfile, brandFactsForPrompt, extractUrl, normalizeUrl, type BrandProfile } from '../_shared/brandProfile.ts';
+import { stationeryFooterLines } from '../_shared/brandScrape.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -128,16 +129,11 @@ async function generateStationerySpec(catalogItem: CatalogItem, payload: Record<
 
   const systemPrompt =
     `${shapeInstruction(catalogItem)} ` +
-    'Return the fixed printed matter as two lists of SHORT lines. "headerLines": the business name first, ' +
-    'then at most two more lines (a tagline and/or what they do). "footerLines": at most three lines carrying ' +
-    'contact details, social handles and, if useful, a one-line list of services, separated by " · ". ' +
-    'ALWAYS NAME THE PLATFORM BESIDE EACH HANDLE -- "Instagram @name", "X @name", "YouTube @name", ' +
-    '"Facebook /name". A bare handle is useless on paper: the reader cannot tell which network it belongs to. ' +
-    'Write WhatsApp and phone numbers as dialable numbers ("WhatsApp +1 808 998 5226"), never as a wa.me or ' +
-    'other tracking URL, which nobody can type off a printed page. Use the real details given below exactly; ' +
-    'never invent an address, phone number or handle. Write no design instructions, no colours, no fonts, no ' +
-    'brackets, no placeholders of any kind. Respond with ONLY a JSON object of the exact shape ' +
-    '{"businessName": string, "headerLines": string[], "footerLines": string[]} -- no markdown fences, no commentary.';
+    'Return the identity block that sits at the top of every sheet: the business name, then at most two more ' +
+    'short lines (a tagline and/or what they do). The contact strip at the foot is assembled separately from ' +
+    "the client's own recorded details, so do not write it. Write no design instructions, no colours, no " +
+    'fonts, no brackets, no placeholders of any kind. Respond with ONLY a JSON object of the exact shape ' +
+    '{"businessName": string, "headerLines": string[]} -- no markdown fences, no commentary.';
 
   const userBrief = [`Product: ${catalogItem.name}`, `Brief: ${description}`].filter(Boolean).join('\n') +
     brandFactsForPrompt(profile) + revisionInstruction(payload);
@@ -153,8 +149,11 @@ async function generateStationerySpec(catalogItem: CatalogItem, payload: Record<
   const cleaned = raw.trim().replace(/^```(?:json)?\n?/i, '').replace(/```$/i, '').trim();
   const parsed = JSON.parse(cleaned);
   const headerLines = Array.isArray(parsed?.headerLines) ? parsed.headerLines.map(String) : [];
-  const footerLines = Array.isArray(parsed?.footerLines) ? parsed.footerLines.map(String) : [];
   if (headerLines.length === 0) throw new Error('Claude returned stationery with no header');
+
+  // Built from the profile, not written: composing it left one of four social
+  // channels off the page to satisfy an instruction about line count.
+  const footerLines = stationeryFooterLines(profile);
 
   return {
     title: String(parsed?.businessName ?? profile?.businessName ?? headerLines[0]),
@@ -162,7 +161,9 @@ async function generateStationerySpec(catalogItem: CatalogItem, payload: Record<
     sections: [{ heading: '', body: '' }],
     kind: 'asset',
     brand: brandAssets(profile, payload),
-    stationery: { headerLines: headerLines.slice(0, 3), footerLines: footerLines.slice(0, 3) }
+    // footerLines is not truncated: it is exactly what the site publishes, and
+    // dropping a channel to hit a line count is the bug this replaced.
+    stationery: { headerLines: headerLines.slice(0, 3), footerLines }
   };
 }
 

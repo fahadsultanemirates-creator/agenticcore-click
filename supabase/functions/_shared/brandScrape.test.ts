@@ -7,7 +7,7 @@
 // a letterhead is worse than no address at all.
 
 import assert from 'node:assert/strict';
-import { scrapeHtml, whatsappNumber } from './brandScrape.ts';
+import { scrapeHtml, whatsappNumber, socialHandle, stationeryFooterLines } from './brandScrape.ts';
 
 let passed = 0;
 let failed = 0;
@@ -103,6 +103,46 @@ test('a wa.me link becomes a dialable number', () => {
   assert.equal(whatsappNumber('https://api.whatsapp.com/send?phone=971501234567'), '+971501234567');
   assert.equal(whatsappNumber(undefined), undefined);
   assert.equal(whatsappNumber('https://wa.me/'), undefined);
+});
+
+test('a social link is written with its platform named', () => {
+  assert.equal(socialHandle('instagram', 'https://instagram.com/agenticcore.agency'), 'Instagram @agenticcore.agency');
+  assert.equal(socialHandle('x', 'https://x.com/AgenticCoreHQ'), 'X @AgenticCoreHQ');
+  assert.equal(socialHandle('youtube', 'https://youtube.com/@AgenticcoreAgency'), 'YouTube @AgenticcoreAgency');
+  // An opaque share id is worse than useless in print.
+  assert.equal(socialHandle('facebook', 'https://www.facebook.com/share/1HppKFetgD/'), 'Facebook');
+  assert.equal(socialHandle('whatsapp', 'https://wa.me/1808'), undefined, 'handled as a number, not a handle');
+});
+
+// The live failure: four social channels on the site, three on the letterhead.
+// Composing this with a model let it drop one to satisfy a line-count
+// instruction, which is not a decision a writer should be making.
+test('every published channel reaches the contact strip', () => {
+  const lines = stationeryFooterLines({
+    url: 'https://agenticcore.agency',
+    contact: { email: 'hello@agenticcore.agency', whatsapp: 'https://wa.me/18089985226' },
+    socials: {
+      x: 'https://x.com/AgenticCoreHQ',
+      youtube: 'https://youtube.com/@AgenticcoreAgency',
+      facebook: 'https://www.facebook.com/share/1HppKFetgD/',
+      instagram: 'https://instagram.com/agenticcore.agency',
+      whatsapp: 'https://wa.me/18089985226'
+    },
+    services: ['Websites', 'AI agents']
+  });
+
+  const all = lines.join(' | ');
+  for (const expected of ['X @AgenticCoreHQ', 'YouTube @AgenticcoreAgency', 'Facebook', 'Instagram @agenticcore.agency']) {
+    assert.ok(all.includes(expected), `missing ${expected} from: ${all}`);
+  }
+  assert.ok(all.includes('WhatsApp +18089985226'));
+  assert.ok(all.includes('agenticcore.agency'));
+  assert.ok(!all.includes('wa.me'), 'no tracking URLs in print');
+});
+
+test('a profile with nothing to say produces no strip', () => {
+  assert.deepEqual(stationeryFooterLines(null), []);
+  assert.deepEqual(stationeryFooterLines({ url: '' }), []);
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

@@ -70,6 +70,15 @@ export interface DocSpec {
   // the tagline and the name vanished from the page entirely. On stationery
   // the name is the one thing that cannot be missing.
   stationery?: { businessName: string; headerLines: string[]; footerLines: string[] };
+  // Whose brand a multi-page deck wears. The catalog has recorded this per
+  // product from the start; the deck renderer simply never read it, so eight
+  // client-branded products -- brochures, proposals, terms, service
+  // agreements -- came back in the .click palette with "agenticcore.click"
+  // stamped on every page footer. A client's own service agreement carrying
+  // our wordmark is not a cosmetic problem.
+  // Defaults to 'agenticcore' so specs persisted before this field existed
+  // keep rendering exactly as they did.
+  branding?: 'client' | 'agenticcore';
 }
 
 // A generic modern phone's logical viewport -- wide/tall enough for
@@ -97,27 +106,45 @@ function bodyToHtml(body: string): string {
 }
 
 // The exact tokens from src/index.css's @theme block -- this IS the
-// .click site's palette, not an approximation of it.
-const BRAND_CSS_VARS = `
+// .click site's palette, not an approximation of it. Correct for our own
+// analysis documents; wrong for anything a client puts their name on.
+const HOUSE_CSS_VARS = `
   --void: #09090d; --surface: #151519; --surface-2: #1e1e24; --border: #2a2a32;
   --fg: #f6f5f2; --fg-muted: #a6a4b0; --fg-faint: #6d6b78;
   --yellow-400: #ffd400; --yellow-700: #a37c00;
 `;
+
+// The same token names in a light, print-friendly scheme, with the accent
+// taken from the client's own site. Reusing the names means the whole deck
+// template works unchanged -- only what the tokens resolve to differs.
+function clientCssVars(brand: DocSpec['brand']): string {
+  const accent = brand?.accentColor ?? brand?.primaryColor ?? '#14161b';
+  return `
+  --void: #ffffff; --surface: #f6f7f9; --surface-2: #eef0f4; --border: #e2e5ea;
+  --fg: ${brand?.primaryColor ?? '#14161b'}; --fg-muted: #5a5e68; --fg-faint: #8b8f99;
+  --yellow-400: ${accent}; --yellow-700: ${accent};
+`;
+}
 
 // Replicates the site's own .bg-noise texture (a fine dot grid) so PDF
 // pages carry the same subtle texture as the live site instead of a flat
 // slab of color.
 const DOT_PATTERN = `background-image: radial-gradient(var(--fg) 0.6px, transparent 0.6px); background-size: 16px 16px;`;
 
-function footer(index: number, total: number, brandLabel: string, rtl: boolean): string {
+function footer(index: number, total: number, brandLabel: string, rtl: boolean, houseBrand: boolean): string {
+  // Our wordmark belongs only on our own documents. On a client's brochure or
+  // contract the page simply carries their title and the page number.
+  const wordmark = houseBrand
+    ? `<span class="wordmark">agenticcore<span class="wordmark-accent">.click</span></span>`
+    : `<span class="wordmark"></span>`;
   return `
     <div class="footer" style="flex-direction:${rtl ? 'row-reverse' : 'row'};">
-      <span class="wordmark">agenticcore<span class="wordmark-accent">.click</span></span>
+      ${wordmark}
       <span class="page-index">${brandLabel} · ${String(index).padStart(2, '0')} / ${String(total).padStart(2, '0')}</span>
     </div>`;
 }
 
-function renderSection(section: DocSection, docLanguage: 'en' | 'ur', index: number, total: number, brandLabel: string): string {
+function renderSection(section: DocSection, docLanguage: 'en' | 'ur', index: number, total: number, brandLabel: string, houseBrand: boolean): string {
   const lang = section.language ?? docLanguage;
   const rtl = lang === 'ur';
   const fontFamily = rtl ? "'Noto Nastaliq Urdu', serif" : "'Inter', sans-serif";
@@ -132,7 +159,7 @@ function renderSection(section: DocSection, docLanguage: 'en' | 'ur', index: num
           <div class="body">${bodyToHtml(section.body)}</div>
         </div>
       </div>
-      ${footer(index, total, brandLabel, rtl)}
+      ${footer(index, total, brandLabel, rtl, houseBrand)}
     </section>`;
 }
 
@@ -143,6 +170,7 @@ export async function renderDocumentPdf(spec: DocSpec): Promise<Uint8Array> {
   const total = spec.sections.length + 1;
   const brandLabel = escapeHtml(spec.title.length > 28 ? spec.title.slice(0, 28) + '…' : spec.title);
   const hasHero = Boolean(spec.coverImageUrl);
+  const houseBrand = (spec.branding ?? 'agenticcore') === 'agenticcore';
 
   const html = `<!doctype html>
 <html lang="${language}">
@@ -150,7 +178,7 @@ export async function renderDocumentPdf(spec: DocSpec): Promise<Uint8Array> {
 <meta charset="utf-8">
 ${FONT_LINK}
 <style>
-  :root { ${BRAND_CSS_VARS} }
+  :root { ${houseBrand ? HOUSE_CSS_VARS : clientCssVars(spec.brand)} }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--void); color: var(--fg); font-family: 'Inter', sans-serif; }
 
@@ -166,13 +194,13 @@ ${FONT_LINK}
   /* Cover */
   .cover {
     justify-content: flex-end;
-    background: ${hasHero ? 'var(--void)' : 'radial-gradient(120% 90% at 100% 0%, rgba(255,212,0,0.18), transparent 60%), var(--void)'};
+    background: ${hasHero ? 'var(--void)' : `radial-gradient(120% 90% at 100% 0%, ${houseBrand ? 'rgba(255,212,0,0.18)' : 'var(--surface)'}, transparent 60%), var(--void)`};
     padding-top: 0;
   }
   .cover-hero { position: absolute; top: 0; left: 0; width: 100%; height: 46%; object-fit: cover; }
   .cover-scrim {
     position: absolute; top: 0; left: 0; width: 100%; height: 58%;
-    background: linear-gradient(to bottom, rgba(9,9,13,0.15) 0%, var(--void) 92%);
+    background: linear-gradient(to bottom, ${houseBrand ? 'rgba(9,9,13,0.15)' : 'rgba(255,255,255,0.15)'} 0%, var(--void) 92%);
   }
   .cover-content { position: relative; padding-top: ${hasHero ? '0' : '120px'}; }
   .cover .eyebrow {
@@ -229,9 +257,9 @@ ${FONT_LINK}
       <h1>${escapeHtml(spec.title)}</h1>
       ${spec.subtitle ? `<p class="subtitle" style="font-family:'Inter',sans-serif;">${escapeHtml(spec.subtitle)}</p>` : ''}
     </div>
-    ${footer(1, total, brandLabel, rtl)}
+    ${footer(1, total, brandLabel, rtl, houseBrand)}
   </section>
-  ${spec.sections.map((s, i) => renderSection(s, language, i + 2, total, brandLabel)).join('')}
+  ${spec.sections.map((s, i) => renderSection(s, language, i + 2, total, brandLabel, houseBrand)).join('')}
 </body>
 </html>`;
 

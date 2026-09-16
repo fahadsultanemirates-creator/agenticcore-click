@@ -136,6 +136,7 @@ async function handleCopyRequest(taskId: string, version: number, payload: Recor
       ? `Write Google Business Profile content: a business description, suggested categories, and an opening post. Brief: ${payload.description}. Platforms context: ${platformList(payload)}.`
       : `Write a caption & hashtag pack (at least 4 distinct caption options with matching hashtags) for ${platformList(payload)}. Brief: ${payload.description}.`;
 
+  const product = resolveSku('social', payload);
   const profile = await getBrandProfile(brandUrlFor(payload));
   const briefWithBrand = brief + brandFactsForPrompt(profile) + revisionInstruction(payload);
 
@@ -160,7 +161,14 @@ async function handleCopyRequest(taskId: string, version: number, payload: Recor
     throw new Error('Claude returned an unexpected document shape');
   }
 
-  const pdfBytes = await renderDocumentPdf(spec);
+  // Caption packs and Google Business Profile content are the client's own
+  // material, so they must not render in the .click house theme -- see the
+  // branding note on DocSpec.
+  const pdfBytes = await renderDocumentPdf({
+    ...spec,
+    branding: product?.branding ?? 'client',
+    brand: { primaryColor: profile?.primaryColor, accentColor: profile?.accentColor }
+  });
   const { url } = await uploadDeliverable(taskId, 'social-content.pdf', pdfBytes, 'application/pdf');
   await addTaskFile(taskId, { url, fileType: 'application/pdf', optionIndex: 1, version });
   await logEvent(taskId, 'social_copy_generated', 'worker', { requestType, url });

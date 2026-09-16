@@ -254,6 +254,8 @@ async function generateDocSpec(catalogItem: CatalogItem, type: string, payload: 
   }
   parsed.language = language === 'both' ? 'en' : language;
   parsed.brand = brandColors(profile);
+  // Whose document this is. Only the owner's business report wears our brand.
+  parsed.branding = catalogItem.branding;
 
   // The prompt asks for the cap; this enforces it. Bilingual documents carry
   // each section twice, so the ceiling doubles for them.

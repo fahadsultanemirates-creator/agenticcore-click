@@ -26,7 +26,7 @@ import { uploadClientMedia } from '../_shared/storage.ts';
 import { detectLanguage, getOwnerLanguage, setOwnerLanguage, sendBotMessage } from '../_shared/botMessage.ts';
 import { converse } from '../_shared/botConversation.ts';
 import { expandSku, getSku, CATALOG } from '../_shared/catalog.ts';
-import { applyRevision, findTaskReference } from '../_shared/orders.ts';
+import { applyRevision, findTaskReference, allocateOwnerTask } from '../_shared/orders.ts';
 import { resolveOwnerTaskReference, getPlatformSnapshot, getTaskStatus } from '../_shared/accounts.ts';
 import { describeCandidates } from '../_shared/orderMatch.ts';
 
@@ -61,18 +61,6 @@ function triggerDispatch(): void {
     method: 'POST',
     headers: { Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, 'Content-Type': 'application/json' }
   }).catch((err) => console.error('telegram-webhook: dispatch trigger failed', err));
-}
-
-async function generatePublicId(): Promise<string> {
-  const { count } = await supabaseAdmin.from('tasks').select('*', { count: 'exact', head: true });
-  const base = (count ?? 0) + 1;
-
-  for (let attempt = 0; attempt < 5; attempt++) {
-    const candidate = `AC-CLICK-${String(base + attempt).padStart(4, '0')}`;
-    const { data: existing } = await supabaseAdmin.from('tasks').select('id').eq('public_id', candidate).maybeSingle();
-    if (!existing) return candidate;
-  }
-  return `AC-CLICK-${String(base).padStart(4, '0')}-${crypto.randomUUID().slice(0, 4)}`;
 }
 
 function helpText(): string {
@@ -119,10 +107,20 @@ async function handleQueueCommand(): Promise<string> {
     return 'Queue is empty.';
   }
 
-  const lines = data.map(
-    (t: any) => `${t.public_id} — ${t.type}${t.subtype ? `/${t.subtype}` : ''} [${t.status}] (${t.source})`
-  );
-  return `Queue (website tasks always ahead of owner tasks):\n\n${lines.join('\n')}`;
+  const line = (t: any) => `${t.public_id} — ${t.type}${t.subtype ? `/${t.subtype}` : ''} [${t.status}]`;
+  const clients = data.filter((t: any) => t.source === 'website');
+  const mine = data.filter((t: any) => t.source !== 'website');
+
+  const sections: string[] = [];
+  if (clients.length > 0) sections.push(`CLIENTS (${clients.length}) — always built first:`, ...clients.map(line));
+  if (mine.length > 0) {
+    if (sections.length > 0) sections.push('');
+    sections.push(
+      `YOURS (${mine.length})${clients.length > 0 ? ` — start as the client queue clears` : ''}:`,
+      ...mine.map(line)
+    );
+  }
+  return sections.join('\n');
 }
 
 // `details` holds whatever structured choices the owner actually stated
@@ -152,7 +150,7 @@ async function handleNewCommand(
   const product = getSku(sku)!;
   const normalizedType = expanded.type;
 
-  const publicId = await generatePublicId();
+  const publicId = await allocateOwnerTask();
   const { data: task, error } = await supabaseAdmin
     .from('tasks')
     .insert({
@@ -310,7 +308,7 @@ async function handleReportCommand(chatId: number, url: string): Promise<string>
   let normalizedUrl = url;
   if (!/^https?:\/\//i.test(normalizedUrl)) normalizedUrl = `https://${normalizedUrl}`;
 
-  const publicId = await generatePublicId();
+  const publicId = await allocateOwnerTask();
   const { data: task, error } = await supabaseAdmin
     .from('tasks')
     .insert({

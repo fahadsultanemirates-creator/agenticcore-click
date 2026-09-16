@@ -285,15 +285,28 @@ export async function getTaskStatus(publicId: string): Promise<TaskStatusReport 
 // accountBriefForPrompt on the client side: the front line answers from this,
 // not from what it remembers saying.
 export async function ownerTaskBriefForPrompt(): Promise<string> {
-  const tasks = await listOwnerTasks(12);
-  if (tasks.length === 0) return 'OWNER TASKS (live): none raised from this chat yet.';
+  const tasks = await listOwnerTasks(15);
+  if (tasks.length === 0) return 'TASKS (live): none yet.';
 
-  const book = tasks.map((t) => `- ${t.publicId} — ${t.product} — ${t.status}`).join('\n');
+  const line = (t: (typeof tasks)[number]) => `- ${t.publicId} — ${t.product} — ${t.status}`;
+  const mine = tasks.filter((t) => t.owner);
+  const clients = tasks.filter((t) => !t.owner);
+
+  // Listed apart because they are different work with different numbering:
+  // AC-OWNER-#### is the owner's own, AC-1007-03 is a client's order. Both are
+  // visible -- the owner runs the platform and is asked about client tasks
+  // constantly -- but never presented as one undifferentiated pile.
+  const sections = ['TASKS (live data -- trust this over anything said earlier in this chat):'];
+  if (mine.length > 0) sections.push('', "The owner's own tasks:", ...mine.map(line));
+  if (clients.length > 0) sections.push('', 'Client orders:', ...clients.map(line));
+
   return (
-    `OWNER TASKS (live data -- trust this over anything said earlier in this chat):\n${book}\n\n` +
+    `${sections.join('\n')}\n\n` +
     `When a message refers to a task vaguely ("that letterhead", "the video one", "the last one"), match it ` +
-    `against this list. NEVER state why a task needs information, what it is waiting on, or what it produced ` +
-    `from memory -- that is recorded per task and must be looked up, so use intent "status" with the task's ` +
-    `reference and the real reason will be fetched and reported.`
+    `against these lists. An AC-OWNER-#### reference is the owner's own work; AC-1007-03 style is a client's ` +
+    `order. NEVER state why a task needs information, what it is waiting on, or what it produced from memory ` +
+    `-- that is recorded per task and must be looked up, so use intent "status" with the task's reference and ` +
+    `the real reason will be fetched and reported.`
   );
 }
+

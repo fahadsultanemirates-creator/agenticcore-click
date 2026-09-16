@@ -31,10 +31,14 @@ export interface OrderMatch {
 
 const NONE: OrderMatch = { order: null, how: 'none', candidates: [] };
 
-// Matches both the account-scoped form (AC-1007-03) and the older global one
-// (AC-CLICK-0007), so references issued before per-account numbering existed
-// keep working in conversation.
-export const REFERENCE_PATTERN = /\b(?:AC-\d{4}-\d{2,}|AC-CLICK-\d{4}(?:-[0-9a-f]{4})?)\b/i;
+// Three forms, all live at once:
+//   AC-1007-03    a client's third order      (account-scoped)
+//   AC-OWNER-0007 the owner's own seventh task
+//   AC-CLICK-0007 anything issued before either scheme existed
+// The old form stays recognised because those ids are printed on deliverables
+// already sent and quoted throughout this chat's history.
+export const REFERENCE_PATTERN =
+  /\b(?:AC-\d{4}-\d{2,}|AC-OWNER-\d{4,}|AC-CLICK-\d{4}(?:-[0-9a-f]{4})?)\b/i;
 
 export function findReference(text: string): string | null {
   return text.match(REFERENCE_PATTERN)?.[0]?.toUpperCase() ?? null;
@@ -177,6 +181,13 @@ export function matchOrder(orders: OrderSummary[], text: string): OrderMatch {
 }
 
 // One line per candidate, for the "which of these did you mean?" reply.
+// Split into the owner's own work and clients' orders, because mixing them
+// into one undifferentiated list is what made the question hard to answer.
 export function describeCandidates(candidates: OrderSummary[]): string {
-  return candidates.map((order) => `${order.publicId} — ${order.product} (${order.status})`).join('\n');
+  const line = (order: OrderSummary) => `${order.publicId} — ${order.product} (${order.status})`;
+  const mine = candidates.filter((order) => order.owner);
+  const clients = candidates.filter((order) => !order.owner);
+
+  if (mine.length === 0 || clients.length === 0) return candidates.map(line).join('\n');
+  return [`Yours:`, ...mine.map(line), ``, `Clients':`, ...clients.map(line)].join('\n');
 }

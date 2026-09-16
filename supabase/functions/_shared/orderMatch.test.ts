@@ -37,6 +37,7 @@ function order(
     orderNo,
     sku,
     service,
+    owner: publicId.toUpperCase().startsWith('AC-OWNER'),
     product,
     status: 'delivered',
     revisionsUsed: 0,
@@ -63,6 +64,20 @@ test('an exact reference wins outright', () => {
 
 test('the legacy AC-CLICK form is still recognised', () => {
   assert.equal(findReference('what happened to AC-CLICK-0042?'), 'AC-CLICK-0042');
+});
+
+// All three forms coexist: client orders, the owner's own work, and ids
+// issued before either scheme existed.
+test('an owner reference is recognised', () => {
+  assert.equal(findReference('is AC-OWNER-0007 done yet'), 'AC-OWNER-0007');
+  assert.equal(findReference('and AC-1007-03'), 'AC-1007-03');
+});
+
+test('an owner reference resolves to the owner task', () => {
+  const book = [order('AC-OWNER-0001', 1, 72, 'Letterhead', 'brand-kit'), ...BOOK];
+  const match = matchOrder(book, 'how is AC-OWNER-0001 going');
+  assert.equal(match.order?.publicId, 'AC-OWNER-0001');
+  assert.equal(match.order?.owner, true, 'must be flagged as the owner\'s own work');
 });
 
 test('a named product resolves without any reference', () => {
@@ -140,7 +155,10 @@ test('a service word resolves to the one task in that service', () => {
 // Tasks created before product numbers existed have no sku, so service
 // matching has to read the task's own service rather than its catalog entry.
 test('a service word matches a task that has no sku', () => {
-  const legacy = [{ ...BOOK[0], publicId: 'AC-CLICK-0002', sku: null, service: 'video', product: 'video' }, ...BOOK];
+  const legacy = [
+    { ...BOOK[0], publicId: 'AC-CLICK-0002', sku: null, service: 'video', product: 'video', owner: false },
+    ...BOOK
+  ];
   assert.equal(matchOrder(legacy, 'that video').order?.publicId, 'AC-CLICK-0002');
 });
 

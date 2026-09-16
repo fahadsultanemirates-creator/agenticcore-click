@@ -25,6 +25,25 @@ export function formatClientReference(accountNo: number, orderNo: number): strin
   return `AC-${accountNo}-${String(orderNo).padStart(2, '0')}`;
 }
 
+// The owner's own work lives in its own namespace, so a reference says whose
+// it is before anything else is looked up.
+export function formatOwnerReference(taskNo: number): string {
+  return `AC-OWNER-${String(taskNo).padStart(4, '0')}`;
+}
+
+// Replaces a "count the rows and add one" id, which reused a number after any
+// delete and handed the same one to two simultaneous inserts.
+export async function allocateOwnerTask(): Promise<string> {
+  const { data, error } = await supabaseAdmin.rpc('allocate_owner_task');
+  if (error || data == null) {
+    console.error('allocateOwnerTask failed', error);
+    // A timestamp-based fallback is ugly but unique, which matters more here
+    // than being pretty: the alternative is failing the owner's request.
+    return `AC-OWNER-${Date.now().toString().slice(-6)}`;
+  }
+  return formatOwnerReference(Number(data));
+}
+
 // The one reference pattern lives in orderMatch.ts (which stays free of any
 // database import so it can be tested directly); re-exported here because
 // this is where callers already look for it.
@@ -130,6 +149,8 @@ export interface OrderSummary {
       word like "video" names a whole service rather than one product, and
       older tasks have no sku at all. */
   service: string;
+  /** The owner's own work, rather than a client's order. */
+  owner: boolean;
   product: string;
   status: string;
   revisionsUsed: number;
@@ -139,7 +160,7 @@ export interface OrderSummary {
 }
 
 const ORDER_COLUMNS =
-  'public_id, order_no, sku, type, status, revisions_used, revisions_allowed, payload, created_at, task_files(count)';
+  'public_id, order_no, sku, type, status, revisions_used, revisions_allowed, payload, created_at, owner_channel_id, task_files(count)';
 
 function toSummaries(rows: any[]): OrderSummary[] {
   return rows.map((row: any) => {
@@ -149,6 +170,7 @@ function toSummaries(rows: any[]): OrderSummary[] {
       orderNo: row.order_no ?? null,
       sku: product?.sku ?? null,
       service: product?.service ?? row.type,
+      owner: row.owner_channel_id != null,
       product: product?.name ?? row.type,
       status: row.status,
       revisionsUsed: row.revisions_used ?? 0,

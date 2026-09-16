@@ -139,3 +139,14 @@ export function scrapeHtml(html: string, baseUrl: string): Partial<BrandProfile>
   };
 }
 
+
+// wa.me/18089985226 is a link, not a phone number. On a printed letterhead a
+// link is useless -- nobody types a tracking URL off paper -- so the digits
+// are pulled out and presented as something dialable. Spacing is deliberately
+// not guessed: grouping differs by country and a wrongly-spaced number reads
+// as an error on finished work.
+export function whatsappNumber(link: string | undefined): string | undefined {
+  if (!link) return undefined;
+  const digits = link.match(/(?:wa\.me|api\.whatsapp\.com\/send\?phone=)\/?(\d{7,15})/i)?.[1];
+  return digits ? `+${digits}` : undefined;
+}

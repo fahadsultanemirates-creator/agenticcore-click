@@ -53,12 +53,29 @@ function brandColors(profile: BrandProfile | null): { primaryColor?: string; acc
 // payload is selected by every order listing -- inlining a 500KB logo here
 // would mean dragging ~700KB of base64 through each of those queries. The
 // render phase fetches and inlines it at the moment it is actually needed.
-function brandAssets(profile: BrandProfile | null): {
-  primaryColor?: string;
-  accentColor?: string;
-  logoUrl?: string;
-} {
-  return { ...brandColors(profile), logoUrl: profile?.logoUrl };
+function brandAssets(
+  profile: BrandProfile | null,
+  payload: Record<string, unknown> = {}
+): { primaryColor?: string; accentColor?: string; logoUrl?: string } {
+  return { ...brandColors(profile), logoUrl: clientLogoUrl(payload) ?? profile?.logoUrl };
+}
+
+// A file the client attached beats anything scraped off their site.
+//
+// The scraper takes the first plausible image it finds -- og:image, an
+// apple-touch-icon, a favicon -- which is a guess, and on a letterhead it
+// showed up as a tiny dark favicon square even though the real logo had been
+// attached to the very same message. Something handed over deliberately is
+// not a guess, so it wins.
+const IMAGE_EXTENSION = /\.(png|jpe?g|svg|webp|gif)(?:\?|$)/i;
+
+function clientLogoUrl(payload: Record<string, unknown>): string | undefined {
+  const files = payload.referenceFiles;
+  if (!Array.isArray(files)) return undefined;
+  const urls = files.filter((file): file is string => typeof file === 'string' && file.trim() !== '');
+  // Prefer something that names itself an image; fall back to the first
+  // attachment, since Supabase storage URLs do not always carry an extension.
+  return urls.find((url) => IMAGE_EXTENSION.test(url)) ?? urls[0];
 }
 
 async function generateAssetSpec(catalogItem: CatalogItem, payload: Record<string, unknown>): Promise<DocSpec> {
@@ -96,7 +113,7 @@ async function generateAssetSpec(catalogItem: CatalogItem, payload: Record<strin
     throw new Error('Claude returned an unexpected asset shape');
   }
   // One section, enforced here rather than trusted from the model.
-  return { title: String(parsed.title), sections: [parsed.sections[0]], kind: 'asset', brand: brandAssets(profile) };
+  return { title: String(parsed.title), sections: [parsed.sections[0]], kind: 'asset', brand: brandAssets(profile, payload) };
 }
 
 // Stationery is a different shape, not a different prompt over the same shape.
@@ -113,9 +130,13 @@ async function generateStationerySpec(catalogItem: CatalogItem, payload: Record<
     `${shapeInstruction(catalogItem)} ` +
     'Return the fixed printed matter as two lists of SHORT lines. "headerLines": the business name first, ' +
     'then at most two more lines (a tagline and/or what they do). "footerLines": at most three lines carrying ' +
-    'contact details, social handles and, if useful, a one-line list of services. Use the real details given ' +
-    'below exactly; never invent an address, phone number or handle. Write no design instructions, no colours, ' +
-    'no fonts, no brackets, no placeholders of any kind. Respond with ONLY a JSON object of the exact shape ' +
+    'contact details, social handles and, if useful, a one-line list of services, separated by " · ". ' +
+    'ALWAYS NAME THE PLATFORM BESIDE EACH HANDLE -- "Instagram @name", "X @name", "YouTube @name", ' +
+    '"Facebook /name". A bare handle is useless on paper: the reader cannot tell which network it belongs to. ' +
+    'Write WhatsApp and phone numbers as dialable numbers ("WhatsApp +1 808 998 5226"), never as a wa.me or ' +
+    'other tracking URL, which nobody can type off a printed page. Use the real details given below exactly; ' +
+    'never invent an address, phone number or handle. Write no design instructions, no colours, no fonts, no ' +
+    'brackets, no placeholders of any kind. Respond with ONLY a JSON object of the exact shape ' +
     '{"businessName": string, "headerLines": string[], "footerLines": string[]} -- no markdown fences, no commentary.';
 
   const userBrief = [`Product: ${catalogItem.name}`, `Brief: ${description}`].filter(Boolean).join('\n') +
@@ -140,7 +161,7 @@ async function generateStationerySpec(catalogItem: CatalogItem, payload: Record<
     // Kept for callers that read sections; the stationery renderer ignores it.
     sections: [{ heading: '', body: '' }],
     kind: 'asset',
-    brand: brandAssets(profile),
+    brand: brandAssets(profile, payload),
     stationery: { headerLines: headerLines.slice(0, 3), footerLines: footerLines.slice(0, 3) }
   };
 }

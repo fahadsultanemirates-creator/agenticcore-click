@@ -14,7 +14,7 @@
 // rendered page rather than the markup.
 
 import { claudeVisionChat } from './claude.ts';
-import { scrapeHtml } from './brandScrape.ts';
+import { scrapeHtml, whatsappNumber } from './brandScrape.ts';
 
 // Parsing lives in brandScrape.ts (pure, and tested); re-exported here because
 // this is where callers already look for it.
@@ -172,10 +172,15 @@ export function brandFactsForPrompt(profile: BrandProfile | null): string {
   if (profile.tone) lines.push(`Their tone of voice (match it): ${profile.tone}`);
   if (profile.contact?.email) lines.push(`Email: ${profile.contact.email}`);
   if (profile.contact?.phone) lines.push(`Phone: ${profile.contact.phone}`);
-  if (profile.contact?.whatsapp) lines.push(`WhatsApp: ${profile.contact.whatsapp}`);
+  // As a number, not a wa.me link -- see whatsappNumber.
+  const whatsapp = whatsappNumber(profile.contact?.whatsapp ?? profile.socials?.whatsapp);
+  if (whatsapp) lines.push(`WhatsApp: ${whatsapp}`);
   if (profile.contact?.address) lines.push(`Address: ${profile.contact.address}`);
   if (profile.socials) {
-    for (const [name, link] of Object.entries(profile.socials)) lines.push(`${name}: ${link}`);
+    for (const [name, link] of Object.entries(profile.socials)) {
+      if (name === 'whatsapp') continue; // already emitted as a dialable number
+      lines.push(`${name}: ${link}`);
+    }
   }
   if (!lines.length) return '';
   return (

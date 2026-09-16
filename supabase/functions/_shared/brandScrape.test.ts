@@ -7,7 +7,7 @@
 // a letterhead is worse than no address at all.
 
 import assert from 'node:assert/strict';
-import { scrapeHtml } from './brandScrape.ts';
+import { scrapeHtml, whatsappNumber } from './brandScrape.ts';
 
 let passed = 0;
 let failed = 0;
@@ -94,6 +94,15 @@ test('an empty address block is treated as absent', () => {
   const html = `<script type="application/ld+json">
     {"@type":"Organization","address":{"@type":"PostalAddress","streetAddress":"  "}}</script>`;
   assert.equal(scrapeHtml(html, BASE).contact, undefined);
+});
+
+// A printed letterhead carrying "wa.me/18089985226" is asking the reader to
+// type a URL to make a phone call.
+test('a wa.me link becomes a dialable number', () => {
+  assert.equal(whatsappNumber('https://wa.me/18089985226'), '+18089985226');
+  assert.equal(whatsappNumber('https://api.whatsapp.com/send?phone=971501234567'), '+971501234567');
+  assert.equal(whatsappNumber(undefined), undefined);
+  assert.equal(whatsappNumber('https://wa.me/'), undefined);
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

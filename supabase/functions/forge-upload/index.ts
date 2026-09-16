@@ -1,8 +1,12 @@
-// Accepts a file attached in the Forge chat window (logo, photo, business
-// document) and stores it in the existing public client-media bucket,
-// scoped per user+conversation. Returns a URL the client then passes into
-// forge-chat's attachmentUrls so it's tracked in the conversation, and
-// later into a task's payload.referenceFiles so the worker can see it.
+// Accepts a file the client attached -- in the Forge chat window, or on a
+// service page's reference field -- and stores it in the public client-media
+// bucket, scoped per user. Returns a URL that goes into forge-chat's
+// attachmentUrls (so it's tracked in the conversation) or straight into a
+// task's payload.referenceFiles, so the worker can actually see it.
+//
+// conversationId is optional because a service page has no conversation. It
+// only scopes the storage path; the upload is authenticated and scoped by
+// caller either way.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { uploadClientMedia } from '../_shared/storage.ts';
@@ -34,9 +38,9 @@ export async function handleRequest(req: Request): Promise<Response> {
   const form = await req.formData().catch(() => null);
   if (!form) return jsonResponse({ error: 'Expected multipart form data' }, 400);
 
-  const conversationId = form.get('conversationId');
+  const rawConversationId = form.get('conversationId');
+  const conversationId = typeof rawConversationId === 'string' && rawConversationId ? rawConversationId : 'service';
   const file = form.get('file');
-  if (typeof conversationId !== 'string' || !conversationId) return jsonResponse({ error: 'Missing conversationId' }, 400);
   if (!(file instanceof File)) return jsonResponse({ error: 'Missing file' }, 400);
   if (file.size > MAX_BYTES) return jsonResponse({ error: 'File is too large (15MB max).' }, 400);
 

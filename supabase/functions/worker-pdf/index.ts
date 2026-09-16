@@ -25,76 +25,36 @@ import { screenshotUrl } from '../_shared/htmlPdf.ts';
 import { addTaskFile, logEvent, markDelivered, markFailed } from '../_shared/task.ts';
 import { jsonResponse } from '../_shared/cors.ts';
 import type { DocSpec } from '../_shared/pdf.ts';
+import { resolveSku, shapeInstruction, type CatalogItem } from '../_shared/catalog.ts';
+import { getBrandProfile, brandFactsForPrompt, extractUrl, normalizeUrl, type BrandProfile } from '../_shared/brandProfile.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
-const QR_ITEMS = new Set(['QR-code business card', 'QR-code table tent']);
 
-function isQrItem(type: string, payload: Record<string, unknown>): boolean {
-  return type === 'brand-kit' && QR_ITEMS.has(String(payload.item ?? ''));
+
+// Which URL this product should learn the client's brand from: the explicit
+// field when the form collected one, otherwise a URL mentioned in the brief,
+// so "a letterhead for mybakery.com" works without a separate field.
+function brandUrlFor(payload: Record<string, unknown>): string | null {
+  const explicit = typeof payload.websiteUrl === 'string' ? payload.websiteUrl : null;
+  return normalizeUrl(explicit ?? '') ?? extractUrl(String(payload.description ?? payload.brief ?? ''));
 }
 
-function extractUrl(text: string): string | undefined {
-  const httpMatch = text.match(/https?:\/\/[^\s)]+/i);
-  if (httpMatch) return httpMatch[0];
-  const bareMatch = text.match(/\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:agency|click|com|io|co|net|org|ai)\b/i);
-  return bareMatch ? `https://${bareMatch[0]}` : undefined;
+// Design values go to the renderer only. A generator told about colours
+// writes about colours -- that is how "(deep navy header band)" ended up
+// printed as body text on a letterhead.
+function brandColors(profile: BrandProfile | null): { primaryColor?: string; accentColor?: string } {
+  return { primaryColor: profile?.primaryColor, accentColor: profile?.accentColor };
 }
 
-// Best-effort real-branding match: screenshots the referenced site and asks
-// Claude to pick out its two defining hex colors, so a brand-kit asset can
-// carry a real accent instead of a generic gray one. Structured (not prose)
-// on purpose -- renderBrandKitAsset applies these as real CSS, so the
-// content model never has to describe colors/layout in the text itself
-// (which produced fake design-annotation text like "(navy header band,
-// cyan rule)" printed as if it were real page content). Never blocks the
-// task on failure -- an unreachable/odd URL just means no brand colors.
-interface WebsiteBrand {
-  primaryColor?: string;
-  accentColor?: string;
-}
-
-async function describeReferenceWebsiteBrand(url: string): Promise<WebsiteBrand> {
-  try {
-    const png = await screenshotUrl(url, '1440x900', false);
-    const raw = await claudeVisionChat(
-      "Identify this website's two most defining brand colors as hex codes: a primary/dark color and an " +
-        'accent color used for highlights, links, or buttons. Respond with ONLY a JSON object of the exact ' +
-        'shape {"primaryColor": "#rrggbb", "accentColor": "#rrggbb"} -- no markdown fences, no commentary. If ' +
-        'you genuinely cannot tell, respond with {}.',
-      "Identify this website's brand colors.",
-      [{ bytes: png, mimeType: 'image/png' }],
-      { maxTokens: 150 }
-    );
-    const cleaned = raw.trim().replace(/^```(?:json)?\n?/i, '').replace(/```$/i, '').trim();
-    const parsed = JSON.parse(cleaned);
-    const hex = /^#[0-9a-f]{6}$/i;
-    return {
-      primaryColor: typeof parsed?.primaryColor === 'string' && hex.test(parsed.primaryColor) ? parsed.primaryColor : undefined,
-      accentColor: typeof parsed?.accentColor === 'string' && hex.test(parsed.accentColor) ? parsed.accentColor : undefined
-    };
-  } catch (err) {
-    console.error('worker-pdf: describeReferenceWebsiteBrand failed', err);
-    return {};
-  }
-}
-
-// Brand-kit's non-QR items (letterhead, email signature, price list,
-// "coming soon" page, style guide one-pager, name/tagline generator) are
-// each meant to be one small, immediately usable asset -- per the service's
-// own framing ("~10 min", "from $10") -- not a multi-page specification
-// document. This produces exactly one section of real, finished content
-// (never a report), and rendered via renderBrandKitAsset carries none of
-// .click's own report theme, since the deliverable is the CLIENT's brand,
-// not ours.
-async function generateBrandKitAssetSpec(payload: Record<string, unknown>): Promise<DocSpec> {
-  const item = String(payload.item ?? 'Brand asset');
+async function generateAssetSpec(catalogItem: CatalogItem, payload: Record<string, unknown>): Promise<DocSpec> {
+  const item = catalogItem.name;
   const description = String(payload.description ?? payload.brief ?? '');
-  const url = typeof payload.websiteUrl === 'string' ? payload.websiteUrl : extractUrl(description);
-  const brand = url ? await describeReferenceWebsiteBrand(url) : {};
+  const profile = catalogItem.urlUse === 'brand' ? await getBrandProfile(brandUrlFor(payload)) : null;
 
   const systemPrompt =
+    `${shapeInstruction(catalogItem)} ` +
     'You produce the ACTUAL finished asset requested, ready to use immediately -- not a specification, not an ' +
     'explanation, not a design brief. Write ONLY the real words a person reads: names, dates, addresses, body ' +
     'copy, signatures, prices, headlines. NEVER describe colors, fonts, layout, spacing, logos, or any other ' +
@@ -107,7 +67,7 @@ async function generateBrandKitAssetSpec(payload: Record<string, unknown>): Prom
     'exact shape {"title": string, "sections": [{"heading": string, "body": string}]} with EXACTLY ONE entry in ' +
     '"sections" -- no markdown fences, no commentary.';
 
-  const userBrief = [`Brand kit item: ${item}`, `Brief: ${description}`].filter(Boolean).join('\n');
+  const userBrief = [`Product: ${item}`, `Brief: ${description}`].filter(Boolean).join('\n') + brandFactsForPrompt(profile) + revisionInstruction(payload);
 
   const raw = await claudeChat(
     [
@@ -122,7 +82,24 @@ async function generateBrandKitAssetSpec(payload: Record<string, unknown>): Prom
   if (!parsed?.title || !Array.isArray(parsed?.sections) || parsed.sections.length === 0) {
     throw new Error('Claude returned an unexpected asset shape');
   }
-  return { title: String(parsed.title), sections: [parsed.sections[0]], kind: 'asset', brand };
+  // One section, enforced here rather than trusted from the model.
+  return { title: String(parsed.title), sections: [parsed.sections[0]], kind: 'asset', brand: brandColors(profile) };
+}
+
+
+// A revision only differs from the original if the generator is told what to
+// change. Notes are appended to the payload by the revise path; without this
+// the worker would regenerate the same brief and hand back the same thing.
+function revisionInstruction(payload: Record<string, unknown>): string {
+  const notes = Array.isArray(payload.revisionNotes) ? (payload.revisionNotes as string[]) : [];
+  if (notes.length === 0) return '';
+  const latest = notes[notes.length - 1];
+  const earlier = notes.slice(0, -1);
+  return (
+    `\n\nThis is a REVISION of work already delivered. Change what is asked for and leave everything ` +
+    `else as it was -- do not rebuild the whole thing around the change.\nWhat to change now: ${latest}` +
+    (earlier.length ? `\nAlready applied previously: ${earlier.join(' | ')}` : '')
+  );
 }
 
 function describeBrief(type: string, payload: Record<string, unknown>): string {
@@ -146,7 +123,7 @@ function describeBrief(type: string, payload: Record<string, unknown>): string {
 // the same content twice, English sections first then Urdu, each section
 // tagged with which language it's in so renderDocumentPdf can switch font
 // and RTL direction per section within one document.
-async function generateDocSpec(type: string, payload: Record<string, unknown>): Promise<DocSpec> {
+async function generateDocSpec(catalogItem: CatalogItem, type: string, payload: Record<string, unknown>): Promise<DocSpec> {
   const language = (payload.language as string) === 'ur' || (payload.language as string) === 'both' ? (payload.language as 'ur' | 'both') : 'en';
 
   const languageInstruction =
@@ -158,15 +135,16 @@ async function generateDocSpec(type: string, payload: Record<string, unknown>): 
         : 'Write the entire document in English.';
 
   const systemPrompt =
+    `${shapeInstruction(catalogItem)} ` +
     'You are a professional business copywriter and document designer. Given a brief, produce the ' +
     'complete, ready-to-use content for the requested document (no placeholder/lorem ipsum text). ' +
-    'Produce 3 to 6 sections total (up to 12 if writing in both languages) -- enough to properly cover the ' +
-    'brief, never padded just to add more. ' +
+    'Use only as many sections as the brief genuinely needs, never padded just to add more. ' +
     `${languageInstruction} ` +
     'Respond with ONLY a JSON object of the exact shape ' +
     '{"title": string, "subtitle": string | null, "sections": [{"heading": string, "body": string, "language": "en"|"ur"}]} ' +
     '-- no markdown fences, no commentary.';
-  const userBrief = describeBrief(type, payload);
+  const profile = catalogItem.urlUse === 'brand' ? await getBrandProfile(brandUrlFor(payload)) : null;
+  const userBrief = describeBrief(type, payload) + brandFactsForPrompt(profile) + revisionInstruction(payload);
 
   const attachments = await fetchAttachments(payload.referenceFiles);
   const raw = attachments.length > 0
@@ -190,6 +168,17 @@ async function generateDocSpec(type: string, payload: Record<string, unknown>): 
     throw new Error('Claude returned an unexpected document shape');
   }
   parsed.language = language === 'both' ? 'en' : language;
+  parsed.brand = brandColors(profile);
+
+  // The prompt asks for the cap; this enforces it. Bilingual documents carry
+  // each section twice, so the ceiling doubles for them.
+  const cap = catalogItem.output.maxPages;
+  if (cap !== undefined) {
+    const limit = language === 'both' ? cap * 2 : cap;
+    if (parsed.sections.length > limit) {
+      parsed.sections = parsed.sections.slice(0, limit);
+    }
+  }
   return parsed as DocSpec;
 }
 
@@ -243,7 +232,24 @@ export async function handleRequest(req: Request): Promise<Response> {
   try {
     const payload = task.payload ?? {};
 
-    if (isQrItem(task.type, payload)) {
+    // Which product this is decides the shape, the renderer and whose brand
+    // it wears -- not the task type, which covers several different products.
+    // A business card and a brochure are both type "pdf" but one is a single
+    // finished page and the other a multi-page booklet.
+    const catalogItem = resolveSku(task.type, payload);
+    if (!catalogItem) {
+      await markFailed(taskId, `No catalog product matches ${task.type} with this payload -- cannot determine the deliverable's shape.`);
+      return jsonResponse({ ok: false, error: 'Unrecognized product' });
+    }
+    await logEvent(taskId, 'product_identified', 'worker', {
+      sku: catalogItem.sku,
+      code: catalogItem.code,
+      renderer: catalogItem.renderer,
+      branding: catalogItem.branding,
+      output: catalogItem.output
+    });
+
+    if (catalogItem.renderer === 'qr') {
       const url = await generateQrDeliverable(taskId, payload);
       await addTaskFile(taskId, { url, fileType: 'image/svg+xml', optionIndex: 1, version: task.version });
       await logEvent(taskId, 'qr_generated', 'worker', { url });
@@ -251,8 +257,12 @@ export async function handleRequest(req: Request): Promise<Response> {
       return jsonResponse({ ok: true, url });
     }
 
-    if (task.type === 'brand-kit') {
-      const spec = await generateBrandKitAssetSpec(payload);
+    // Single-page finished artifacts: letterheads, business cards, flyers,
+    // banners, invoices, one-page plans. Previously only brand-kit reached
+    // this path, so a "Business card" PDF was built as a multi-page deck in
+    // our own theme -- the same failure as the letterhead, just unreported.
+    if (catalogItem.renderer === 'asset') {
+      const spec = await generateAssetSpec(catalogItem, payload);
 
       const { error: assetUpdateError } = await supabaseAdmin
         .from('tasks')
@@ -260,14 +270,14 @@ export async function handleRequest(req: Request): Promise<Response> {
         .eq('id', taskId);
       if (assetUpdateError) throw new Error(`Could not persist asset spec: ${assetUpdateError.message}`);
 
-      await logEvent(taskId, 'doc_spec_ready', 'worker', { title: spec.title, kind: 'asset' });
+      await logEvent(taskId, 'doc_spec_ready', 'worker', { title: spec.title, kind: 'asset', sku: catalogItem.sku });
       triggerPdfRender(taskId);
 
       return jsonResponse({ ok: true, phase: 'spec_ready' });
     }
 
     const [spec, coverImageUrl] = await Promise.all([
-      generateDocSpec(task.type, payload),
+      generateDocSpec(catalogItem, task.type, payload),
       generateBrandVisual(
         taskId,
         `A professional cover visual for a business document about: ${describeBrief(task.type, payload)}. Abstract, on-topic imagery -- not literal text or icons of the topic name.`,
@@ -282,7 +292,7 @@ export async function handleRequest(req: Request): Promise<Response> {
       .eq('id', taskId);
     if (updateError) throw new Error(`Could not persist doc spec: ${updateError.message}`);
 
-    await logEvent(taskId, 'doc_spec_ready', 'worker', { title: spec.title, sections: spec.sections.length });
+    await logEvent(taskId, 'doc_spec_ready', 'worker', { title: spec.title, sections: spec.sections.length, sku: catalogItem.sku });
     triggerPdfRender(taskId);
 
     return jsonResponse({ ok: true, phase: 'spec_ready' });

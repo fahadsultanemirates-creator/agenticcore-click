@@ -5,7 +5,7 @@
 // through, so that rule holds everywhere without each caller re-doing it.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { grokChat } from './grok.ts';
+import { claudeChat } from './claude.ts';
 import { synthesizeSpeech } from './voice.ts';
 import { sendTelegramText, sendTelegramVoice } from './telegramApi.ts';
 
@@ -17,7 +17,7 @@ export type BotLanguage = 'en' | 'ur';
 
 // Urdu is written in Arabic script (U+0600-U+06FF etc.) -- since the bot
 // only ever needs to distinguish English vs Urdu, script presence is a
-// reliable, zero-cost signal without a Grok round-trip.
+// reliable, zero-cost signal without a model round-trip.
 export function detectLanguage(text: string): BotLanguage {
   return /[؀-ۿݐ-ݿ]/.test(text) ? 'ur' : 'en';
 }
@@ -41,7 +41,10 @@ interface ComposedReply {
 async function composeReply(rawMessage: string, language: BotLanguage): Promise<ComposedReply> {
   const languageName = language === 'ur' ? 'Urdu' : 'English';
   try {
-    const raw = await grokChat(
+    // Claude, like every other place in this system where words are written
+    // or reasoned about. Grok stays for image generation and speech, which
+    // are the things Claude's API doesn't do.
+    const raw = await claudeChat(
       [
         {
           role: 'system',
@@ -53,7 +56,7 @@ async function composeReply(rawMessage: string, language: BotLanguage): Promise<
         },
         { role: 'user', content: rawMessage }
       ],
-      { maxTokens: 600, temperature: 0.4 }
+      { maxTokens: 600, effort: 'low' }
     );
     const cleaned = raw.trim().replace(/^```(?:json)?\n?/i, '').replace(/```$/i, '').trim();
     const parsed = JSON.parse(cleaned);

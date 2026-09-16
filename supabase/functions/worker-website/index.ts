@@ -8,6 +8,7 @@
 // { taskId }; never called directly by the client.
 
 import { supabaseAdmin } from '../_shared/storage.ts';
+import { getBrandProfile, brandFactsForPrompt, brandStyleForPrompt, extractUrl, normalizeUrl } from '../_shared/brandProfile.ts';
 import { extractCodeBlock } from '../_shared/grok.ts';
 import { claudeChat, claudeVisionChat } from '../_shared/claude.ts';
 import { fetchAttachments } from '../_shared/attachments.ts';
@@ -19,8 +20,8 @@ import { jsonResponse } from '../_shared/cors.ts';
 const NETLIFY_AUTH_TOKEN = Deno.env.get('NETLIFY_AUTH_TOKEN')!;
 const NETLIFY_API = 'https://api.netlify.com/api/v1';
 
-// "large" tier ($99, 4-10 sections) gets more real photography than "small"
-// ($49, 2-4 sections) -- both are still a single self-contained HTML page,
+// The large tier (4-10 sections) gets more real photography than the small
+// one (2-4 sections) -- both are still a single self-contained HTML page,
 // just with more sections/imagery to fill out.
 const IMAGE_SLOTS_SMALL = [
   { label: 'hero/banner image for the top of the page', filename: 'hero.png' },
@@ -34,13 +35,38 @@ const IMAGE_SLOTS_LARGE = [
   { label: 'gallery image #2 (a different product/service angle)', filename: 'gallery-2.png' }
 ];
 
+
+// The client's site is the brand reference for every product that carries
+// their branding -- explicit field first, then any URL in the brief.
+function brandUrlFor(payload: Record<string, unknown>): string | null {
+  const explicit = typeof payload.websiteUrl === 'string' ? payload.websiteUrl : null;
+  return normalizeUrl(explicit ?? '') ?? extractUrl(String(payload.description ?? payload.brief ?? ''));
+}
+
+
+// A revision only differs from the original if the generator is told what to
+// change. Notes are appended to the payload by the revise path; without this
+// the worker would regenerate the same brief and hand back the same thing.
+function revisionInstruction(payload: Record<string, unknown>): string {
+  const notes = Array.isArray(payload.revisionNotes) ? (payload.revisionNotes as string[]) : [];
+  if (notes.length === 0) return '';
+  const latest = notes[notes.length - 1];
+  const earlier = notes.slice(0, -1);
+  return (
+    `\n\nThis is a REVISION of work already delivered. Change what is asked for and leave everything ` +
+    `else as it was -- do not rebuild the whole thing around the change.\nWhat to change now: ${latest}` +
+    (earlier.length ? `\nAlready applied previously: ${earlier.join(' | ')}` : '')
+  );
+}
+
 function imageSlotsForPayload(payload: Record<string, unknown>): { label: string; filename: string }[] {
   return String(payload.tier ?? '').toLowerCase() === 'large' ? IMAGE_SLOTS_LARGE : IMAGE_SLOTS_SMALL;
 }
 
 async function generateWebsiteImages(
   taskId: string,
-  payload: Record<string, unknown>
+  payload: Record<string, unknown>,
+  brandStyle: string
 ): Promise<{ label: string; url: string }[]> {
   const slots = imageSlotsForPayload(payload);
   // The structured fields come from the website intake form; an owner task
@@ -57,7 +83,8 @@ async function generateWebsiteImages(
     generateBrandVisual(
       taskId,
       `A real, on-brand photograph/illustration for a business website. Business: ${businessContext}. ` +
-        `This specific image is the: ${slot.label}. High-quality, professional, matches the business's category.`,
+        `This specific image is the: ${slot.label}. High-quality, professional, matches the business's category.` +
+        brandStyle,
       slot.filename
     )
   );
@@ -175,22 +202,24 @@ export async function handleRequest(req: Request): Promise<Response> {
 
   try {
     const payload = task.payload ?? {};
+    const profile = await getBrandProfile(brandUrlFor(payload));
     const [images, attachments] = await Promise.all([
-      generateWebsiteImages(taskId, payload),
+      generateWebsiteImages(taskId, payload, brandStyleForPrompt(profile)),
       fetchAttachments(payload.referenceFiles)
     ]);
     const { system, user } = buildPrompt(payload, images);
+    const userWithBrand = user + brandFactsForPrompt(profile) + revisionInstruction(payload);
 
     const raw = attachments.length > 0
       ? await claudeVisionChat(
           `${system}\nYou are also given reference image(s) (a logo and/or business photos) -- visually match their colors, style, and branding in the site you build.`,
-          user,
+          userWithBrand,
           attachments,
           { maxTokens: 16000 }
         )
       : await claudeChat([
           { role: 'system', content: system },
-          { role: 'user', content: user }
+          { role: 'user', content: userWithBrand }
         ], { maxTokens: 16000 });
     const html = extractCodeBlock(raw, 'html');
 

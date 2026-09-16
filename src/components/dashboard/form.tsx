@@ -1,4 +1,4 @@
-import { Clock, Loader2, Sparkles, TriangleAlert } from "lucide-react";
+import { Clock, Loader2, Sparkles, TriangleAlert, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { getService } from "../../data/services";
 
@@ -140,12 +140,94 @@ export function ErrorNote({ children }: { children: ReactNode }) {
   );
 }
 
-export function UploadDropzone({ label }: { label: string }) {
+// Offered on every service whose deliverable carries the client's own
+// branding. One URL is enough for us to match their colours, copy, services
+// and contact details across everything they order -- see
+// supabase/functions/_shared/brandProfile.ts.
+export function BrandUrlField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
   return (
-    <label className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border-2 border-dashed border-border bg-void px-4 py-6 text-sm text-fg-faint transition-colors hover:border-yellow-400/50">
-      {label}
-      <input type="file" className="hidden" />
+    <label className="flex min-w-0 flex-col gap-1.5">
+      <span className="text-xs font-semibold tracking-wide text-fg-muted uppercase">
+        Your website <span className="text-fg-faint normal-case">(optional — we'll match your branding)</span>
+      </span>
+      <input
+        type="url"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="https://yourbusiness.com"
+        className={inputClass}
+      />
+      <span className="text-xs text-fg-faint">
+        We read your colours, wording, services and contact details from it, so this comes back looking like you.
+      </span>
     </label>
+  );
+}
+
+// A real upload control. The previous version rendered the same box with no
+// onChange handler at all, so choosing a file silently did nothing -- see
+// src/lib/useReferenceFiles.ts. Drive it with that hook.
+export function UploadDropzone({
+  label,
+  files,
+  uploading,
+  error,
+  onAdd,
+  onRemove,
+}: {
+  label: string;
+  files: { name: string; url: string }[];
+  uploading: boolean;
+  error: string;
+  onAdd: (files: FileList | null) => void;
+  onRemove: (url: string) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-2.5">
+      <label className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border-2 border-dashed border-border bg-void px-4 py-6 text-center text-sm text-fg-faint transition-colors hover:border-yellow-400/50">
+        {uploading ? (
+          <>
+            <Loader2 className="h-4 w-4 animate-spin text-yellow-400" /> Uploading…
+          </>
+        ) : (
+          label
+        )}
+        <input
+          type="file"
+          multiple
+          disabled={uploading}
+          className="hidden"
+          onChange={(e) => {
+            onAdd(e.target.files);
+            // Lets the same file be re-picked after a failed upload.
+            e.target.value = "";
+          }}
+        />
+      </label>
+
+      {files.length > 0 && (
+        <ul className="flex flex-wrap gap-2">
+          {files.map((file) => (
+            <li
+              key={file.url}
+              className="flex items-center gap-1.5 rounded-full border border-border bg-surface px-3 py-1.5 text-xs text-fg-muted"
+            >
+              <span className="max-w-[12rem] truncate">{file.name}</span>
+              <button
+                type="button"
+                onClick={() => onRemove(file.url)}
+                aria-label={`Remove ${file.name}`}
+                className="text-fg-faint transition-colors hover:text-yellow-400"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {error && <span className="text-xs text-yellow-400">{error}</span>}
+    </div>
   );
 }
 

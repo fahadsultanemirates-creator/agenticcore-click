@@ -1,0 +1,239 @@
+// Turns a client's existing website into their brand, once, and reuses it
+// across every product they order.
+//
+// This is the engine behind "you didn't get your website from us? send us the
+// URL and we'll match it". Before this, a URL bought you two hex colours on a
+// brand-kit item and nothing at all on the other six services, while the PDF
+// page advertised "auto-pulls logo, colors, copy & socials".
+//
+// The split of labour is deliberate. Anything a parser can read exactly --
+// the logo file, social links, email, phone -- is read from the HTML, because
+// a model asked for a URL will happily invent a plausible one. Only the
+// judgement calls -- which colours actually carry the brand, what the writing
+// sounds like, what the business does -- go to a vision call, which sees the
+// rendered page rather than the markup.
+
+import { claudeVisionChat } from './claude.ts';
+import { screenshotUrl } from './htmlPdf.ts';
+import { supabaseAdmin } from './storage.ts';
+
+const STALE_AFTER_DAYS = 30;
+
+export interface BrandProfile {
+  url: string;
+  businessName?: string;
+  tagline?: string;
+  description?: string;
+  industry?: string;
+  /** The brand's own colours -- never agenticcore's. */
+  primaryColor?: string;
+  accentColor?: string;
+  backgroundColor?: string;
+  textColor?: string;
+  /** Described, not named: "geometric sans, tight tracking, heavy headings". */
+  fontStyle?: string;
+  /** Described so an image model can match it, since we can't reuse the file. */
+  visualStyle?: string;
+  tone?: string;
+  services?: string[];
+  logoUrl?: string;
+  socials?: Record<string, string>;
+  contact?: { email?: string; phone?: string; whatsapp?: string; address?: string };
+}
+
+export function normalizeUrl(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  const withScheme = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  try {
+    const parsed = new URL(withScheme);
+    parsed.hash = '';
+    return parsed.toString().replace(/\/$/, '');
+  } catch {
+    return null;
+  }
+}
+
+// Finds a URL inside free text, so a client who just types "make me a
+// letterhead for mybakery.com" gets their branding without a separate field.
+export function extractUrl(text: string): string | null {
+  const httpMatch = text.match(/https?:\/\/[^\s)<>"']+/i);
+  if (httpMatch) return normalizeUrl(httpMatch[0]);
+  const bareMatch = text.match(
+    /\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|net|org|io|co|ai|app|shop|store|agency|click|biz|info|me|pk|ae|uk)\b/i
+  );
+  return bareMatch ? normalizeUrl(bareMatch[0]) : null;
+}
+
+function absolute(href: string, base: string): string | undefined {
+  try {
+    return new URL(href, base).toString();
+  } catch {
+    return undefined;
+  }
+}
+
+// Exact facts, parsed rather than guessed.
+export function scrapeHtml(html: string, baseUrl: string): Partial<BrandProfile> {
+  const pick = (re: RegExp): string | undefined => html.match(re)?.[1]?.trim();
+
+  const logoCandidate =
+    pick(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i) ??
+    pick(/<link[^>]+rel=["'][^"']*apple-touch-icon[^"']*["'][^>]+href=["']([^"']+)["']/i) ??
+    pick(/<img[^>]+(?:class|id|alt)=["'][^"']*logo[^"']*["'][^>]*src=["']([^"']+)["']/i) ??
+    pick(/<link[^>]+rel=["'][^"']*icon[^"']*["'][^>]+href=["']([^"']+)["']/i);
+
+  const socials: Record<string, string> = {};
+  const socialHosts: [string, RegExp][] = [
+    ['instagram', /https?:\/\/(?:www\.)?instagram\.com\/[A-Za-z0-9_.\-\/]+/i],
+    ['facebook', /https?:\/\/(?:www\.)?facebook\.com\/[A-Za-z0-9_.\-\/]+/i],
+    ['linkedin', /https?:\/\/(?:www\.)?linkedin\.com\/[A-Za-z0-9_.\-\/]+/i],
+    ['x', /https?:\/\/(?:www\.)?(?:twitter|x)\.com\/[A-Za-z0-9_.\-\/]+/i],
+    ['tiktok', /https?:\/\/(?:www\.)?tiktok\.com\/[@A-Za-z0-9_.\-\/]+/i],
+    ['youtube', /https?:\/\/(?:www\.)?youtube\.com\/[A-Za-z0-9_.\-\/@]+/i],
+    ['whatsapp', /https?:\/\/(?:wa\.me|api\.whatsapp\.com)\/[^\s"'<>]+/i]
+  ];
+  for (const [name, re] of socialHosts) {
+    const found = html.match(re)?.[0];
+    if (found) socials[name] = found;
+  }
+
+  const email = html.match(/mailto:([^\s"'<>?]+@[^\s"'<>?]+)/i)?.[1];
+  const phone = html.match(/tel:([+0-9()\-\s]{6,})/i)?.[1]?.trim();
+
+  return {
+    businessName:
+      pick(/<meta[^>]+property=["']og:site_name["'][^>]+content=["']([^"']+)["']/i) ??
+      pick(/<title[^>]*>([^<]+)<\/title>/i),
+    description:
+      pick(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i) ??
+      pick(/<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']+)["']/i),
+    logoUrl: logoCandidate ? absolute(logoCandidate, baseUrl) : undefined,
+    socials: Object.keys(socials).length > 0 ? socials : undefined,
+    contact: email || phone ? { email, phone, whatsapp: socials.whatsapp } : undefined
+  };
+}
+
+const HEX = /^#[0-9a-f]{6}$/i;
+
+async function extractProfile(url: string): Promise<BrandProfile> {
+  const [shot, html] = await Promise.all([
+    screenshotUrl(url, '1440x900', false),
+    fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; AgenticCoreBrandBot/1.0)' } })
+      .then((r) => r.text())
+      .catch(() => '')
+  ]);
+
+  const scraped = scrapeHtml(html, url);
+
+  const raw = await claudeVisionChat(
+    'You are a brand analyst. From this screenshot of a business website, identify the brand so another ' +
+      'designer could produce on-brand material without seeing the site. Report ONLY what is actually visible -- ' +
+      'never invent a colour, a service, or a name that is not there; omit a field instead. Respond with ONLY ' +
+      'JSON of this exact shape: {"businessName": string|null, "tagline": string|null, "industry": string|null, ' +
+      '"primaryColor": "#rrggbb"|null, "accentColor": "#rrggbb"|null, "backgroundColor": "#rrggbb"|null, ' +
+      '"textColor": "#rrggbb"|null, "fontStyle": string|null, "visualStyle": string|null, "tone": string|null, ' +
+      '"services": string[]|null}. fontStyle and visualStyle are short descriptions a designer could work from. ' +
+      'tone describes how the copy reads. No markdown fences, no commentary.',
+    `Website: ${url}\n\nPage text for reference (truncated):\n${html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').slice(0, 4000)}`,
+    [{ bytes: shot, mimeType: 'image/png' }],
+    { maxTokens: 1500 }
+  );
+
+  const cleaned = raw.trim().replace(/^```(?:json)?\n?/i, '').replace(/```$/i, '').trim();
+  const seen = JSON.parse(cleaned);
+
+  const colour = (value: unknown): string | undefined =>
+    typeof value === 'string' && HEX.test(value) ? value : undefined;
+  const text = (value: unknown): string | undefined =>
+    typeof value === 'string' && value.trim() ? value.trim() : undefined;
+
+  return {
+    url,
+    // Parsed HTML wins for anything factual; the model fills the rest.
+    businessName: text(scraped.businessName) ?? text(seen.businessName),
+    tagline: text(seen.tagline),
+    description: text(scraped.description),
+    industry: text(seen.industry),
+    primaryColor: colour(seen.primaryColor),
+    accentColor: colour(seen.accentColor),
+    backgroundColor: colour(seen.backgroundColor),
+    textColor: colour(seen.textColor),
+    fontStyle: text(seen.fontStyle),
+    visualStyle: text(seen.visualStyle),
+    tone: text(seen.tone),
+    services: Array.isArray(seen.services) ? seen.services.filter((s: unknown) => typeof s === 'string').slice(0, 12) : undefined,
+    logoUrl: scraped.logoUrl,
+    socials: scraped.socials,
+    contact: scraped.contact
+  };
+}
+
+// Never throws: a client's unreachable or odd site means we build without
+// their branding, which is a worse deliverable but not a failed task.
+export async function getBrandProfile(rawUrl: string | null | undefined): Promise<BrandProfile | null> {
+  if (!rawUrl) return null;
+  const url = normalizeUrl(String(rawUrl));
+  if (!url) return null;
+
+  try {
+    const { data: cached } = await supabaseAdmin
+      .from('brand_profiles')
+      .select('profile, fetched_at')
+      .eq('url', url)
+      .maybeSingle();
+
+    if (cached?.profile) {
+      const ageDays = (Date.now() - new Date(cached.fetched_at).getTime()) / 86_400_000;
+      if (ageDays < STALE_AFTER_DAYS) return cached.profile as BrandProfile;
+    }
+
+    const profile = await extractProfile(url);
+    await supabaseAdmin
+      .from('brand_profiles')
+      .upsert({ url, profile, fetched_at: new Date().toISOString() }, { onConflict: 'url' });
+    return profile;
+  } catch (err) {
+    console.error(`getBrandProfile failed for ${url}`, err);
+    return null;
+  }
+}
+
+// Renders the profile for a *content* prompt. Deliberately excludes colours
+// and fonts: a generator told about colours writes about colours, which is
+// how design annotations like "(navy header band)" ended up printed as body
+// text on a letterhead. Design values are applied by the renderer, not
+// described by the writer.
+export function brandFactsForPrompt(profile: BrandProfile | null): string {
+  if (!profile) return '';
+  const lines: string[] = [];
+  if (profile.businessName) lines.push(`Business name: ${profile.businessName}`);
+  if (profile.tagline) lines.push(`Tagline: ${profile.tagline}`);
+  if (profile.description) lines.push(`What they do: ${profile.description}`);
+  if (profile.industry) lines.push(`Industry: ${profile.industry}`);
+  if (profile.services?.length) lines.push(`Services: ${profile.services.join(', ')}`);
+  if (profile.tone) lines.push(`Their tone of voice (match it): ${profile.tone}`);
+  if (profile.contact?.email) lines.push(`Email: ${profile.contact.email}`);
+  if (profile.contact?.phone) lines.push(`Phone: ${profile.contact.phone}`);
+  if (profile.socials) {
+    for (const [name, link] of Object.entries(profile.socials)) lines.push(`${name}: ${link}`);
+  }
+  if (!lines.length) return '';
+  return (
+    "\n\nThe client's real details, taken from their own website -- use these exact facts rather than " +
+    `inventing any, and never contradict them:\n${lines.join('\n')}`
+  );
+}
+
+// Renders the profile for an *image* prompt, where visual language is exactly
+// what's wanted -- the opposite of brandFactsForPrompt.
+export function brandStyleForPrompt(profile: BrandProfile | null): string {
+  if (!profile) return '';
+  const bits: string[] = [];
+  if (profile.primaryColor) bits.push(`primary colour ${profile.primaryColor}`);
+  if (profile.accentColor) bits.push(`accent colour ${profile.accentColor}`);
+  if (profile.visualStyle) bits.push(profile.visualStyle);
+  if (profile.fontStyle) bits.push(`typography feel: ${profile.fontStyle}`);
+  if (!bits.length) return '';
+  return ` Match this brand's existing look: ${bits.join('; ')}.`;
+}

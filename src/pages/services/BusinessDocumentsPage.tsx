@@ -1,7 +1,7 @@
 import { Info } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { DashboardShell } from "../../components/dashboard/DashboardShell";
-import { ChipToggle, ErrorNote, inputClass, SectionCard, ServicePageHeader, SubmitBar, SubmittedNote } from "../../components/dashboard/form";
+import { ChipToggle, ErrorNote, inputClass, SectionCard, ServicePageHeader, SubmitBar, SubmittedNote, BrandUrlField } from "../../components/dashboard/form";
 import { submitTask } from "../../lib/submitTask";
 
 const DOC_TYPES = [
@@ -22,6 +22,7 @@ export function BusinessDocumentsPage() {
   const [docType, setDocType] = useState("invoice");
   const [language, setLanguage] = useState<(typeof LANGUAGES)[number]["id"]>("en");
   const [description, setDescription] = useState("");
+  const [websiteUrl, setWebsiteUrl] = useState("");
   const [descError, setDescError] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -37,7 +38,7 @@ export function BusinessDocumentsPage() {
     setDescError(false);
     setSubmitError("");
     setSubmitting(true);
-    const result = await submitTask("documents", { docType, description: description.trim(), language });
+    const result = await submitTask("documents", { docType, description: description.trim(), language, websiteUrl: websiteUrl.trim() || undefined });
     setSubmitting(false);
 
     if (!result.ok) {
@@ -108,6 +109,7 @@ export function BusinessDocumentsPage() {
               />
               {descError && <span className="text-xs text-yellow-400">Tell us a bit about what you need.</span>}
             </label>
+            <BrandUrlField value={websiteUrl} onChange={setWebsiteUrl} />
           </SectionCard>
 
           <div className="flex items-start gap-3 rounded-2xl border border-dashed border-border bg-void p-4">

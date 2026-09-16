@@ -1,9 +1,10 @@
 import { Check } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { DashboardShell } from "../../components/dashboard/DashboardShell";
-import { ErrorNote, inputClass, SectionCard, ServicePageHeader, SubmitBar, SubmittedNote, UploadDropzone } from "../../components/dashboard/form";
+import { ErrorNote, inputClass, SectionCard, ServicePageHeader, SubmitBar, SubmittedNote, BrandUrlField, UploadDropzone } from "../../components/dashboard/form";
 import { AvatarPicker, VoicePicker, type CharacterChoice } from "../../components/dashboard/CharacterPicker";
 import { submitTask } from "../../lib/submitTask";
+import { useReferenceFiles } from "../../lib/useReferenceFiles";
 
 type Length = "short" | "long";
 // Avatar quality tiers are gone: they never changed the delivered video
@@ -46,11 +47,13 @@ export function VideoPage() {
   const [avatarChoice, setAvatarChoice] = useState<CharacterChoice | null>(null);
   const [voiceChoice, setVoiceChoice] = useState<CharacterChoice | null>(null);
   const [description, setDescription] = useState("");
+  const [websiteUrl, setWebsiteUrl] = useState("");
   const [descError, setDescError] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [publicId, setPublicId] = useState("");
+  const references = useReferenceFiles();
 
   // Long videos are always avatar-presented, whatever the style toggle says.
   const usesAvatar = length === "long" || avatarStyle !== "none";
@@ -74,11 +77,13 @@ export function VideoPage() {
       noAvatarMode: length === "short" && avatarStyle === "none" ? "full" : undefined,
       durationSeconds: length === "long" ? blocks * LONG_BLOCK_SECONDS : undefined,
       description: description.trim(),
+      websiteUrl: websiteUrl.trim() || undefined,
       avatarSource: usesAvatar ? avatarChoice?.source : undefined,
       avatarProviderId: usesAvatar ? avatarChoice?.providerId : undefined,
       avatarType: usesAvatar ? avatarChoice?.avatarType : undefined,
       voiceSource: usesAvatar ? voiceChoice?.source : undefined,
       voiceProviderId: usesAvatar ? voiceChoice?.providerId : undefined,
+      referenceFiles: references.urls,
     });
     setSubmitting(false);
 
@@ -242,10 +247,18 @@ export function VideoPage() {
               />
               {descError && <span className="text-xs text-yellow-400">Tell us a bit about what you need.</span>}
             </label>
+            <BrandUrlField value={websiteUrl} onChange={setWebsiteUrl} />
           </SectionCard>
 
           <SectionCard title="Assets">
-            <UploadDropzone label="Upload a script, product shots, or reference video (optional)" />
+            <UploadDropzone
+              label="Upload a script, product shots, or reference video (optional)"
+              files={references.files}
+              uploading={references.uploading}
+              error={references.error}
+              onAdd={references.add}
+              onRemove={references.remove}
+            />
           </SectionCard>
 
           <SubmitBar loading={submitting} />

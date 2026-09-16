@@ -1,11 +1,16 @@
-import { ArrowRight, Plus, Sparkles, Wallet } from "lucide-react";
+import { ArrowRight, PackageCheck, Plus, Sparkles, Wallet } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { useWallet } from "../../lib/useWallet";
 
+type Props = {
+  /** Delivered orders the client hasn't opened yet. */
+  unseenCount: number;
+};
+
 // Top of the dashboard: who you are, what's in the wallet, and the two ways
 // to start something (talk to Forge, or pick a service below).
-export function WelcomeSection() {
+export function WelcomeSection({ unseenCount }: Props) {
   const { user } = useAuth();
   const { balance, loading } = useWallet();
   const firstName = user?.name?.trim()?.split(" ")[0] ?? "there";
@@ -28,6 +33,19 @@ export function WelcomeSection() {
               Describe what your business needs and Forge scopes it for you — or pick a service
               below and fill in the brief yourself.
             </p>
+
+            {/* Finished work used to land in the owner's Telegram and nowhere
+                else, so a paying client had no way to know it was ready.
+                This is that notice. */}
+            {unseenCount > 0 ? (
+              <a
+                href="#deliverables"
+                className="mt-4 inline-flex items-center gap-2 rounded-full border border-yellow-400/40 bg-yellow-400/10 px-4 py-2 text-sm font-semibold text-yellow-400 transition-colors hover:bg-yellow-400/20"
+              >
+                <PackageCheck className="h-4 w-4" />
+                {unseenCount === 1 ? "1 new deliverable is ready" : `${unseenCount} new deliverables are ready`}
+              </a>
+            ) : null}
 
             <div className="mt-5 flex flex-col gap-2.5 sm:flex-row">
               <Link

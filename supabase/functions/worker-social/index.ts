@@ -6,6 +6,8 @@
 
 import { supabaseAdmin, uploadDeliverable } from '../_shared/storage.ts';
 import { generateImageOptions } from '../_shared/images.ts';
+import { resolveSku } from '../_shared/catalog.ts';
+import { getBrandProfile, brandFactsForPrompt, brandStyleForPrompt, extractUrl, normalizeUrl } from '../_shared/brandProfile.ts';
 import { claudeChat } from '../_shared/claude.ts';
 import { renderDocumentPdf, type DocSpec } from '../_shared/pdf.ts';
 import { sendTelegramDocument, sendTelegramPhoto } from '../_shared/telegramApi.ts';
@@ -62,15 +64,41 @@ function normalizeSocialPayload(raw: Record<string, unknown>): SocialDefaulting 
   return { payload, defaulted };
 }
 
+
+// The client's site is the brand reference for every product that carries
+// their branding -- explicit field first, then any URL in the brief.
+function brandUrlFor(payload: Record<string, unknown>): string | null {
+  const explicit = typeof payload.websiteUrl === 'string' ? payload.websiteUrl : null;
+  return normalizeUrl(explicit ?? '') ?? extractUrl(String(payload.description ?? payload.brief ?? ''));
+}
+
+
+// A revision only differs from the original if the generator is told what to
+// change. Notes are appended to the payload by the revise path; without this
+// the worker would regenerate the same brief and hand back the same thing.
+function revisionInstruction(payload: Record<string, unknown>): string {
+  const notes = Array.isArray(payload.revisionNotes) ? (payload.revisionNotes as string[]) : [];
+  if (notes.length === 0) return '';
+  const latest = notes[notes.length - 1];
+  const earlier = notes.slice(0, -1);
+  return (
+    `\n\nThis is a REVISION of work already delivered. Change what is asked for and leave everything ` +
+    `else as it was -- do not rebuild the whole thing around the change.\nWhat to change now: ${latest}` +
+    (earlier.length ? `\nAlready applied previously: ${earlier.join(' | ')}` : '')
+  );
+}
+
 function platformList(payload: Record<string, unknown>): string {
   const platforms = payload.platforms;
   return Array.isArray(platforms) ? platforms.join(', ') : String(platforms ?? '');
 }
 
-function resolveOptionCount(payload: Record<string, unknown>): number {
+// As in worker-image: the catalog states what the product promises.
+function resolveOptionCount(payload: Record<string, unknown>, catalogCount?: number): number {
+  const promised = catalogCount ?? DEFAULT_OPTION_COUNT;
   const n = Number(payload.optionCount);
-  if (!Number.isFinite(n)) return DEFAULT_OPTION_COUNT;
-  return Math.min(5, Math.max(1, Math.round(n)));
+  if (!Number.isFinite(n)) return promised;
+  return Math.min(promised, Math.max(1, Math.round(n)));
 }
 
 async function handleImageRequest(
@@ -86,7 +114,9 @@ async function handleImageRequest(
       ? `Social media profile kit (profile picture + cover/banner concept) for ${platformList(payload)}: ${payload.description}. Clean, professional, on-brand.`
       : `Social media post design for ${platformList(payload)}: ${payload.description}. Eye-catching, scroll-stopping, on-brand.`;
 
-  const urls = await generateImageOptions(taskId, prompt, resolveOptionCount(payload), version, payload.referenceFiles);
+  const product = resolveSku('social', payload);
+  const profile = product?.urlUse === 'brand' ? await getBrandProfile(brandUrlFor(payload)) : null;
+  const urls = await generateImageOptions(taskId, prompt + brandStyleForPrompt(profile), resolveOptionCount(payload, product?.output.options), version, payload.referenceFiles);
   await logEvent(taskId, 'social_images_generated', 'worker', { requestType, count: urls.length });
 
   if (ownerChannelId) {
@@ -106,6 +136,9 @@ async function handleCopyRequest(taskId: string, version: number, payload: Recor
       ? `Write Google Business Profile content: a business description, suggested categories, and an opening post. Brief: ${payload.description}. Platforms context: ${platformList(payload)}.`
       : `Write a caption & hashtag pack (at least 4 distinct caption options with matching hashtags) for ${platformList(payload)}. Brief: ${payload.description}.`;
 
+  const profile = await getBrandProfile(brandUrlFor(payload));
+  const briefWithBrand = brief + brandFactsForPrompt(profile) + revisionInstruction(payload);
+
   const raw = await claudeChat(
     [
       {
@@ -116,7 +149,7 @@ async function handleCopyRequest(taskId: string, version: number, payload: Recor
           '{"title": string, "subtitle": string | null, "sections": [{"heading": string, "body": string}]} ' +
           '-- each section is one distinct option/post -- no markdown fences, no commentary.'
       },
-      { role: 'user', content: brief }
+      { role: 'user', content: briefWithBrand }
     ],
     { maxTokens: 4000 }
   );

@@ -1,3 +1,13 @@
+# Per-function JWT settings.
+#
+# The platform defaults verify_jwt to true, and the CLI applies this file on
+# every deploy -- so any function that must run without a Supabase JWT has to
+# be listed here explicitly. Eight functions were live with verify_jwt = false
+# while only two of them appeared in this file, which meant the first bulk
+# `supabase functions deploy` would have silently re-gated the other six.
+# Every current setting is therefore recorded below, whether or not it was
+# set here originally.
+
 # payram-webhook receives relayed calls from .agency, authenticated via
 # X-Internal-Relay-Secret rather than a Supabase JWT -- must not sit
 # behind the platform's default JWT gate, same reasoning as .agency's
@@ -8,4 +18,43 @@ verify_jwt = false
 # telegram-webhook is authenticated via X-Telegram-Bot-Api-Secret-Token,
 # not a Supabase JWT -- Telegram never sends one.
 [functions.telegram-webhook]
+verify_jwt = false
+
+# Called by pg_cron through pg_net, and chained from itself and from the
+# submit paths, with the service role key -- not a user session.
+[functions.dispatcher]
+verify_jwt = false
+
+# Invoked by the dispatcher, not by a browser.
+[functions.worker-image]
+verify_jwt = false
+
+# Browser-called, and each one resolves and checks the caller itself from the
+# Authorization header before doing anything (see resolveCaller in each).
+[functions.submit-task]
+verify_jwt = false
+
+[functions.forge-submit]
+verify_jwt = false
+
+[functions.forge-upload]
+verify_jwt = false
+
+[functions.forge-transcribe]
+verify_jwt = false
+
+[functions.forge-speak]
+verify_jwt = false
+
+[functions.create-custom-avatar]
+verify_jwt = false
+
+[functions.create-custom-voice]
+verify_jwt = false
+
+# Diagnostics, reached directly with curl during setup.
+[functions.webhook-diag]
+verify_jwt = false
+
+[functions.voice-diag]
 verify_jwt = false

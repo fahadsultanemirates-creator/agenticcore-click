@@ -7,6 +7,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { calculatePriceUsd, REAL_TASK_TYPES, FULL_BUSINESS_SETUP_USD } from '../_shared/pricing.ts';
 import { jsonResponse, CORS_HEADERS } from '../_shared/cors.ts';
+import { allocateClientOrder } from '../_shared/orders.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!;
@@ -27,17 +28,6 @@ interface TaskInput {
   type: string;
   subtype?: string | null;
   payload: Record<string, unknown>;
-}
-
-async function generatePublicId(): Promise<string> {
-  const { count } = await supabaseAdmin.from('tasks').select('*', { count: 'exact', head: true });
-  const base = (count ?? 0) + 1;
-  for (let attempt = 0; attempt < 5; attempt++) {
-    const candidate = `AC-CLICK-${String(base + attempt).padStart(4, '0')}`;
-    const { data: existing } = await supabaseAdmin.from('tasks').select('id').eq('public_id', candidate).maybeSingle();
-    if (!existing) return candidate;
-  }
-  return `AC-CLICK-${String(base).padStart(4, '0')}-${crypto.randomUUID().slice(0, 4)}`;
 }
 
 export async function handleRequest(req: Request): Promise<Response> {
@@ -114,19 +104,29 @@ export async function handleRequest(req: Request): Promise<Response> {
   let insertFailed = false;
 
   for (const t of tasks) {
-    const publicId = await generatePublicId();
     const payload = bundleId ? { ...t.payload, bundleId } : t.payload;
+
+    const identity = await allocateClientOrder(caller.id, t.type, payload);
+    if (!identity) {
+      console.error('forge-submit: could not identify product for', t.type);
+      insertFailed = true;
+      break;
+    }
 
     const { data: task, error: insertError } = await supabaseAdmin
       .from('tasks')
       .insert({
-        public_id: publicId,
+        public_id: identity.publicId,
         source: 'website',
         type: t.type,
         subtype: t.subtype,
         status: 'queued',
         wallet_confirmed: true,
         user_id: caller.id,
+        account_no: identity.accountNo,
+        order_no: identity.orderNo,
+        sku: identity.sku,
+        revisions_allowed: identity.revisionsAllowed,
         parent_task_id: anchorTaskId,
         payload
       })

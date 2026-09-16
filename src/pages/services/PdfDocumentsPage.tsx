@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { DashboardShell } from "../../components/dashboard/DashboardShell";
 import { ChipToggle, ErrorNote, Field, inputClass, SectionCard, ServicePageHeader, SubmitBar, SubmittedNote, UploadDropzone } from "../../components/dashboard/form";
 import { submitTask } from "../../lib/submitTask";
+import { useReferenceFiles } from "../../lib/useReferenceFiles";
 
 const DOC_TYPES = [
   "Presentation (PowerPoint)",
@@ -20,6 +21,7 @@ export function PdfDocumentsPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [publicId, setPublicId] = useState("");
+  const references = useReferenceFiles();
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -36,6 +38,7 @@ export function PdfDocumentsPage() {
       docType,
       description: description.trim(),
       websiteUrl: formData.get("websiteUrl") ?? "",
+      referenceFiles: references.urls,
     });
     setSubmitting(false);
 
@@ -91,13 +94,20 @@ export function PdfDocumentsPage() {
               {descError && <span className="text-xs text-yellow-400">Tell us a bit about what you need.</span>}
             </label>
 
-            <Field label="Your website URL (auto-pulls logo, colors, copy & socials)">
+            <Field label="Your website (optional — we'll match your branding)">
               <input name="websiteUrl" placeholder="https://yourbusiness.com" className={inputClass} />
             </Field>
           </SectionCard>
 
           <SectionCard title="Assets">
-            <UploadDropzone label="Upload an existing logo or images to include (optional)" />
+            <UploadDropzone
+              label="Upload an existing logo or images to include (optional)"
+              files={references.files}
+              uploading={references.uploading}
+              error={references.error}
+              onAdd={references.add}
+              onRemove={references.remove}
+            />
           </SectionCard>
 
           <SubmitBar loading={submitting} />

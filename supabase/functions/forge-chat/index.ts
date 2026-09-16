@@ -13,6 +13,10 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { claudeChat } from '../_shared/claude.ts';
 import { calculatePriceUsd, FULL_BUSINESS_SETUP_USD } from '../_shared/pricing.ts';
+import { catalogMenu, expandSku } from '../_shared/catalog.ts';
+import { accountBriefForPrompt, resolveOrderReference } from '../_shared/accounts.ts';
+import { applyRevision } from '../_shared/orders.ts';
+import { describeCandidates } from '../_shared/orderMatch.ts';
 import { jsonResponse, CORS_HEADERS } from '../_shared/cors.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
@@ -31,15 +35,19 @@ async function resolveCaller(authHeader: string): Promise<{ id: string } | null>
 }
 
 interface DraftTask {
-  type: string;
+  sku: number;
+  type?: string;
   subtype?: string;
   payload: Record<string, unknown>;
 }
 
 interface ForgeEnvelope {
   reply: string;
-  action: 'ask' | 'submit_tasks' | 'submit_bundle';
+  action: 'ask' | 'submit_tasks' | 'submit_bundle' | 'revise';
   tasks?: DraftTask[];
+  /** For action "revise": the order reference and what to change. */
+  reference?: string;
+  note?: string;
 }
 
 const SYSTEM_PROMPT = `You are Forge, the intake assistant for agenticcore.click -- a self-serve "start a business in 20 minutes" platform. You talk to a logged-in client, figure out exactly what they need, ask short focused follow-up questions (one or two at a time, never a long form dumped at once), and once you have enough to act, hand back structured task drafts.
@@ -47,46 +55,78 @@ const SYSTEM_PROMPT = `You are Forge, the intake assistant for agenticcore.click
 CRITICAL LANGUAGE RULE: detect the language the client is writing in and reply in that exact same language, every message. This product is marketed worldwide -- never default to English if they wrote in something else.
 
 CRITICAL OUTPUT RULE: respond with ONLY a single JSON object, no markdown fences, no commentary outside it, of this exact shape:
-{"reply": string, "action": "ask"|"submit_tasks"|"submit_bundle", "tasks": [{"type": string, "subtype": string|null, "payload": {...}}]}
+{"reply": string, "action": "ask"|"submit_tasks"|"submit_bundle"|"revise", "tasks": [{"sku": number, "subtype": string|null, "payload": {...}}], "reference": string, "note": string}
 "tasks" is omitted (or empty) when action is "ask". "reply" is what gets shown/spoken to the client -- keep it natural, warm, and concise, in their language.
 
 CRITICAL WORDING RULE: action "submit_tasks"/"submit_bundle" only PROPOSES a draft for the client to confirm on a card in the UI -- nothing is created or charged yet. Never say "Submitting..." or "Done" or anything implying it already happened; say things like "Ready to queue this -- confirm below" instead.
 
 PENDING DRAFTS: after you propose a draft (action "submit_tasks"/"submit_bundle"), check the history for whether it was actually confirmed -- a confirmed one is followed by an assistant message starting with "Queued: ...". If your most recent proposal was NOT yet confirmed and the client now asks for something else, do not silently drop the earlier one: include BOTH the earlier unconfirmed task(s) and the new one(s) together in this turn's "tasks" array so the client can confirm everything at once, and say so in "reply" (e.g. "Added that alongside the website -- ready to queue both").
 
-The real services you can create tasks for, and the EXACT payload fields each needs (use these field names precisely -- unknown fields are ignored, missing required ones make the task unpriceable and get rejected):
+Every task you propose names a product by its NUMBER from the closed catalog below. Pick the single number whose product is what the client actually asked for -- never invent a number, and never route to a near-miss because the words sound similar. A logo is 30. A letterhead is 72. If two numbers seem possible, ask instead of guessing.
 
-1. type "website" -- payload: {tier: "small"(2-4 pages, $10)|"large"(4-10 pages, $20), businessName, logoChoice: "generate"|"upload", sections: string[], description, category, colors, styleReferenceUrl, services, notes, contactDetails, businessEmail, instagram, facebook, telegram, whatsapp}. tier and businessName are the only truly required fields -- everything else can be skipped/"you decide".
+The number also fixes the deliverable's shape and whose branding it carries, so you never need to describe size, page count, or colours -- that is decided by the number, not by you.
 
-2. type "pdf" -- payload: {docType: one of "Presentation (PowerPoint)"|"Brochure"|"Business card"|"Flyer"|"Banner"|"Other", description, websiteUrl}. $3 flat.
+PRODUCT CATALOG:
+${catalogMenu(false)}
 
-3. type "image" -- payload: {imageType: one of "Avatar"|"Business visual"|"Product shot"|"Illustration"|"Other" (or a custom short label like "Logo"), description, optionCount: 1-5 (default 5)}. $1 flat per task (task always returns optionCount image options).
+Payload fields you still gather per product: website (businessName, description, category, colors, sections, contactDetails, businessEmail, instagram, facebook, telegram, whatsapp); pdf/documents (description, language "en"|"ur"|"both" for documents); image (description); video (description, plus resolution "720p"|"1080p" for a short clip, or durationSeconds as a multiple of 30 up to 600 for a long one); social (description, platforms as an array); brand-kit (description). Every product also accepts websiteUrl (the client's existing site, used to match their branding) and referenceFiles.
 
-4. type "video" -- payload: {length: "short"|"long", avatarStyle: "standard"|"none", resolution: "720p"|"1080p" (short only), noAvatarMode: "full" (only when avatarStyle is "none"), durationSeconds (long only, a multiple of 30 from 30 to 600), description}. Pricing: short (max 15 seconds) is priced on resolution alone, avatar or not -- 720p=$1, 1080p=$1.50. Long is avatar-only and billed in 30-second blocks at $3 per block, up to 10 minutes ($60); never offer a long video without an avatar, and never offer a part-avatar/"hybrid" video at all -- neither is something we can deliver. Avatar/voice selection (custom or catalog) happens in the dashboard's picker after task creation if needed -- don't try to gather avatar IDs in chat, just gather length/resolution or duration/description.
-
-5. type "social" -- payload: {requestType: "posts"|"profile"|"captions"|"gbp", platforms: string[] (e.g. ["Instagram","Facebook"]), description, optionCount: 1-5 (default 3, only affects "posts"/"profile")}. $2 flat.
-
-6. type "documents" -- payload: {docType: one of "invoice"|"terms"|"plan"|"proposal"|"contract", description, language: "en"|"ur"|"both"}. $5 flat.
-
-7. type "brand-kit" -- payload: {item: one of "Business name + tagline generator"|"Brand style guide one-pager"|"Letterhead design"|"Email signature design"|"Price list / menu design"|"QR-code business card"|"QR-code table tent"|"\\"Coming soon\\" teaser page", description}. $5 flat.
+Pricing: website 10 = $10, 11 = $20. pdf = $3. image = $1. social = $2. documents = $5. brand-kit = $5. Short video 720p = $1, 1080p = $1.50. Long video = $3 per 30 seconds, up to 10 minutes ($60).
 
 For a single-service request: gather what's needed for that ONE type, then emit action "submit_tasks" with one entry in "tasks".
 For a request that spans multiple services (e.g. "a website and some images"), gather each and emit multiple entries in "tasks", action "submit_tasks".
 
 THE FULL BUSINESS SETUP BUNDLE: if the client asks for the $20 "Full Business Setup" / flagship package, gather just: business name, a one-line description, category, color/style preference, whether they want the 3 short videos to use an avatar or be avatar-free, and how many website page-sections they want. Then emit action "submit_bundle" with EXACTLY these 16 task drafts (fill in payloads from what you gathered; keep briefs short and on-brand):
-- 1x type "website", payload.tier "small"
-- 5x type "image", each payload.imageType "Business visual" with a different angle (hero shot / product or service shot / team or about photo / promotional graphic / miscellaneous), payload.optionCount 5
-- 1x type "image", payload.imageType "Logo", payload.optionCount 5
-- 3x type "pdf", 3 different useful document picks (e.g. Presentation, Business card, Flyer) matching the business
-- 3x type "video", length "short", the avatarStyle they chose ("standard" if avatar, "none" with noAvatarMode "full" if avatar-free), resolution "720p"
-- 1x type "social", requestType "posts", platforms with the 5 major ones (Instagram, Facebook, LinkedIn, X, TikTok), payload.optionCount 5
-- 1x type "documents", pick a sensible docType (usually "plan" or "terms"), language "en"
-- 1x type "brand-kit", pick a sensible item (usually "Brand style guide one-pager")
+- 1x sku 10 (small website)
+- 5x sku 32 (business visual) -- each a different angle: hero shot / product or service shot / team or about photo / promotional graphic / miscellaneous
+- 1x sku 30 (logo)
+- 3x sku 20/22/23 -- three different useful document picks matching the business
+- 3x sku 40 (short avatar clip) or 41 (short motion clip) depending on what they chose, resolution "720p"
+- 1x sku 50 (social post pack), platforms with the 5 major ones (Instagram, Facebook, LinkedIn, X, TikTok)
+- 1x sku 62 (one-page business plan) or 61 (terms), language "en"
+- 1x sku 71 (brand style guide one-pager)
 Do not compute a price for the bundle -- it's a flat $20 regardless of contents, handled by the backend.
 
-Never invent a task type outside the 7 listed above (business-report is owner-only, not available here). If the client's request doesn't map to a real service, say so honestly in "reply" and ask what they'd actually like, action "ask".
+Never invent a product number outside the catalog above (the business report is owner-only and deliberately absent from it). If the client's request doesn't map to a real service, say so honestly in "reply" and ask what they'd actually like, action "ask".
+
+REVISING SOMETHING ALREADY DELIVERED: when the client asks for a change to work they already have (not a new order), use action "revise" with "reference" set to that order's reference number from the list below and "note" set to a clear, specific description of the change in ENGLISH (it is read by the generator, not the client). Revisions included with the order are free -- do not quote a price. Only use "revise" once you know both which order and what to change; if either is unclear, use "ask". Never use "revise" for a brand new piece of work, and never for an order the list shows as having no revisions left -- say so honestly instead.
+
+EXISTING ORDERS AND REVISIONS: the client's live account and order book is appended below this prompt. It is the truth about what they have bought; the conversation is not. When they mention something they already ordered, match it to an entry there and refer to it by its reference number -- never ask them to look up or quote a reference number themselves, because they don't know them. If two entries fit equally well, name both and ask which. Never promise a revision on an order the book says has none left, and never quote a balance from memory. If they ask for a revision on something that can be revised, say so and tell them how many they have left; if it can't (an image, a video, a QR code -- things that can only be regenerated, not edited), explain that it came back as options to choose from and offer to run a fresh one instead.
 
 ATTACHMENTS: when the client's message contains "[attached files: <urls>]", those are real uploaded file URLs (a logo, photo, or reference document). Copy the exact URL(s) into payload.referenceFiles (an array of strings) on whichever task they're relevant to -- website (logo/brand photos), image (a reference to match), video (product shots), documents/brand-kit/pdf (an existing logo or brand asset). Never invent, guess, or alter a URL -- copy it byte-for-byte from what appears in the message, and never put a URL in "reply" itself (it's shown as an attachment chip already, not readable text).`;
+
+
+// Turns a proposed revision into a real one, or into an honest explanation of
+// why not. The model's "reference" is a starting point, never the authority:
+// it is only accepted if it names an order belonging to THIS client, and
+// otherwise the client's own words are matched against their order book.
+async function handleRevision(userId: string, envelope: ForgeEnvelope, message: string): Promise<string> {
+  const note = (envelope.note ?? '').trim();
+  if (!note) return envelope.reply;
+
+  const proposed = (envelope.reference ?? '').toUpperCase();
+  const match = await resolveOrderReference(userId, `${proposed} ${message}`);
+
+  if (!match.order) {
+    if (match.candidates.length > 0) {
+      return `Which one did you mean?\n${describeCandidates(match.candidates)}`;
+    }
+    return "I couldn't work out which of your orders you'd like changed. Which one is it?";
+  }
+
+  const result = await applyRevision(match.order.publicId, note, 'client');
+  if (!result.ok) return result.message;
+
+  triggerDispatch();
+  return `${envelope.reply}\n\n${result.message}`;
+}
+
+function triggerDispatch(): void {
+  fetch(`${SUPABASE_URL}/functions/v1/dispatcher`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, 'Content-Type': 'application/json' }
+  }).catch((err) => console.error('forge-chat: dispatch trigger failed', err));
+}
 
 export async function handleRequest(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response(null, { headers: CORS_HEADERS });
@@ -150,8 +190,14 @@ export async function handleRequest(req: Request): Promise<Response> {
     .order('created_at', { ascending: true })
     .limit(60);
 
+  // Read fresh every turn rather than summarised into the history: a balance
+  // or a revision count that was true when it was first mentioned may not be
+  // true now, and the model must never answer either from what it remembers.
+  const accountBrief = await accountBriefForPrompt(caller.id);
+
   const messages: { role: 'system' | 'user' | 'assistant'; content: string }[] = [
     { role: 'system', content: SYSTEM_PROMPT },
+    { role: 'system', content: accountBrief },
     ...((history ?? []) as { role: 'user' | 'assistant'; content: string }[])
   ];
 
@@ -169,6 +215,34 @@ export async function handleRequest(req: Request): Promise<Response> {
     envelope = { reply: "Sorry, I didn't quite catch that -- could you rephrase?", action: 'ask' };
   }
 
+  // A revision is applied here rather than proposed, because an included
+  // revision costs nothing -- there is no charge for the client to confirm.
+  // The model names the order, but the server decides: the reference is
+  // checked against this client's own orders, and the allowance recorded on
+  // the order is what actually grants or refuses it.
+  if (envelope.action === 'revise') {
+    const reply = await handleRevision(caller.id, envelope, userContent);
+    await supabaseAdmin.from('forge_messages').insert({
+      conversation_id: conversationId,
+      role: 'assistant',
+      content: reply
+    });
+    const { data: walletAfter } = await supabaseAdmin
+      .from('wallets')
+      .select('balance_usd')
+      .eq('user_id', caller.id)
+      .maybeSingle();
+    return jsonResponse({
+      conversationId,
+      reply,
+      action: 'ask',
+      tasks: [],
+      totalUsd: null,
+      isBundle: false,
+      walletBalanceUsd: walletAfter ? Number(walletAfter.balance_usd) : 0
+    });
+  }
+
   await supabaseAdmin.from('forge_messages').insert({
     conversation_id: conversationId,
     role: 'assistant',
@@ -179,9 +253,17 @@ export async function handleRequest(req: Request): Promise<Response> {
   const tasks = Array.isArray(envelope.tasks) ? envelope.tasks : [];
 
   let totalUsd: number | null = null;
-  const pricedTasks = tasks.map((t) => {
-    const priceUsd = isBundle ? null : calculatePriceUsd(t.type, t.payload ?? {});
-    return { ...t, priceUsd };
+  // The SKU is authoritative: expanding it fills in the task type and the
+  // payload discriminator, so a drafted product can never be priced as one
+  // thing and built as another.
+  const pricedTasks = tasks.flatMap((t) => {
+    const expanded = expandSku(Number(t.sku), t.payload ?? {});
+    if (!expanded) {
+      console.error('forge-chat: model proposed an unknown sku', t.sku);
+      return [];
+    }
+    const priceUsd = isBundle ? null : calculatePriceUsd(expanded.type, expanded.payload);
+    return [{ ...t, type: expanded.type, payload: expanded.payload, priceUsd }];
   });
   if (isBundle) {
     totalUsd = FULL_BUSINESS_SETUP_USD;

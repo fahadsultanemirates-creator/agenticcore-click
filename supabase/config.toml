@@ -52,9 +52,11 @@ verify_jwt = false
 [functions.create-custom-voice]
 verify_jwt = false
 
-# Diagnostics, reached directly with curl during setup.
-[functions.webhook-diag]
-verify_jwt = false
-
-[functions.voice-diag]
-verify_jwt = false
+# webhook-diag and voice-diag are deliberately NOT listed here. They are live
+# on the project with verify_jwt = false but have no source in this repo --
+# they were deployed by hand during setup and never committed. The CLI tries
+# to deploy every function named in this file, so listing them fails the whole
+# run on a missing directory. Left unlisted, they keep running untouched.
+#
+# They are unauthenticated endpoints nobody is maintaining; worth deleting
+# from the project once they are confirmed unused.

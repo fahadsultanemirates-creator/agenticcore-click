@@ -31,6 +31,19 @@ export type Renderer =
   | 'site' // a deployed website
   | 'qr'; // a QR code artifact
 
+// How a single-page asset is laid out.
+//
+// 'stationery' is paper you type ON: branding at the top, the contact strip at
+// the bottom, and a deliberately EMPTY middle. That emptiness is the product --
+// it is where the client's own letter goes. Without this distinction the
+// generator treats a letterhead like every other asset and fills the page,
+// which is what produced a letterhead containing "[Date] / [Recipient name] /
+// Dear [Name] / [Letter text]": a letter template, not stationery.
+//
+// Everything else is 'content': a flyer, a price list, a business card are all
+// meant to be full.
+export type AssetLayout = 'stationery' | 'content';
+
 export type UrlUse =
   | 'brand' // visit the client's site and take its identity (colours, copy, socials)
   | 'analyse' // visit the site and critique it -- the site is the SUBJECT, not the style
@@ -56,6 +69,8 @@ export interface CatalogItem {
     options?: number;
   };
   urlUse: UrlUse;
+  /** Only meaningful for renderer 'asset'. Defaults to 'content'. */
+  layout?: AssetLayout;
   /**
    * How many free revisions this product includes.
    *
@@ -470,6 +485,8 @@ export const CATALOG: CatalogItem[] = [
     branding: 'client',
     output: { pages: 1 },
     urlUse: 'brand',
+    // The one product whose middle must stay empty -- see AssetLayout.
+    layout: 'stationery',
     revisions: 1,
     aliases: ['letterhead', 'letter head', 'company letter paper'],
   },
@@ -611,7 +628,15 @@ export function expandSku(
 export function shapeInstruction(item: CatalogItem): string {
   const parts: string[] = [`You are producing: ${item.name}.`];
 
-  if (item.output.pages === 1) {
+  if (item.layout === 'stationery') {
+    parts.push(
+      'This is STATIONERY: printed paper the client types their own letter onto. Produce ONLY the fixed ' +
+        'printed matter -- the identity block that sits at the top of every sheet, and the contact strip that ' +
+        'sits at the foot of every sheet. The middle of the page stays EMPTY; that empty space is the whole ' +
+        'point of the product. Never write a date, a recipient, a salutation, body text, a sign-off, or any ' +
+        'placeholder standing in for them -- the client writes those themselves, on top of this.'
+    );
+  } else if (item.output.pages === 1) {
     parts.push(
       'This is a SINGLE PAGE deliverable. Produce exactly one section. It is a finished, ready-to-use ' +
         'artifact, never a report, a specification, or a multi-page document.'

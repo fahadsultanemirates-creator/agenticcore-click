@@ -56,7 +56,16 @@ export interface DocSpec {
   // worker-pdf's describeReferenceWebsiteBrand) -- applied as actual CSS in
   // renderBrandKitAsset, never as prose the content model would otherwise
   // have to (mis)describe in the page text itself.
-  brand?: { primaryColor?: string; accentColor?: string };
+  // logoUrl is what gets persisted between the generate and render phases;
+  // logoDataUri is filled in just before rendering (see withInlinedLogo), so a
+  // half-megabyte image never sits in tasks.payload.
+  brand?: { primaryColor?: string; accentColor?: string; logoUrl?: string; logoDataUri?: string };
+  // Set for stationery assets (the letterhead). When present the asset renders
+  // as printed paper -- identity block at the top, contact strip at the foot,
+  // and an EMPTY middle for the client's own letter -- instead of the usual
+  // title/rule/body block. The empty middle is the product, so it is a
+  // separate shape rather than a section whose body happens to be blank.
+  stationery?: { headerLines: string[]; footerLines: string[] };
 }
 
 // A generic modern phone's logical viewport -- wide/tall enough for
@@ -232,11 +241,14 @@ const ASSET_PAGE_WIDTH = 794;
 const ASSET_PAGE_HEIGHT = 1123;
 
 export async function renderBrandKitAsset(spec: DocSpec): Promise<Uint8Array> {
+  if (spec.stationery) return renderStationery(spec);
+
   const section = spec.sections[0];
   const rtl = (section.language ?? spec.language) === 'ur';
   const fontFamily = rtl ? "'Noto Nastaliq Urdu', serif" : "'Inter', sans-serif";
   const titleColor = spec.brand?.primaryColor ?? '#14161b';
   const ruleColor = spec.brand?.accentColor ?? '#c7cad1';
+  const logo = spec.brand?.logoDataUri;
 
   const html = `<!doctype html>
 <html lang="${spec.language ?? 'en'}">
@@ -250,6 +262,7 @@ ${FONT_LINK}
     width: ${ASSET_PAGE_WIDTH}px; min-height: ${ASSET_PAGE_HEIGHT}px;
     padding: 64px 72px; display: flex; flex-direction: column;
   }
+  .logo { max-height: 48px; max-width: 220px; margin: 0 0 20px; ${rtl ? 'align-self: flex-end;' : ''} }
   h1 {
     font-family: ${fontFamily}; font-weight: 700; font-size: 22px;
     margin: 0 0 14px; color: ${titleColor}; text-align: ${rtl ? 'right' : 'left'};
@@ -267,9 +280,76 @@ ${FONT_LINK}
 </head>
 <body>
   <section class="page" dir="${rtl ? 'rtl' : 'ltr'}">
+    ${logo ? `<img class="logo" src="${logo}" alt="">` : ''}
     <h1>${escapeHtml(spec.title)}</h1>
     <div class="rule"></div>
     <div class="body">${bodyToHtml(section.body)}</div>
+  </section>
+</body>
+</html>`;
+
+  return renderHtmlToPdf(html, { format: `${ASSET_PAGE_WIDTH}x${ASSET_PAGE_HEIGHT}` });
+}
+
+// Printed paper: identity at the top, contact strip at the foot, nothing in
+// between. The middle is empty on purpose -- it is where the client's own
+// letter goes, and it is the reason the product exists.
+async function renderStationery(spec: DocSpec): Promise<Uint8Array> {
+  const rtl = spec.language === 'ur';
+  const fontFamily = rtl ? "'Noto Nastaliq Urdu', serif" : "'Inter', sans-serif";
+  const nameColor = spec.brand?.primaryColor ?? '#14161b';
+  const ruleColor = spec.brand?.accentColor ?? '#c7cad1';
+  const logo = spec.brand?.logoDataUri;
+
+  const [name, ...restHeader] = spec.stationery!.headerLines.filter((line) => line.trim() !== '');
+  const footer = spec.stationery!.footerLines.filter((line) => line.trim() !== '');
+
+  const html = `<!doctype html>
+<html lang="${spec.language ?? 'en'}">
+<head>
+<meta charset="utf-8">
+${FONT_LINK}
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #ffffff; color: #14161b; font-family: 'Inter', sans-serif; }
+  .page {
+    width: ${ASSET_PAGE_WIDTH}px; height: ${ASSET_PAGE_HEIGHT}px;
+    padding: 56px 72px 44px; display: flex; flex-direction: column;
+    text-align: ${rtl ? 'right' : 'left'};
+  }
+  .head { display: flex; align-items: center; gap: 18px; ${rtl ? 'flex-direction: row-reverse;' : ''} }
+  .logo { max-height: 56px; max-width: 200px; }
+  .name { font-family: ${fontFamily}; font-weight: 700; font-size: 20px; color: ${nameColor}; margin: 0; }
+  .sub { font-family: ${fontFamily}; font-size: 12px; color: #5a5e68; margin: 4px 0 0; line-height: 1.5; }
+  .head-rule { height: 3px; background: ${ruleColor}; border-radius: 2px; margin: 18px 0 0; }
+  /* The whole point of the product: untouched space for the client's letter. */
+  .writing-area { flex: 1 1 auto; }
+  .foot-rule { height: 1px; background: #e3e5ea; margin: 0 0 12px; }
+  .foot {
+    font-family: ${fontFamily}; font-size: 10.5px; line-height: 1.7; color: #5a5e68;
+  }
+  .foot div { margin: 0; }
+</style>
+</head>
+<body>
+  <section class="page" dir="${rtl ? 'rtl' : 'ltr'}">
+    <header>
+      <div class="head">
+        ${logo ? `<img class="logo" src="${logo}" alt="">` : ''}
+        <div>
+          <p class="name">${escapeHtml(name ?? spec.title)}</p>
+          ${restHeader.map((line) => `<p class="sub">${escapeHtml(line)}</p>`).join('')}
+        </div>
+      </div>
+      <div class="head-rule"></div>
+    </header>
+
+    <div class="writing-area"></div>
+
+    <footer>
+      <div class="foot-rule"></div>
+      <div class="foot">${footer.map((line) => `<div>${escapeHtml(line)}</div>`).join('')}</div>
+    </footer>
   </section>
 </body>
 </html>`;

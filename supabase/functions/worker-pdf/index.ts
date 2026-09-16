@@ -48,6 +48,19 @@ function brandColors(profile: BrandProfile | null): { primaryColor?: string; acc
   return { primaryColor: profile?.primaryColor, accentColor: profile?.accentColor };
 }
 
+// Colours plus a pointer to the logo. Deliberately the URL and not the image:
+// this spec is persisted into tasks.payload between the two phases, and
+// payload is selected by every order listing -- inlining a 500KB logo here
+// would mean dragging ~700KB of base64 through each of those queries. The
+// render phase fetches and inlines it at the moment it is actually needed.
+function brandAssets(profile: BrandProfile | null): {
+  primaryColor?: string;
+  accentColor?: string;
+  logoUrl?: string;
+} {
+  return { ...brandColors(profile), logoUrl: profile?.logoUrl };
+}
+
 async function generateAssetSpec(catalogItem: CatalogItem, payload: Record<string, unknown>): Promise<DocSpec> {
   const item = catalogItem.name;
   const description = String(payload.description ?? payload.brief ?? '');
@@ -83,7 +96,53 @@ async function generateAssetSpec(catalogItem: CatalogItem, payload: Record<strin
     throw new Error('Claude returned an unexpected asset shape');
   }
   // One section, enforced here rather than trusted from the model.
-  return { title: String(parsed.title), sections: [parsed.sections[0]], kind: 'asset', brand: brandColors(profile) };
+  return { title: String(parsed.title), sections: [parsed.sections[0]], kind: 'asset', brand: brandAssets(profile) };
+}
+
+// Stationery is a different shape, not a different prompt over the same shape.
+// Asked for a letterhead through the one-block asset schema, the model had
+// nowhere to put "header" and "footer" separately and no way to express an
+// empty middle -- so it filled the page with a letter template ("[Date]",
+// "Dear [Name]", "[Letter text]"). The schema itself now carries the two
+// printed zones, and the emptiness between them is the renderer's job.
+async function generateStationerySpec(catalogItem: CatalogItem, payload: Record<string, unknown>): Promise<DocSpec> {
+  const description = String(payload.description ?? payload.brief ?? '');
+  const profile = catalogItem.urlUse === 'brand' ? await getBrandProfile(brandUrlFor(payload)) : null;
+
+  const systemPrompt =
+    `${shapeInstruction(catalogItem)} ` +
+    'Return the fixed printed matter as two lists of SHORT lines. "headerLines": the business name first, ' +
+    'then at most two more lines (a tagline and/or what they do). "footerLines": at most three lines carrying ' +
+    'contact details, social handles and, if useful, a one-line list of services. Use the real details given ' +
+    'below exactly; never invent an address, phone number or handle. Write no design instructions, no colours, ' +
+    'no fonts, no brackets, no placeholders of any kind. Respond with ONLY a JSON object of the exact shape ' +
+    '{"businessName": string, "headerLines": string[], "footerLines": string[]} -- no markdown fences, no commentary.';
+
+  const userBrief = [`Product: ${catalogItem.name}`, `Brief: ${description}`].filter(Boolean).join('\n') +
+    brandFactsForPrompt(profile) + revisionInstruction(payload);
+
+  const raw = await claudeChat(
+    [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userBrief }
+    ],
+    { maxTokens: 900 }
+  );
+
+  const cleaned = raw.trim().replace(/^```(?:json)?\n?/i, '').replace(/```$/i, '').trim();
+  const parsed = JSON.parse(cleaned);
+  const headerLines = Array.isArray(parsed?.headerLines) ? parsed.headerLines.map(String) : [];
+  const footerLines = Array.isArray(parsed?.footerLines) ? parsed.footerLines.map(String) : [];
+  if (headerLines.length === 0) throw new Error('Claude returned stationery with no header');
+
+  return {
+    title: String(parsed?.businessName ?? profile?.businessName ?? headerLines[0]),
+    // Kept for callers that read sections; the stationery renderer ignores it.
+    sections: [{ heading: '', body: '' }],
+    kind: 'asset',
+    brand: brandAssets(profile),
+    stationery: { headerLines: headerLines.slice(0, 3), footerLines: footerLines.slice(0, 3) }
+  };
 }
 
 
@@ -262,7 +321,10 @@ export async function handleRequest(req: Request): Promise<Response> {
     // this path, so a "Business card" PDF was built as a multi-page deck in
     // our own theme -- the same failure as the letterhead, just unreported.
     if (catalogItem.renderer === 'asset') {
-      const spec = await generateAssetSpec(catalogItem, payload);
+      const spec =
+        catalogItem.layout === 'stationery'
+          ? await generateStationerySpec(catalogItem, payload)
+          : await generateAssetSpec(catalogItem, payload);
 
       const { error: assetUpdateError } = await supabaseAdmin
         .from('tasks')

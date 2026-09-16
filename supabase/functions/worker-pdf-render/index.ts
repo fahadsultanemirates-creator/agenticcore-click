@@ -9,6 +9,7 @@
 
 import { supabaseAdmin, uploadDeliverable } from '../_shared/storage.ts';
 import { renderDocumentPdf, renderBrandKitAsset, type DocSpec, type DocSection } from '../_shared/pdf.ts';
+import { fetchLogoDataUri } from '../_shared/brandProfile.ts';
 import { generateBrandVisual, mapWithConcurrency } from '../_shared/images.ts';
 import { sendTelegramDocument } from '../_shared/telegramApi.ts';
 import { addTaskFile, logEvent, markDelivered, markFailed } from '../_shared/task.ts';
@@ -64,7 +65,16 @@ export async function handleRequest(req: Request): Promise<Response> {
     if (!isAsset) {
       await generateSectionVisuals(taskId, spec.sections);
     }
-    const pdfBytes = isAsset ? await renderBrandKitAsset(spec) : await renderDocumentPdf(spec);
+    // The spec carries the client's logo as a URL, because it was persisted
+    // into tasks.payload between phases and a 500KB inlined image there would
+    // be dragged through every order listing. It is fetched and inlined here,
+    // at the one moment it is needed, and a failure just means a plainer
+    // deliverable rather than a failed one.
+    const renderSpec: DocSpec = spec.brand?.logoUrl
+      ? { ...spec, brand: { ...spec.brand, logoDataUri: await fetchLogoDataUri({ url: '', logoUrl: spec.brand.logoUrl }) } }
+      : spec;
+
+    const pdfBytes = isAsset ? await renderBrandKitAsset(renderSpec) : await renderDocumentPdf(renderSpec);
     const { url } = await uploadDeliverable(taskId, isAsset ? 'brand-asset.pdf' : 'document.pdf', pdfBytes, 'application/pdf');
 
     if (String(payload.docType) === 'Presentation (PowerPoint)') {

@@ -237,3 +237,44 @@ export function brandStyleForPrompt(profile: BrandProfile | null): string {
   if (!bits.length) return '';
   return ` Match this brand's existing look: ${bits.join('; ')}.`;
 }
+
+// The client's logo, fetched and inlined as a data URI.
+//
+// The profile has carried logoUrl since it was written, but nothing ever
+// fetched it, so every "on-brand" deliverable came back logo-less. Inlined
+// rather than referenced because the renderer is a third-party HTML-to-PDF
+// service: a plain <img src="https://theirsite/logo.png"> depends on that
+// service being allowed to hotlink, and when it isn't, the failure is a
+// silently broken image on a finished deliverable.
+//
+// Returns undefined rather than throwing. A missing logo makes a letterhead
+// plainer; a failed render makes it nothing at all.
+const LOGO_MAX_BYTES = 512 * 1024;
+const LOGO_TIMEOUT_MS = 8000;
+
+export async function fetchLogoDataUri(profile: BrandProfile | null): Promise<string | undefined> {
+  const url = profile?.logoUrl;
+  if (!url) return undefined;
+
+  try {
+    const resp = await fetch(url, { signal: AbortSignal.timeout(LOGO_TIMEOUT_MS) });
+    if (!resp.ok) return undefined;
+
+    const contentType = (resp.headers.get('content-type') ?? '').split(';')[0].trim();
+    if (!contentType.startsWith('image/')) return undefined;
+
+    const bytes = new Uint8Array(await resp.arrayBuffer());
+    if (bytes.byteLength === 0 || bytes.byteLength > LOGO_MAX_BYTES) return undefined;
+
+    // btoa needs a binary string; chunked so a large logo can't blow the
+    // argument limit on String.fromCharCode.
+    let binary = '';
+    for (let i = 0; i < bytes.length; i += 8192) {
+      binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
+    }
+    return `data:${contentType};base64,${btoa(binary)}`;
+  } catch (err) {
+    console.error('fetchLogoDataUri failed', url, err);
+    return undefined;
+  }
+}

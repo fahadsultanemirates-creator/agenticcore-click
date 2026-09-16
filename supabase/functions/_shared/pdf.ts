@@ -65,7 +65,11 @@ export interface DocSpec {
   // and an EMPTY middle for the client's own letter -- instead of the usual
   // title/rule/body block. The empty middle is the product, so it is a
   // separate shape rather than a section whose body happens to be blank.
-  stationery?: { headerLines: string[]; footerLines: string[] };
+  // businessName is printed as the identity line in its own right rather than
+  // being headerLines[0]: asked to order the block itself, the model led with
+  // the tagline and the name vanished from the page entirely. On stationery
+  // the name is the one thing that cannot be missing.
+  stationery?: { businessName: string; headerLines: string[]; footerLines: string[] };
 }
 
 // A generic modern phone's logical viewport -- wide/tall enough for
@@ -301,7 +305,11 @@ async function renderStationery(spec: DocSpec): Promise<Uint8Array> {
   const ruleColor = spec.brand?.accentColor ?? '#c7cad1';
   const logo = spec.brand?.logoDataUri;
 
-  const [name, ...restHeader] = spec.stationery!.headerLines.filter((line) => line.trim() !== '');
+  const name = spec.stationery!.businessName.trim() || spec.title;
+  // Anything that merely repeats the name adds a duplicate line to the block.
+  const restHeader = spec.stationery!.headerLines
+    .map((line) => line.trim())
+    .filter((line) => line !== '' && line.toLowerCase() !== name.toLowerCase());
   const footer = spec.stationery!.footerLines.filter((line) => line.trim() !== '');
 
   const html = `<!doctype html>
@@ -339,7 +347,7 @@ ${FONT_LINK}
       <div class="head">
         ${logo ? `<img class="logo" src="${logo}" alt="">` : ''}
         <div>
-          <p class="name">${escapeHtml(name ?? spec.title)}</p>
+          <p class="name">${escapeHtml(name)}</p>
           ${restHeader.map((line) => `<p class="sub">${escapeHtml(line)}</p>`).join('')}
         </div>
       </div>

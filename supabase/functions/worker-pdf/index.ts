@@ -129,10 +129,11 @@ async function generateStationerySpec(catalogItem: CatalogItem, payload: Record<
 
   const systemPrompt =
     `${shapeInstruction(catalogItem)} ` +
-    'Return the identity block that sits at the top of every sheet: the business name, then at most two more ' +
-    'short lines (a tagline and/or what they do). The contact strip at the foot is assembled separately from ' +
-    "the client's own recorded details, so do not write it. Write no design instructions, no colours, no " +
-    'fonts, no brackets, no placeholders of any kind. Respond with ONLY a JSON object of the exact shape ' +
+    'Return the business name, and at most two short supporting lines for the identity block at the top of ' +
+    'every sheet -- a tagline and/or what they do. Do NOT repeat the business name inside those supporting ' +
+    'lines; it is printed separately above them. The contact strip at the foot is assembled from the ' +
+    "client's own recorded details, so do not write it. Write no design instructions, no colours, no fonts, " +
+    'no brackets, no placeholders of any kind. Respond with ONLY a JSON object of the exact shape ' +
     '{"businessName": string, "headerLines": string[]} -- no markdown fences, no commentary.';
 
   const userBrief = [`Product: ${catalogItem.name}`, `Brief: ${description}`].filter(Boolean).join('\n') +
@@ -149,21 +150,24 @@ async function generateStationerySpec(catalogItem: CatalogItem, payload: Record<
   const cleaned = raw.trim().replace(/^```(?:json)?\n?/i, '').replace(/```$/i, '').trim();
   const parsed = JSON.parse(cleaned);
   const headerLines = Array.isArray(parsed?.headerLines) ? parsed.headerLines.map(String) : [];
-  if (headerLines.length === 0) throw new Error('Claude returned stationery with no header');
+
+  // Prefer the name the site states about itself over one the model retyped.
+  const businessName = String(profile?.businessName ?? parsed?.businessName ?? '').trim();
+  if (!businessName) throw new Error('Claude returned stationery with no business name');
 
   // Built from the profile, not written: composing it left one of four social
   // channels off the page to satisfy an instruction about line count.
   const footerLines = stationeryFooterLines(profile);
 
   return {
-    title: String(parsed?.businessName ?? profile?.businessName ?? headerLines[0]),
+    title: businessName,
     // Kept for callers that read sections; the stationery renderer ignores it.
     sections: [{ heading: '', body: '' }],
     kind: 'asset',
     brand: brandAssets(profile, payload),
     // footerLines is not truncated: it is exactly what the site publishes, and
     // dropping a channel to hit a line count is the bug this replaced.
-    stationery: { headerLines: headerLines.slice(0, 3), footerLines }
+    stationery: { businessName, headerLines: headerLines.slice(0, 2), footerLines }
   };
 }
 

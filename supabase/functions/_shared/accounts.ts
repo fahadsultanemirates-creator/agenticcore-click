@@ -113,7 +113,10 @@ export async function accountBriefForPrompt(userId: string): Promise<string> {
 }
 
 export interface PlatformSnapshot {
-  accountsTotal: number;
+  /** People who have signed up, whether or not they have ordered anything. */
+  registeredUsers: number;
+  /** Accounts that have been issued a number -- i.e. have ordered at least once. */
+  accountsWithOrderNumber: number;
   accountsWithBalance: number;
   accountsActive30d: number;
   balanceHeldUsd: number;
@@ -140,11 +143,17 @@ export interface PeriodCounts {
 // are funded, and how much work has actually been delivered. Feeds the daily
 // summary and any "how are we doing" question in the bot.
 export async function getPlatformSnapshot(): Promise<PlatformSnapshot> {
-  const [{ count: accountsTotal }, { data: wallets }, { data: tasks }] = await Promise.all([
-    supabaseAdmin.from('client_accounts').select('user_id', { count: 'exact', head: true }),
-    supabaseAdmin.from('wallets').select('user_id, balance_usd'),
-    supabaseAdmin.from('tasks').select('status, sku, type, payload, user_id, created_at')
-  ]);
+  const [{ count: accountsWithOrderNumber }, { data: registered }, { data: wallets }, { data: tasks }] =
+    await Promise.all([
+      supabaseAdmin.from('client_accounts').select('user_id', { count: 'exact', head: true }),
+      // Signups live in auth.users, which PostgREST does not expose -- see
+      // migration 0020. Counting client_accounts instead produced "0 total, 2
+      // funded", because a row there is only created on an account's FIRST
+      // order, not at signup.
+      supabaseAdmin.rpc('count_registered_users'),
+      supabaseAdmin.from('wallets').select('user_id, balance_usd'),
+      supabaseAdmin.from('tasks').select('status, sku, type, payload, user_id, created_at')
+    ]);
 
   const funded = (wallets ?? []).filter((w: any) => Number(w.balance_usd) > 0);
   const balanceHeldUsd = funded.reduce((sum: number, w: any) => sum + Number(w.balance_usd), 0);
@@ -198,7 +207,8 @@ export async function getPlatformSnapshot(): Promise<PlatformSnapshot> {
     .map(([sku, count]) => ({ sku, name: getSku(sku)?.name ?? String(sku), count }));
 
   return {
-    accountsTotal: accountsTotal ?? 0,
+    registeredUsers: Number(registered ?? 0),
+    accountsWithOrderNumber: accountsWithOrderNumber ?? 0,
     accountsWithBalance: funded.length,
     accountsActive30d: activeUsers.size,
     balanceHeldUsd,

@@ -79,6 +79,10 @@ export interface DocSpec {
   // Defaults to 'agenticcore' so specs persisted before this field existed
   // keep rendering exactly as they did.
   branding?: 'client' | 'agenticcore';
+  // The small line above the cover title. Our own documents say "AgenticCore
+  // Click"; a client's says what the document is ("Brochure"), because naming
+  // ourselves on their marketing material is the whole problem.
+  eyebrow?: string;
 }
 
 // A generic modern phone's logical viewport -- wide/tall enough for
@@ -111,18 +115,22 @@ function bodyToHtml(body: string): string {
 const HOUSE_CSS_VARS = `
   --void: #09090d; --surface: #151519; --surface-2: #1e1e24; --border: #2a2a32;
   --fg: #f6f5f2; --fg-muted: #a6a4b0; --fg-faint: #6d6b78;
-  --yellow-400: #ffd400; --yellow-700: #a37c00;
+  --yellow-400: #ffd400; --yellow-700: #a37c00; --heading: #f6f5f2;
 `;
 
 // The same token names in a light, print-friendly scheme, with the accent
 // taken from the client's own site. Reusing the names means the whole deck
 // template works unchanged -- only what the tokens resolve to differs.
 function clientCssVars(brand: DocSpec['brand']): string {
-  const accent = brand?.accentColor ?? brand?.primaryColor ?? '#14161b';
+  // One brand colour across headings, rules and badges. Using primary for
+  // headings and accent for rules made a page look like two half-finished
+  // designs -- a teal title over a green rule -- because a site's two colours
+  // are rarely meant to sit a centimetre apart.
+  const accent = brand?.primaryColor ?? brand?.accentColor ?? '#14161b';
   return `
   --void: #ffffff; --surface: #f6f7f9; --surface-2: #eef0f4; --border: #e2e5ea;
-  --fg: ${brand?.primaryColor ?? '#14161b'}; --fg-muted: #5a5e68; --fg-faint: #8b8f99;
-  --yellow-400: ${accent}; --yellow-700: ${accent};
+  --fg: #14161b; --fg-muted: #4a4e57; --fg-faint: #8b8f99;
+  --yellow-400: ${accent}; --yellow-700: ${accent}; --heading: ${accent};
 `;
 }
 
@@ -144,12 +152,25 @@ function footer(index: number, total: number, brandLabel: string, rtl: boolean, 
     </div>`;
 }
 
+// One page per topic means the type has to give way, not the text. These
+// steps were chosen against real generated sections: a short one keeps the
+// generous 19px setting, a long one tightens rather than spilling.
+function slideFontSize(section: DocSection): { body: number; heading: number } {
+  const length = section.body.length + section.heading.length;
+  if (length <= 550) return { body: 19, heading: 32 };
+  if (length <= 850) return { body: 17, heading: 28 };
+  if (length <= 1200) return { body: 15, heading: 25 };
+  if (length <= 1700) return { body: 13.5, heading: 22 };
+  return { body: 12, heading: 20 };
+}
+
 function renderSection(section: DocSection, docLanguage: 'en' | 'ur', index: number, total: number, brandLabel: string, houseBrand: boolean): string {
   const lang = section.language ?? docLanguage;
   const rtl = lang === 'ur';
   const fontFamily = rtl ? "'Noto Nastaliq Urdu', serif" : "'Inter', sans-serif";
+  const size = slideFontSize(section);
   return `
-    <section class="page slide" dir="${rtl ? 'rtl' : 'ltr'}" style="font-family:${fontFamily}; text-align:${rtl ? 'right' : 'left'};">
+    <section class="page slide" dir="${rtl ? 'rtl' : 'ltr'}" style="font-family:${fontFamily}; text-align:${rtl ? 'right' : 'left'}; --body-size:${size.body}px; --heading-size:${size.heading}px;">
       <div class="slide-body">
         ${section.imageUrl ? `<img class="slide-image" src="${escapeHtml(section.imageUrl)}" alt="" />` : ''}
         <div class="slide-text">
@@ -183,7 +204,12 @@ ${FONT_LINK}
   body { margin: 0; background: var(--void); color: var(--fg); font-family: 'Inter', sans-serif; }
 
   .page {
-    width: ${PAGE_WIDTH}px; min-height: ${PAGE_HEIGHT}px;
+    /* Fixed, not min-height: a growable page silently flows onto the next
+       one, which is how a single topic ended up split across two pages with
+       its heading left behind. Body type is scaled to the section's length
+       (see slideFontSize) so fitting is achieved by sizing rather than by
+       clipping text that someone paid for. */
+    width: ${PAGE_WIDTH}px; height: ${PAGE_HEIGHT}px;
     padding: 44px 36px 26px; position: relative; overflow: hidden;
     display: flex; flex-direction: column;
     page-break-after: always;
@@ -207,7 +233,7 @@ ${FONT_LINK}
     font-family: 'Inter', sans-serif; font-size: 14px; font-weight: 700; letter-spacing: 0.16em;
     text-transform: uppercase; color: var(--yellow-400); margin: 0 0 20px;
   }
-  .cover h1 { font-family: ${titleFont}; font-weight: 800; font-size: 46px; line-height: 1.08; margin: 0 0 18px; color: var(--fg); }
+  .cover h1 { font-family: ${titleFont}; font-weight: 800; font-size: 46px; line-height: 1.08; margin: 0 0 18px; color: var(--heading); }
   .cover p.subtitle { font-size: 19px; line-height: 1.55; color: var(--fg-muted); margin: 0; }
   .cover .accent-bar { width: 64px; height: 6px; background: var(--yellow-400); border-radius: 3px; margin: 0 0 24px; }
   .cover .cover-blob {
@@ -234,8 +260,8 @@ ${FONT_LINK}
     display: flex; align-items: center; justify-content: center; margin-bottom: 20px;
   }
   .rule { width: 48px; height: 5px; background: var(--yellow-400); border-radius: 3px; margin-bottom: 20px; }
-  h2 { font-family: ${titleFont}; font-weight: 700; font-size: 32px; line-height: 1.2; margin: 0 0 18px; color: var(--fg); }
-  .body p { font-size: 19px; line-height: 1.75; color: var(--fg-muted); margin: 0 0 16px; }
+  h2 { font-family: ${titleFont}; font-weight: 700; font-size: var(--heading-size, 32px); line-height: 1.2; margin: 0 0 18px; color: var(--heading); }
+  .body p { font-size: var(--body-size, 19px); line-height: 1.6; color: var(--fg-muted); margin: 0 0 14px; }
   .body p:first-child { color: var(--fg); }
 
   .footer {
@@ -252,7 +278,9 @@ ${FONT_LINK}
   <section class="page cover" dir="${rtl ? 'rtl' : 'ltr'}" style="font-family:${titleFont};">
     ${hasHero ? `<img class="cover-hero" src="${escapeHtml(spec.coverImageUrl!)}" alt="" /><div class="cover-scrim"></div>` : '<div class="cover-blob"></div>'}
     <div class="cover-content">
-      <p class="eyebrow" style="font-family:'Inter',sans-serif;">AgenticCore Click</p>
+      <p class="eyebrow" style="font-family:'Inter',sans-serif;">${escapeHtml(
+        houseBrand ? 'AgenticCore Click' : (spec.eyebrow ?? '')
+      )}</p>
       <div class="accent-bar"></div>
       <h1>${escapeHtml(spec.title)}</h1>
       ${spec.subtitle ? `<p class="subtitle" style="font-family:'Inter',sans-serif;">${escapeHtml(spec.subtitle)}</p>` : ''}

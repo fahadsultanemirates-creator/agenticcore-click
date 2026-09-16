@@ -224,6 +224,10 @@ async function generateDocSpec(catalogItem: CatalogItem, type: string, payload: 
     'You are a professional business copywriter and document designer. Given a brief, produce the ' +
     'complete, ready-to-use content for the requested document (no placeholder/lorem ipsum text). ' +
     'Use only as many sections as the brief genuinely needs, never padded just to add more. ' +
+    'EACH SECTION IS ONE PRINTED PAGE and must be complete on it: aim for 90-140 words of body, and never ' +
+    'exceed 200. A section that runs longer is the wrong shape -- split the idea into two sections, each ' +
+    'self-contained under its own heading, rather than writing one long one. Do not end a section mid-thought ' +
+    'expecting it to continue into the next; a reader turning the page starts a new topic. ' +
     `${languageInstruction} ` +
     'Respond with ONLY a JSON object of the exact shape ' +
     '{"title": string, "subtitle": string | null, "sections": [{"heading": string, "body": string, "language": "en"|"ur"}]} ' +
@@ -256,6 +260,9 @@ async function generateDocSpec(catalogItem: CatalogItem, type: string, payload: 
   parsed.brand = brandColors(profile);
   // Whose document this is. Only the owner's business report wears our brand.
   parsed.branding = catalogItem.branding;
+  // Our own name belongs on our own documents only; a client's cover says what
+  // the document is instead.
+  parsed.eyebrow = catalogItem.branding === 'client' ? catalogItem.name : undefined;
 
   // The prompt asks for the cap; this enforces it. Bilingual documents carry
   // each section twice, so the ceiling doubles for them.

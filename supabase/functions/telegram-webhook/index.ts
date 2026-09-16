@@ -27,7 +27,7 @@ import { detectLanguage, getOwnerLanguage, setOwnerLanguage, sendBotMessage } fr
 import { converse } from '../_shared/botConversation.ts';
 import { expandSku, getSku, CATALOG } from '../_shared/catalog.ts';
 import { applyRevision, findTaskReference } from '../_shared/orders.ts';
-import { resolveOwnerTaskReference, getPlatformSnapshot } from '../_shared/accounts.ts';
+import { resolveOwnerTaskReference, getPlatformSnapshot, getTaskStatus } from '../_shared/accounts.ts';
 import { describeCandidates } from '../_shared/orderMatch.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
@@ -79,7 +79,8 @@ function helpText(): string {
   return [
     'Commands:',
     '/queue — list queued/in-progress tasks',
-    '/stats — accounts, balances and delivered volume across the platform',
+    '/stats — accounts, balances and volume, today and all-time',
+    '/status <task id> — how a task is doing, and why it is stuck if it is',
     '/products — list every product and its number',
     '/new <product number> <brief> — create an owner task (e.g. /new 72 letterhead for agenticcore.agency)',
     '/revise <task id> <note> — re-queue a delivered task for revision',
@@ -390,6 +391,10 @@ async function handleStatsCommand(): Promise<string> {
     : '  (nothing ordered yet)';
 
   return [
+    `TODAY: ${stats.today.ordered} ordered, ${stats.today.delivered} delivered, ${stats.today.failed} failed, ${stats.today.accounts} account(s) active`,
+    `LAST 7 DAYS: ${stats.last7Days.ordered} ordered, ${stats.last7Days.delivered} delivered, ${stats.last7Days.failed} failed, ${stats.last7Days.accounts} account(s) active`,
+    '',
+    `ALL TIME`,
     `Accounts: ${stats.accountsTotal} total, ${stats.accountsWithBalance} funded, ${stats.accountsActive30d} active in the last 30 days`,
     `Balance held: $${stats.balanceHeldUsd.toFixed(2)}`,
     `Tasks: ${stats.tasksTotal} total — ${stats.tasksDelivered} delivered, ${stats.tasksInFlight} in flight, ${stats.tasksNeedingInfo} need info, ${stats.tasksFailed} failed`,
@@ -398,11 +403,45 @@ async function handleStatsCommand(): Promise<string> {
   ].join('\n');
 }
 
+// Answers "what is happening with this one?" from the task's own record. The
+// reason a task stopped is written by the worker into task_events; before this
+// the bot had no way to read it, so asked why a video was waiting it described
+// a letterhead instead -- confidently, and entirely from the conversation.
+async function handleStatusCommand(publicId: string): Promise<string> {
+  const report = await getTaskStatus(publicId);
+  if (!report) return `No task found with id ${publicId}.`;
+
+  const lines = [`${report.publicId} — ${report.product} — ${report.status}`];
+
+  if (report.reason) {
+    lines.push(
+      report.status === 'needs_info'
+        ? `Waiting on: ${report.reason}`
+        : `Reason: ${report.reason}`
+    );
+  } else if (report.status === 'needs_info') {
+    // Never invent one. A missing reason is itself worth reporting.
+    lines.push('Waiting on: no reason was recorded against this task.');
+  }
+
+  if (report.revisionsAllowed > 0) {
+    lines.push(`Revisions: ${report.revisionsUsed} of ${report.revisionsAllowed} used`);
+  }
+  if (report.fileUrls.length > 0) {
+    lines.push(`Files (${report.fileUrls.length}):`, ...report.fileUrls.slice(0, 5));
+  }
+
+  return lines.join('\n');
+}
+
 async function routeMessage(chatId: number, text: string, attachmentUrls: string[] = []): Promise<string> {
   if (HELP_PATTERN.test(text)) return helpText();
   if (QUEUE_PATTERN.test(text)) return handleQueueCommand();
   if (/^\/products(?:@\S+)?$/i.test(text)) return handleProductsCommand();
   if (/^\/stats(?:@\S+)?$/i.test(text)) return handleStatsCommand();
+
+  const statusMatch = text.match(/^\/status(?:@\S+)?\s+(AC-\d{4}-\d{2,}|AC-CLICK-\d{4})\s*$/i);
+  if (statusMatch) return handleStatusCommand(statusMatch[1].toUpperCase());
 
   const newMatch = text.match(NEW_PATTERN);
   if (newMatch) return handleNewCommand(chatId, Number(newMatch[1]), newMatch[2].trim());
@@ -447,6 +486,10 @@ async function routeMessage(chatId: number, text: string, attachmentUrls: string
       return helpText();
     case 'stats':
       return handleStatsCommand();
+    case 'status': {
+      const resolved = await resolveTaskId(parsed.taskId, text);
+      return resolved.publicId ? handleStatusCommand(resolved.publicId) : resolved.reply!;
+    }
     case 'new':
       return handleNewCommand(chatId, parsed.sku, parsed.brief, parsed.referenceFiles, parsed.details);
     case 'revise': {

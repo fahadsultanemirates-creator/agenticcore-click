@@ -9,6 +9,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { claudeChat } from './claude.ts';
 import { catalogMenu } from './catalog.ts';
+import { ownerTaskBriefForPrompt } from './accounts.ts';
 import type { BotIntent } from './intent.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
@@ -33,6 +34,7 @@ ${catalogMenu(true)}
 
 {"intent":"revise","taskId":"AC-CLICK-####","note":string}
 {"intent":"files","taskId":"AC-CLICK-####"}
+{"intent":"status","taskId":"AC-CLICK-####"} -- ANY question about how a task is doing, why it is stuck, what information it still needs, or whether it is finished. Always use this rather than answering from the conversation: the real reason a task stopped is recorded against that task and you cannot know it from memory. If the message does not name a task, put your best guess at the reference in taskId -- it is checked against the real list, and the right one is found from the message wording if your guess is wrong.
 {"intent":"deliver","taskId":"AC-CLICK-####","url":string}
 {"intent":"avatars","gender":"male"|"female"|omit}
 {"intent":"voices","filter":string|omit}
@@ -62,8 +64,14 @@ export async function converse(chatId: string, text: string, attachmentUrls: str
     .order('created_at', { ascending: true })
     .limit(40);
 
+  // Read fresh each turn rather than left to the history: which tasks exist and
+  // what state they are in changes between messages, and the whole point is
+  // that the bot answers from the record instead of from what it recalls.
+  const taskBrief = await ownerTaskBriefForPrompt();
+
   const messages: { role: 'system' | 'user' | 'assistant'; content: string }[] = [
     { role: 'system', content: SYSTEM_PROMPT },
+    { role: 'system', content: taskBrief },
     ...((history ?? []) as { role: 'user' | 'assistant'; content: string }[])
   ];
 

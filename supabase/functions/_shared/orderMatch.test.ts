@@ -7,7 +7,7 @@
 // ones -- including the ones that must NOT resolve.
 
 import assert from 'node:assert/strict';
-import { matchOrder, productsNamedIn, findReference } from './orderMatch.ts';
+import { matchOrder, productsNamedIn, servicesNamedIn, findReference } from './orderMatch.ts';
 import type { OrderSummary } from './orders.ts';
 
 let passed = 0;
@@ -24,11 +24,19 @@ function test(name: string, fn: () => void): void {
   }
 }
 
-function order(publicId: string, orderNo: number, sku: number, product: string, extra: Partial<OrderSummary> = {}): OrderSummary {
+function order(
+  publicId: string,
+  orderNo: number,
+  sku: number,
+  product: string,
+  service: string,
+  extra: Partial<OrderSummary> = {}
+): OrderSummary {
   return {
     publicId,
     orderNo,
     sku,
+    service,
     product,
     status: 'delivered',
     revisionsUsed: 0,
@@ -41,10 +49,10 @@ function order(publicId: string, orderNo: number, sku: number, product: string, 
 
 // A typical small account, newest first (the order listAccountOrders returns).
 const BOOK: OrderSummary[] = [
-  order('AC-1007-04', 4, 30, 'Logo'),
-  order('AC-1007-03', 3, 72, 'Letterhead'),
-  order('AC-1007-02', 2, 10, 'Website — small (2–4 sections)'),
-  order('AC-1007-01', 1, 62, 'One-page business plan')
+  order('AC-1007-04', 4, 30, 'Logo', 'image'),
+  order('AC-1007-03', 3, 72, 'Letterhead', 'brand-kit'),
+  order('AC-1007-02', 2, 10, 'Website — small (2–4 sections)', 'website'),
+  order('AC-1007-01', 1, 62, 'One-page business plan', 'documents')
 ];
 
 test('an exact reference wins outright', () => {
@@ -77,14 +85,14 @@ test('"order 3" resolves to order number 3, not the 3rd row', () => {
 // The whole point of the candidates field: two logos and a bare "my logo"
 // is a question, not a coin flip.
 test('an ambiguous product asks instead of guessing', () => {
-  const twoLogos = [order('AC-1007-05', 5, 30, 'Logo'), ...BOOK];
+  const twoLogos = [order('AC-1007-05', 5, 30, 'Logo', 'image'), ...BOOK];
   const match = matchOrder(twoLogos, 'can you change my logo');
   assert.equal(match.order, null, 'must not pick one of two logos');
   assert.equal(match.candidates.length, 2);
 });
 
 test('"the last logo" is decidable even with two logos', () => {
-  const twoLogos = [order('AC-1007-05', 5, 30, 'Logo'), ...BOOK];
+  const twoLogos = [order('AC-1007-05', 5, 30, 'Logo', 'image'), ...BOOK];
   const match = matchOrder(twoLogos, 'use the last logo you made');
   assert.equal(match.order?.publicId, 'AC-1007-05');
   assert.equal(match.how, 'most_recent');
@@ -119,12 +127,46 @@ test('naming an unowned product resolves to nothing', () => {
   assert.equal(match.candidates.length, 0);
 });
 
-// A word that names no product at all is different from one that names an
-// unowned product: here the book itself is the list of things they might mean.
-test('a word naming no product falls back to asking across the book', () => {
+// The live failure this service matching was added for. Asked "what
+// information does that video need" with one video on the book, the bot
+// offered five unrelated brand-kit and image tasks, because "video" names a
+// whole service (three products) and so could never be a product alias.
+test('a service word resolves to the one task in that service', () => {
+  const withVideo = [order('AC-CLICK-0002', 2, 41, 'Short motion clip', 'video', { status: 'needs_info' }), ...BOOK];
+  const match = matchOrder(withVideo, 'what information does that video need');
+  assert.equal(match.order?.publicId, 'AC-CLICK-0002');
+});
+
+// Tasks created before product numbers existed have no sku, so service
+// matching has to read the task's own service rather than its catalog entry.
+test('a service word matches a task that has no sku', () => {
+  const legacy = [{ ...BOOK[0], publicId: 'AC-CLICK-0002', sku: null, service: 'video', product: 'video' }, ...BOOK];
+  assert.equal(matchOrder(legacy, 'that video').order?.publicId, 'AC-CLICK-0002');
+});
+
+test('two videos and no hint is a question, not a guess', () => {
+  const twoVideos = [
+    order('AC-CLICK-0003', 3, 40, 'Short avatar clip', 'video'),
+    order('AC-CLICK-0002', 2, 41, 'Short motion clip', 'video'),
+    ...BOOK
+  ];
+  const match = matchOrder(twoVideos, 'what about that video');
+  assert.equal(match.order, null);
+  assert.equal(match.candidates.length, 2, 'candidates must be the videos, not the whole book');
+});
+
+// Naming a service with nothing in it must not fall through to offering
+// everything -- that is what produced the five unrelated tasks.
+test('a service word with no matching task offers nothing', () => {
   const match = matchOrder(BOOK, 'please revise my video');
   assert.equal(match.order, null);
-  assert.ok(match.candidates.length > 1, 'should offer the book to choose from');
+  assert.equal(match.candidates.length, 0, 'must not offer unrelated tasks');
+});
+
+test('service words are recognised', () => {
+  assert.ok(servicesNamedIn('that video').has('video'));
+  assert.ok(servicesNamedIn('my site needs work').has('website'));
+  assert.equal(servicesNamedIn('hello there').size, 0);
 });
 
 test('an empty order book never matches', () => {

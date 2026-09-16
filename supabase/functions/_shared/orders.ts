@@ -126,6 +126,10 @@ export interface OrderSummary {
   orderNo: number | null;
   /** The catalog number, so callers can match on product without re-querying. */
   sku: number | null;
+  /** The service this belongs to (website/video/image/...). Needed because a
+      word like "video" names a whole service rather than one product, and
+      older tasks have no sku at all. */
+  service: string;
   product: string;
   status: string;
   revisionsUsed: number;
@@ -144,6 +148,7 @@ function toSummaries(rows: any[]): OrderSummary[] {
       publicId: row.public_id,
       orderNo: row.order_no ?? null,
       sku: product?.sku ?? null,
+      service: product?.service ?? row.type,
       product: product?.name ?? row.type,
       status: row.status,
       revisionsUsed: row.revisions_used ?? 0,
@@ -169,14 +174,21 @@ export async function listAccountOrders(userId: string, limit = 25): Promise<Ord
   return toSummaries(data ?? []);
 }
 
-// The owner's own tasks -- those raised from Telegram rather than bought
-// through the dashboard. The bot resolves "that letterhead" against this the
-// same way Forge resolves it against a client's order book.
+// Everything the owner can see, newest first. The bot resolves "that
+// letterhead" against this the same way Forge resolves it against a client's
+// order book.
+//
+// Deliberately NOT filtered to tasks raised from Telegram. It was, and that
+// made the bot blind to exactly the task the owner was asking about: a video
+// ordered through the website sat in needs_info, /queue listed it quite
+// happily, and "what information does that video need" came back with five
+// unrelated brand-kit and image tasks because the one real video was filtered
+// out before matching. The owner operates the whole platform; the bot's view
+// has to match /queue's.
 export async function listOwnerTasks(limit = 25): Promise<OrderSummary[]> {
   const { data, error } = await supabaseAdmin
     .from('tasks')
     .select(ORDER_COLUMNS)
-    .not('owner_channel_id', 'is', null)
     .order('created_at', { ascending: false })
     .limit(limit);
 

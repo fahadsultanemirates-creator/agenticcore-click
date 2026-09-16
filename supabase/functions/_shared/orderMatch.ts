@@ -85,8 +85,45 @@ export function productsNamedIn(text: string): Set<number> {
   return new Set([...bestLengthBySku.entries()].filter(([, length]) => length === longest).map(([sku]) => sku));
 }
 
+// Words that name a whole SERVICE rather than one product. "video" cannot be
+// a product alias because three different video products exist, so a bare
+// "that video" matched nothing at all and fell through to offering the last
+// five tasks -- none of which were videos. A service word narrows to every
+// task in that service, which is usually enough to land on exactly one.
+const SERVICE_WORDS: Record<string, string[]> = {
+  video: ['video', 'clip', 'reel'],
+  website: ['website', 'site', 'web page', 'webpage', 'landing page'],
+  image: ['image', 'picture', 'photo', 'graphic', 'visual'],
+  social: ['social', 'social media', 'post', 'posts'],
+  documents: ['document', 'documents', 'paperwork'],
+  'brand-kit': ['brand kit', 'branding'],
+  pdf: ['pdf'],
+  'business-report': ['report', 'audit']
+};
+
+export function servicesNamedIn(text: string): Set<string> {
+  const haystack = normalize(text);
+  const hits = new Set<string>();
+  for (const [service, words] of Object.entries(SERVICE_WORDS)) {
+    if (words.some((word) => haystack.includes(` ${normalize(word).trim()} `))) hits.add(service);
+  }
+  return hits;
+}
+
+// Narrowing to one of a set, with the same rule used everywhere else: exactly
+// one is an answer, several is a question unless they said "the last one".
+function narrow(matches: OrderSummary[], text: string, how: OrderMatch['how']): OrderMatch | null {
+  if (matches.length === 1) return { order: matches[0], how, candidates: [] };
+  if (matches.length > 1) {
+    if (LAST_ORDER_HINT.test(text)) return { order: matches[0], how: 'most_recent', candidates: matches };
+    return { order: null, how: 'none', candidates: matches };
+  }
+  return null;
+}
+
 // Ordered most-certain-first: a quoted reference beats an order number, which
-// beats a named product, which beats "the last one".
+// beats a named product, which beats a named service, which beats "the last
+// one".
 export function matchOrder(orders: OrderSummary[], text: string): OrderMatch {
   if (orders.length === 0) return NONE;
 
@@ -107,26 +144,33 @@ export function matchOrder(orders: OrderSummary[], text: string): OrderMatch {
   }
 
   // 3. They named a product. One match is an answer; several is a question.
+  //    ("The last logo" is still decidable; a bare "my logo" with three logos
+  //    is not.)
   const named = productsNamedIn(text);
   if (named.size > 0) {
-    const matches = orders.filter((order) => order.sku !== null && named.has(order.sku));
-    if (matches.length === 1) return { order: matches[0], how: 'product', candidates: [] };
-    if (matches.length > 1) {
-      // "The last logo" is still decidable; a bare "my logo" with three logos
-      // is not, so that one goes back as a question.
-      if (LAST_ORDER_HINT.test(text)) return { order: matches[0], how: 'most_recent', candidates: matches };
-      return { order: null, how: 'none', candidates: matches };
-    }
-    // Named a product they have never ordered -- fall through rather than
-    // resolving to something else, so "revise my logo" with no logo on the
-    // book doesn't quietly revise their website.
-    return { order: null, how: 'none', candidates: [] };
+    const decided = narrow(orders.filter((order) => order.sku !== null && named.has(order.sku)), text, 'product');
+    if (decided) return decided;
+    // Named a product they have never ordered -- fall through to the service
+    // check rather than resolving to something unrelated, so "revise my logo"
+    // with no logo on the book never quietly revises their website.
   }
 
-  // 4. Nothing named, but there is only one thing it could be.
+  // 4. They named a service rather than a product -- "that video", "the site".
+  //    Matched on the task's service, not its sku, so tasks created before
+  //    product numbers existed still resolve.
+  const services = servicesNamedIn(text);
+  if (services.size > 0) {
+    const decided = narrow(orders.filter((order) => services.has(order.service)), text, 'product');
+    if (decided) return decided;
+  }
+
+  // Nothing they named is on the book at all.
+  if (named.size > 0 || services.size > 0) return { order: null, how: 'none', candidates: [] };
+
+  // 5. Nothing named, but there is only one thing it could be.
   if (orders.length === 1) return { order: orders[0], how: 'only_order', candidates: [] };
 
-  // 5. "The last one" -- only on an explicit hint, never as a default.
+  // 6. "The last one" -- only on an explicit hint, never as a default.
   if (LAST_ORDER_HINT.test(text)) return { order: orders[0], how: 'most_recent', candidates: orders.slice(0, 5) };
 
   return { order: null, how: 'none', candidates: orders.slice(0, 5) };

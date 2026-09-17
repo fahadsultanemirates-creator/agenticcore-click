@@ -83,6 +83,11 @@ export interface DocSpec {
   // Click"; a client's says what the document is ("Brochure"), because naming
   // ourselves on their marketing material is the whole problem.
   eyebrow?: string;
+  // How generated section artwork should look, so it belongs to the client's
+  // brand instead of arriving as generic stock abstraction. Without it the
+  // image prompt said only "a small abstract illustration", which is how a
+  // teal-and-white brochure ended up carrying dark orange swirls.
+  imageStyle?: string;
 }
 
 // A generic modern phone's logical viewport -- wide/tall enough for
@@ -171,6 +176,7 @@ function renderSection(section: DocSection, docLanguage: 'en' | 'ur', index: num
   const size = slideFontSize(section);
   return `
     <section class="page slide" dir="${rtl ? 'rtl' : 'ltr'}" style="font-family:${fontFamily}; text-align:${rtl ? 'right' : 'left'}; --body-size:${size.body}px; --heading-size:${size.heading}px;">
+      <div class="tint"></div>
       <div class="slide-body">
         ${section.imageUrl ? `<img class="slide-image" src="${escapeHtml(section.imageUrl)}" alt="" />` : ''}
         <div class="slide-text">
@@ -229,6 +235,14 @@ ${FONT_LINK}
     background: linear-gradient(to bottom, ${houseBrand ? 'rgba(9,9,13,0.15)' : 'rgba(255,255,255,0.15)'} 0%, var(--void) 92%);
   }
   .cover-content { position: relative; padding-top: ${hasHero ? '0' : '120px'}; }
+  .cover-logo { max-height: 64px; max-width: 240px; object-fit: contain; margin: 0 0 26px; }
+  /* Light client pages were flat white, which reads as a word processor
+     rather than a designed piece. A tint drawn from the brand colour gives
+     the page a ground without competing with the text. */
+  .tint {
+    position: absolute; inset: 0; pointer-events: none;
+    background: linear-gradient(160deg, ${houseBrand ? 'transparent' : 'var(--surface)'} 0%, transparent 55%);
+  }
   .cover .eyebrow {
     font-family: 'Inter', sans-serif; font-size: 14px; font-weight: 700; letter-spacing: 0.16em;
     text-transform: uppercase; color: var(--yellow-400); margin: 0 0 20px;
@@ -278,6 +292,7 @@ ${FONT_LINK}
   <section class="page cover" dir="${rtl ? 'rtl' : 'ltr'}" style="font-family:${titleFont};">
     ${hasHero ? `<img class="cover-hero" src="${escapeHtml(spec.coverImageUrl!)}" alt="" /><div class="cover-scrim"></div>` : '<div class="cover-blob"></div>'}
     <div class="cover-content">
+      ${!houseBrand && spec.brand?.logoDataUri ? `<img class="cover-logo" src="${spec.brand.logoDataUri}" alt="">` : ''}
       <p class="eyebrow" style="font-family:'Inter',sans-serif;">${escapeHtml(
         houseBrand ? 'AgenticCore Click' : (spec.eyebrow ?? '')
       )}</p>

@@ -18,12 +18,13 @@ import { jsonResponse } from '../_shared/cors.ts';
 // One real illustration per section, tied to that section's own heading/body
 // -- the same fix applied to the business report -- so a short section
 // doesn't leave the rest of its page blank once the body text runs out.
-async function generateSectionVisuals(taskId: string, sections: DocSection[]): Promise<void> {
+async function generateSectionVisuals(taskId: string, sections: DocSection[], imageStyle = ''): Promise<void> {
   const images = await mapWithConcurrency(sections, 4, (section, i) =>
     generateBrandVisual(
       taskId,
-      `A small abstract illustration for this specific point from a business document: "${section.heading}" -- ` +
-        `${section.body} Represent the concrete idea itself, not literal text or icons of the words.`,
+      `A small illustration for this specific point from a business document: "${section.heading}" -- ` +
+        `${section.body} Represent the concrete idea itself, not literal text or icons of the words.` +
+        imageStyle,
       `section-${i + 1}.png`
     )
   );
@@ -63,7 +64,7 @@ export async function handleRequest(req: Request): Promise<Response> {
   try {
     const isAsset = spec.kind === 'asset';
     if (!isAsset) {
-      await generateSectionVisuals(taskId, spec.sections);
+      await generateSectionVisuals(taskId, spec.sections, spec.imageStyle);
     }
     // The spec carries the client's logo as a URL, because it was persisted
     // into tasks.payload between phases and a 500KB inlined image there would

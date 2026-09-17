@@ -26,7 +26,7 @@ import { addTaskFile, logEvent, markDelivered, markFailed } from '../_shared/tas
 import { jsonResponse } from '../_shared/cors.ts';
 import type { DocSpec } from '../_shared/pdf.ts';
 import { resolveSku, shapeInstruction, type CatalogItem } from '../_shared/catalog.ts';
-import { getBrandProfile, brandFactsForPrompt, extractUrl, normalizeUrl, type BrandProfile } from '../_shared/brandProfile.ts';
+import { getBrandProfile, brandFactsForPrompt, brandStyleForPrompt, extractUrl, normalizeUrl, type BrandProfile } from '../_shared/brandProfile.ts';
 import { stationeryFooterLines } from '../_shared/brandScrape.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
@@ -257,12 +257,17 @@ async function generateDocSpec(catalogItem: CatalogItem, type: string, payload: 
     throw new Error('Claude returned an unexpected document shape');
   }
   parsed.language = language === 'both' ? 'en' : language;
-  parsed.brand = brandColors(profile);
+  // brandAssets, not brandColors: the deck had no logo at all, because only
+  // the single-page renderers were ever given one.
+  parsed.brand = brandAssets(profile, payload);
   // Whose document this is. Only the owner's business report wears our brand.
   parsed.branding = catalogItem.branding;
   // Our own name belongs on our own documents only; a client's cover says what
   // the document is instead.
   parsed.eyebrow = catalogItem.branding === 'client' ? catalogItem.name : undefined;
+  // Artwork has to belong to this business and this palette. Generic
+  // abstraction is what made the last brochure's images look bought-in.
+  parsed.imageStyle = brandStyleForPrompt(profile);
 
   // The prompt asks for the cap; this enforces it. Bilingual documents carry
   // each section twice, so the ceiling doubles for them.

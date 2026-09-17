@@ -1,6 +1,6 @@
 // Run with: node --experimental-strip-types supabase/functions/_shared/offer.test.ts
 import assert from 'node:assert/strict';
-import { briefHasPricing as hasPricingDetail, hasOffer, pricingRequest } from './offer.ts';
+import { briefHasPricing as hasPricingDetail, hasOffer } from './offer.ts';
 
 let passed = 0, failed = 0;
 function test(name: string, fn: () => void): void {
@@ -29,13 +29,6 @@ test('a brief with no figures does not count', () => {
 
 test('talking about packages without figures is not an offer', () => {
   assert.equal(hasPricingDetail({ description: 'mention our packages and how good they are' }), false);
-});
-
-test('the request names the product and shows the shape of an answer', () => {
-  const message = pricingRequest('Brochure');
-  assert.ok(message.includes('brochure'));
-  assert.ok(message.includes('Starter'));
-  assert.ok(/won't guess/i.test(message), 'must say it will not invent figures');
 });
 
 // Most businesses publish their packages on their landing page. Asking for

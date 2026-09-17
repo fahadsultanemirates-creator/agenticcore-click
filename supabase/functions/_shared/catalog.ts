@@ -19,6 +19,8 @@
 // new product can be added to a block forever without renumbering anything
 // that already exists. A SKU, once issued, never changes meaning.
 
+import { FIELDS, specFor, specInstruction, type ProductSpec } from './productSpec.ts';
+
 export type Branding =
   | 'client' // the deliverable IS the client's own material -- their colours, never ours
   | 'agenticcore'; // our own analysis/report about them -- our brand is correct here
@@ -71,16 +73,6 @@ export interface CatalogItem {
   urlUse: UrlUse;
   /** Only meaningful for renderer 'asset'. Defaults to 'content'. */
   layout?: AssetLayout;
-  /**
-   * This product's whole purpose is to sell something, so it cannot be built
-   * without packages and prices. A brochure came back polished, on-brand and
-   * with no offer anywhere in it, because nothing had ever stated that a
-   * brochure without prices is not a brochure. The brand profile never
-   * scrapes pricing, so the figures can only come from the brief -- and when
-   * they are absent the task asks rather than omitting them or inventing
-   * numbers the client would have to honour.
-   */
-  needsPricing?: boolean;
   /**
    * How many free revisions this product includes.
    *
@@ -158,7 +150,6 @@ export const CATALOG: CatalogItem[] = [
     output: { maxPages: 6 },
     urlUse: 'brand',
     revisions: 1,
-    needsPricing: true,
     aliases: ['brochure', 'tri-fold', 'leaflet'],
   },
   {
@@ -440,7 +431,6 @@ export const CATALOG: CatalogItem[] = [
     output: { maxPages: 5 },
     urlUse: 'brand',
     revisions: 1,
-    needsPricing: true,
     aliases: ['proposal', 'quote', 'offer'],
   },
   {
@@ -526,7 +516,6 @@ export const CATALOG: CatalogItem[] = [
     output: { pages: 1 },
     urlUse: 'brand',
     revisions: 1,
-    needsPricing: true,
     aliases: ['price list', 'menu', 'rate card'],
   },
   {
@@ -590,8 +579,59 @@ export const CATALOG: CatalogItem[] = [
 
 const BY_SKU = new Map(CATALOG.map((item) => [item.sku, item]));
 
+const FIELD_LABELS = Object.fromEntries(Object.entries(FIELDS).map(([key, def]) => [key, def.label]));
+
 export function getSku(sku: number): CatalogItem | null {
   return BY_SKU.get(sku) ?? null;
+}
+
+// WHO ACTUALLY MAKES THE THING.
+//
+// This is the most useful line ever drawn through the catalog, and it was
+// drawn by looking at what failed. A five-page website was correct on the
+// very first command; a one-page letterhead took six attempts. In real life
+// the website is the harder job by a wide margin, so the difficulty was
+// clearly not in the deliverable -- it was in who held its definition.
+//
+//   provider -- an outside API delivers the whole thing and already knows
+//               what it is. Grok knows what a website is; HeyGen knows what
+//               a presenter video is. We pass the brief and get the product.
+//
+//   composed -- the provider is only a printer. PDFShift renders HTML that
+//               WE wrote, so every property of the deliverable is one we
+//               stated, and every property we did not state is absent.
+//
+//   hybrid   -- a provider makes a piece and we build the artifact around
+//               it: a QR code on a card, a graphic sized for a feed.
+//
+// Everything that has shipped wrong so far has been composed. Nothing from
+// the provider column has needed a second attempt, which is also the argument
+// for leaving that column alone: adding our opinions to it is how we would
+// break what already works.
+export type Delivery = 'provider' | 'composed' | 'hybrid';
+
+export function deliveryOf(item: CatalogItem): Delivery {
+  if (item.renderer === 'asset' || item.renderer === 'deck') return 'composed';
+  // A provider renderer that nonetheless carries a spec is one where we own
+  // part of the result -- the card the QR sits on, the crop a profile picture
+  // must survive.
+  return specFor(item.sku) ? 'hybrid' : 'provider';
+}
+
+/** The product's own definition -- purpose, failure mode, required facts. */
+export function specOf(item: CatalogItem | null | undefined): ProductSpec | null {
+  return specFor(item?.sku);
+}
+
+/**
+ * A product that cannot exist without packages and prices.
+ *
+ * Derived from the spec rather than stored twice. It used to be a flag on the
+ * catalog entry, which meant the same fact was written in two places and only
+ * one of them was ever updated.
+ */
+export function needsPricing(item: CatalogItem): boolean {
+  return specFor(item.sku)?.must.includes('packages') ?? false;
 }
 
 // Resolves an existing task payload to its catalog entry, so workers gain the
@@ -670,6 +710,13 @@ export function shapeInstruction(item: CatalogItem): string {
     parts.push('This is our own analysis document and correctly carries agenticcore branding.');
   }
 
+  // The product's own definition goes LAST, closest to the work, because it
+  // is the part that decides whether the result is right rather than merely
+  // well-formed. Page counts stop a letterhead becoming a deck; this stops a
+  // correctly-sized letterhead from being a letter.
+  const spec = specInstruction(specFor(item.sku));
+  if (spec) parts.push(spec);
+
   return parts.join(' ');
 }
 
@@ -686,7 +733,11 @@ export function catalogMenu(includeOwnerOnly = false): string {
             : item.output.options !== undefined
               ? `${item.output.options} option(s)`
               : 'variable';
-      const needsOffer = item.needsPricing ? ' [NEEDS PACKAGES AND PRICES BEFORE IT CAN BE BUILT]' : '';
+      // What this product cannot be built without, so the conversational
+      // front line can collect it while the client is still typing -- rather
+      // than the task queuing, stalling, and asking an hour later.
+      const must = specFor(item.sku)?.must ?? [];
+      const needsOffer = must.length > 0 ? ` [CANNOT BE BUILT WITHOUT: ${must.map((key) => FIELD_LABELS[key]).join(', ')}]` : '';
       return `${item.sku} = ${item.name} [${item.service}] (${shape}; ${item.branding} branding)${needsOffer} -- also called: ${item.aliases.join(', ')}`;
     })
     .join('\n');

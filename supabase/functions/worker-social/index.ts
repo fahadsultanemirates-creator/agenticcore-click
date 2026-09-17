@@ -6,7 +6,8 @@
 
 import { supabaseAdmin, uploadDeliverable } from '../_shared/storage.ts';
 import { generateImageOptions } from '../_shared/images.ts';
-import { resolveSku } from '../_shared/catalog.ts';
+import { resolveSku, shapeInstruction, specOf } from '../_shared/catalog.ts';
+import { missingRequired, infoRequest } from '../_shared/requirements.ts';
 import { getBrandProfile, brandFactsForPrompt, brandStyleForPrompt, extractUrl, normalizeUrl } from '../_shared/brandProfile.ts';
 import { claudeChat } from '../_shared/claude.ts';
 import { renderDocumentPdf, type DocSpec } from '../_shared/pdf.ts';
@@ -116,7 +117,17 @@ async function handleImageRequest(
 
   const product = resolveSku('social', payload);
   const profile = product?.urlUse === 'brand' ? await getBrandProfile(brandUrlFor(payload)) : null;
-  const urls = await generateImageOptions(taskId, prompt + brandStyleForPrompt(profile), resolveOptionCount(payload, product?.output.options), version, payload.referenceFiles);
+  // The image itself is Grok's, but the crop it has to survive and the amount
+  // of text a scrolling reader can actually take in are ours -- that is what
+  // makes these two products hybrid rather than plain image generation.
+  const rules = specOf(product)?.rules.join(' ') ?? '';
+  const urls = await generateImageOptions(
+    taskId,
+    `${prompt} ${rules}`.trim() + brandStyleForPrompt(profile),
+    resolveOptionCount(payload, product?.output.options),
+    version,
+    payload.referenceFiles
+  );
   await logEvent(taskId, 'social_images_generated', 'worker', { requestType, count: urls.length });
 
   if (ownerChannelId) {
@@ -145,7 +156,12 @@ async function handleCopyRequest(taskId: string, version: number, payload: Recor
       {
         role: 'system',
         content:
-          'You are a social media copywriter. Produce complete, ready-to-post real content (no placeholders). ' +
+          // Was a generic "you are a social media copywriter", which is why a
+          // Google Business Profile request came back as marketing prose
+          // rather than the named fields Google actually asks for. The
+          // product's own definition says what the thing IS.
+          `${product ? shapeInstruction(product) + ' ' : ''}` +
+          'Produce complete, ready-to-post real content (no placeholders). ' +
           'Respond with ONLY a JSON object of the exact shape ' +
           '{"title": string, "subtitle": string | null, "sections": [{"heading": string, "body": string}]} ' +
           '-- each section is one distinct option/post -- no markdown fences, no commentary.'
@@ -200,6 +216,20 @@ export async function handleRequest(req: Request): Promise<Response> {
     if (!payload.description) {
       await markNeedsInfo(taskId, 'No description/brief on this social task -- nothing to generate from.');
       await notifyOwner(`${task.public_id} has no brief text, so there's nothing to build social content from. Send the brief and re-queue it.`);
+      return jsonResponse({ ok: true, needsInfo: true });
+    }
+
+    // The same requirements gate the PDF worker uses: a product's required
+    // facts are looked for in the brief and on the client's own site before
+    // anybody is asked for them, and optional ones never stop anything.
+    const product = resolveSku('social', payload);
+    const profileForGate = product?.urlUse === 'brand' ? await getBrandProfile(brandUrlFor(payload)) : null;
+    const missing = missingRequired(specOf(product), payload, profileForGate);
+    if (missing.length > 0) {
+      const question = infoRequest(product?.name ?? 'social content', missing);
+      await logEvent(taskId, 'requirements_missing', 'worker', { sku: product?.sku, missing });
+      await markNeedsInfo(taskId, question);
+      await notifyOwner(`${task.public_id} is missing ${missing.join(', ')} before it can be built.\n\n${question}`);
       return jsonResponse({ ok: true, needsInfo: true });
     }
 

@@ -53,14 +53,3 @@ export function hasOffer(
   // A package list without any figures is a menu, not an offer.
   return (profile?.packages ?? []).some((item) => !!item.price?.trim());
 }
-
-// What to say when it is missing. Specific enough to answer in one message,
-// because "please provide more detail" wastes the client's next reply.
-export function pricingRequest(productName: string): string {
-  return (
-    `A ${productName.toLowerCase()} is there to sell something, so it needs your packages and prices — ` +
-    `that is the part a reader is looking for. Send them in any format, for example:\n\n` +
-    `Starter $X — what's included\nGrowth $Y — what's included\nCustom — from $Z\n\n` +
-    `Reply with your own and I'll build it straight away. I won't guess figures you'd then have to honour.`
-  );
-}

@@ -26,10 +26,10 @@ import { addTaskFile, logEvent, markDelivered, markFailed, markNeedsInfo } from 
 import { notifyOwner } from '../_shared/telegram.ts';
 import { jsonResponse } from '../_shared/cors.ts';
 import type { DocSpec } from '../_shared/pdf.ts';
-import { resolveSku, shapeInstruction, type CatalogItem } from '../_shared/catalog.ts';
+import { resolveSku, shapeInstruction, needsPricing, specOf, type CatalogItem } from '../_shared/catalog.ts';
 import { getBrandProfile, brandFactsForPrompt, brandStyleForPrompt, extractUrl, normalizeUrl, type BrandProfile } from '../_shared/brandProfile.ts';
 import { stationeryFooterLines } from '../_shared/brandScrape.ts';
-import { hasOffer, pricingRequest } from '../_shared/offer.ts';
+import { missingRequired, infoRequest } from '../_shared/requirements.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -226,7 +226,7 @@ async function generateDocSpec(catalogItem: CatalogItem, type: string, payload: 
     'You are a professional business copywriter and document designer. Given a brief, produce the ' +
     'complete, ready-to-use content for the requested document (no placeholder/lorem ipsum text). ' +
     'Use only as many sections as the brief genuinely needs, never padded just to add more. ' +
-    `${catalogItem.needsPricing ? 'Packages and prices are supplied below, from the brief or the client\'s own site: give them a section of their own, laid out so a reader can compare the options at a glance, and use the exact figures given -- never round, adjust or invent one. ' : ''}` +
+    `${needsPricing(catalogItem) ? 'Packages and prices are supplied below, from the brief or the client\'s own site: give them a section of their own, laid out so a reader can compare the options at a glance, and use the exact figures given -- never round, adjust or invent one. ' : ''}` +
     'EACH SECTION IS ONE PRINTED PAGE and must be complete on it: aim for 90-140 words of body, and never ' +
     'exceed 200. A section that runs longer is the wrong shape -- split the idea into two sections, each ' +
     'self-contained under its own heading, rather than writing one long one. Do not end a section mid-thought ' +
@@ -284,21 +284,34 @@ async function generateDocSpec(catalogItem: CatalogItem, type: string, payload: 
   return parsed as DocSpec;
 }
 
-async function generateQrDeliverable(taskId: string, payload: Record<string, unknown>): Promise<string> {
-  const content = await claudeChat(
-    [
-      {
-        role: 'system',
-        content:
-          'Output ONLY the exact short text or URL that should be encoded in a QR code for this request -- ' +
-          'nothing else, no explanation, no quotes.'
-      },
-      { role: 'user', content: String(payload.description ?? '') }
-    ],
-    { maxTokens: 200, effort: 'low' }
-  );
+// What a QR code points at is the entire product. It used to be composed by
+// asking the model to "output the URL that should be encoded", from a brief
+// that often never contained one -- so the model wrote a plausible-looking
+// address. A QR code is the one deliverable nobody proof-reads: a wrong link
+// is discovered by a customer, holding the card, in front of the client.
+//
+// So the destination is now SOURCED, never composed: an explicit field, a
+// link written in the brief, or the client's own site. The requirements gate
+// guarantees one of them exists before this runs.
+function qrDestination(payload: Record<string, unknown>, profile: BrandProfile | null): string | null {
+  for (const key of ['targetUrl', 'qrUrl', 'link', 'url', 'website']) {
+    const value = payload[key];
+    if (typeof value === 'string' && value.trim() !== '') return normalizeUrl(value) ?? value.trim();
+  }
+  const inBrief = extractUrl(String(payload.description ?? payload.brief ?? ''));
+  if (inBrief) return inBrief;
+  return profile?.url ?? null;
+}
 
-  const svg = generateQrSvg(content.trim());
+async function generateQrDeliverable(
+  taskId: string,
+  payload: Record<string, unknown>,
+  profile: BrandProfile | null
+): Promise<string> {
+  const destination = qrDestination(payload, profile);
+  if (!destination) throw new Error('No destination for the QR code -- nothing was supplied and no site was found.');
+
+  const svg = generateQrSvg(destination);
   const { url } = await uploadDeliverable(taskId, 'qr-code.svg', new TextEncoder().encode(svg), 'image/svg+xml');
   return url;
 }
@@ -351,23 +364,32 @@ export async function handleRequest(req: Request): Promise<Response> {
       output: catalogItem.output
     });
 
+    // Does this product have everything it cannot exist without?
+    //
+    // Generalised from the pricing check that caught a brochure with no
+    // offer in it. Every composed product now declares its required facts
+    // (productSpec.ts) and they are looked for in the brief AND on the
+    // client's own site before anyone is asked -- nobody should be asked for
+    // prices printed on their own homepage. Missing facts that are merely
+    // optional never stop anything; they are left out of the deliverable,
+    // because a letterhead without a phone number is correct and a letterhead
+    // with an invented one is not.
+    const profileForGate = catalogItem.urlUse === 'brand' ? await getBrandProfile(brandUrlFor(payload)) : null;
+    const missing = missingRequired(specOf(catalogItem), payload, profileForGate);
+    if (missing.length > 0) {
+      const question = infoRequest(catalogItem.name, missing);
+      await logEvent(taskId, 'requirements_missing', 'worker', { sku: catalogItem.sku, missing });
+      await markNeedsInfo(taskId, question);
+      await notifyOwner(`${task.public_id} is missing ${missing.join(', ')} before it can be built.\n\n${question}`);
+      return jsonResponse({ ok: true, needsInfo: true });
+    }
+
     if (catalogItem.renderer === 'qr') {
-      const url = await generateQrDeliverable(taskId, payload);
+      const url = await generateQrDeliverable(taskId, payload, profileForGate);
       await addTaskFile(taskId, { url, fileType: 'image/svg+xml', optionIndex: 1, version: task.version });
       await logEvent(taskId, 'qr_generated', 'worker', { url });
       await markDelivered(taskId);
       return jsonResponse({ ok: true, url });
-    }
-
-    // A product whose purpose is to sell cannot be built without an offer.
-    // Stopping costs the client a reply; shipping without it costs them the
-    // document's whole point, and inventing figures costs them a promise they
-    // never made.
-    if (catalogItem.needsPricing && !hasOffer(payload, await getBrandProfile(brandUrlFor(payload)))) {
-      const question = pricingRequest(catalogItem.name);
-      await markNeedsInfo(taskId, question);
-      await notifyOwner(`${task.public_id} needs pricing before it can be built.\n\n${question}`);
-      return jsonResponse({ ok: true, needsInfo: true });
     }
 
     // Single-page finished artifacts: letterheads, business cards, flyers,

@@ -29,6 +29,8 @@ Determine the intent and extract its arguments. Valid intents and their exact ar
 
   "sku" is the product NUMBER from the catalog below. Pick the single number whose product is what was actually asked for. The catalog is a closed list -- never invent a number, and never route to a near-miss because it sounds similar. A logo is 30, not a brand-kit item. A letterhead is 72, not a presentation. If two numbers seem possible, ask (intent "ask") rather than guessing.
 
+A product marked "NEEDS PACKAGES AND PRICES BEFORE IT CAN BE BUILT" cannot be built without an offer. If the owner has not given packages and prices for one of those, use intent "ask" to request them rather than creating the task -- it would only stop and ask anyway, after taking a place in the queue.
+
 PRODUCT CATALOG:
 ${catalogMenu(true)}
 

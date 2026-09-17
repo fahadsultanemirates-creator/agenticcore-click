@@ -72,6 +72,16 @@ export interface CatalogItem {
   /** Only meaningful for renderer 'asset'. Defaults to 'content'. */
   layout?: AssetLayout;
   /**
+   * This product's whole purpose is to sell something, so it cannot be built
+   * without packages and prices. A brochure came back polished, on-brand and
+   * with no offer anywhere in it, because nothing had ever stated that a
+   * brochure without prices is not a brochure. The brand profile never
+   * scrapes pricing, so the figures can only come from the brief -- and when
+   * they are absent the task asks rather than omitting them or inventing
+   * numbers the client would have to honour.
+   */
+  needsPricing?: boolean;
+  /**
    * How many free revisions this product includes.
    *
    * Revisions exist for deliverables that can be EDITED -- a website, a
@@ -148,6 +158,7 @@ export const CATALOG: CatalogItem[] = [
     output: { maxPages: 6 },
     urlUse: 'brand',
     revisions: 1,
+    needsPricing: true,
     aliases: ['brochure', 'tri-fold', 'leaflet'],
   },
   {
@@ -429,6 +440,7 @@ export const CATALOG: CatalogItem[] = [
     output: { maxPages: 5 },
     urlUse: 'brand',
     revisions: 1,
+    needsPricing: true,
     aliases: ['proposal', 'quote', 'offer'],
   },
   {
@@ -514,6 +526,7 @@ export const CATALOG: CatalogItem[] = [
     output: { pages: 1 },
     urlUse: 'brand',
     revisions: 1,
+    needsPricing: true,
     aliases: ['price list', 'menu', 'rate card'],
   },
   {
@@ -673,7 +686,8 @@ export function catalogMenu(includeOwnerOnly = false): string {
             : item.output.options !== undefined
               ? `${item.output.options} option(s)`
               : 'variable';
-      return `${item.sku} = ${item.name} [${item.service}] (${shape}; ${item.branding} branding) -- also called: ${item.aliases.join(', ')}`;
+      const needsOffer = item.needsPricing ? ' [NEEDS PACKAGES AND PRICES BEFORE IT CAN BE BUILT]' : '';
+      return `${item.sku} = ${item.name} [${item.service}] (${shape}; ${item.branding} branding)${needsOffer} -- also called: ${item.aliases.join(', ')}`;
     })
     .join('\n');
 }

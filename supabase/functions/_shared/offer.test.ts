@@ -1,6 +1,6 @@
 // Run with: node --experimental-strip-types supabase/functions/_shared/offer.test.ts
 import assert from 'node:assert/strict';
-import { hasPricingDetail, pricingRequest } from './offer.ts';
+import { briefHasPricing as hasPricingDetail, hasOffer, pricingRequest } from './offer.ts';
 
 let passed = 0, failed = 0;
 function test(name: string, fn: () => void): void {
@@ -36,6 +36,28 @@ test('the request names the product and shows the shape of an answer', () => {
   assert.ok(message.includes('brochure'));
   assert.ok(message.includes('Starter'));
   assert.ok(/won't guess/i.test(message), 'must say it will not invent figures');
+});
+
+// Most businesses publish their packages on their landing page. Asking for
+// figures a client has already printed on their own homepage is the kind of
+// thing that makes a system feel stupid.
+test('an offer on the client site counts, with no brief needed', () => {
+  const profile = { packages: [{ name: 'Starter', price: '$10' }, { name: 'Growth', price: '$20' }] };
+  assert.ok(hasOffer({ description: 'brochure for agenticcore.agency' }, profile));
+});
+
+test('a package list with no figures is a menu, not an offer', () => {
+  assert.equal(hasOffer({ description: 'brochure' }, { packages: [{ name: 'Starter' }] }), false);
+  assert.equal(hasOffer({ description: 'brochure' }, { packages: [{ name: 'Growth', price: '  ' }] }), false);
+});
+
+test('with neither brief nor site, it asks', () => {
+  assert.equal(hasOffer({ description: 'brochure' }, null), false);
+  assert.equal(hasOffer({ description: 'brochure' }, { packages: [] }), false);
+});
+
+test('the brief still counts on its own', () => {
+  assert.ok(hasOffer({ description: 'Starter $49, Growth $149' }, null));
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

@@ -41,6 +41,13 @@ export interface BrandProfile {
   visualStyle?: string;
   tone?: string;
   services?: string[];
+  /**
+   * What they sell and for how much, when the site says so. Most business
+   * sites put their packages on the landing page; this was simply never
+   * asked for, so a brochure built from a site that published its prices
+   * still came back with no offer in it.
+   */
+  packages?: { name: string; price?: string; includes?: string }[];
   logoUrl?: string;
   socials?: Record<string, string>;
   contact?: { email?: string; phone?: string; whatsapp?: string; address?: string };
@@ -90,11 +97,16 @@ async function extractProfile(url: string): Promise<BrandProfile> {
       'JSON of this exact shape: {"businessName": string|null, "tagline": string|null, "industry": string|null, ' +
       '"primaryColor": "#rrggbb"|null, "accentColor": "#rrggbb"|null, "backgroundColor": "#rrggbb"|null, ' +
       '"textColor": "#rrggbb"|null, "fontStyle": string|null, "visualStyle": string|null, "tone": string|null, ' +
-      '"services": string[]|null}. fontStyle and visualStyle are short descriptions a designer could work from. ' +
-      'tone describes how the copy reads. No markdown fences, no commentary.',
-    `Website: ${url}\n\nPage text for reference (truncated):\n${html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').slice(0, 4000)}`,
+      '"services": string[]|null, "packages": [{"name": string, "price": string|null, "includes": string|null}]|null}. ' +
+      'fontStyle and visualStyle are short descriptions a designer could work from. tone describes how the copy ' +
+      'reads. "packages" is what they sell and what it costs, copied EXACTLY as printed -- keep the currency and ' +
+      'the wording ("$20", "from AED 2,500", "per month"); never convert, round or estimate a figure, and omit ' +
+      'the field entirely if the page shows no prices. No markdown fences, no commentary.',
+    // 4000 characters cut a typical landing page off before its pricing
+    // section, so the model never saw the figures it was meant to read.
+    `Website: ${url}\n\nPage text for reference (truncated):\n${html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').slice(0, 14000)}`,
     [{ bytes: shot, mimeType: 'image/png' }],
-    { maxTokens: 1500 }
+    { maxTokens: 2500 }
   );
 
   const cleaned = raw.trim().replace(/^```(?:json)?\n?/i, '').replace(/```$/i, '').trim();
@@ -120,6 +132,17 @@ async function extractProfile(url: string): Promise<BrandProfile> {
     visualStyle: text(seen.visualStyle),
     tone: text(seen.tone),
     services: Array.isArray(seen.services) ? seen.services.filter((s: unknown) => typeof s === 'string').slice(0, 12) : undefined,
+    packages: Array.isArray(seen.packages)
+      ? seen.packages
+          .filter((entry: unknown): entry is Record<string, unknown> => !!entry && typeof entry === 'object')
+          .map((entry: Record<string, unknown>) => ({
+            name: String(entry.name ?? '').trim(),
+            price: text(entry.price),
+            includes: text(entry.includes)
+          }))
+          .filter((entry: { name: string }) => entry.name !== '')
+          .slice(0, 8)
+      : undefined,
     logoUrl: scraped.logoUrl,
     socials: scraped.socials,
     contact: scraped.contact
@@ -169,6 +192,14 @@ export function brandFactsForPrompt(profile: BrandProfile | null): string {
   if (profile.description) lines.push(`What they do: ${profile.description}`);
   if (profile.industry) lines.push(`Industry: ${profile.industry}`);
   if (profile.services?.length) lines.push(`Services: ${profile.services.join(', ')}`);
+  if (profile.packages?.length) {
+    lines.push(
+      'Their packages and prices, taken from their own site -- reproduce these EXACTLY, never round or adjust a figure:'
+    );
+    for (const item of profile.packages) {
+      lines.push(`  - ${item.name}${item.price ? ` — ${item.price}` : ''}${item.includes ? `: ${item.includes}` : ''}`);
+    }
+  }
   if (profile.tone) lines.push(`Their tone of voice (match it): ${profile.tone}`);
   if (profile.contact?.email) lines.push(`Email: ${profile.contact.email}`);
   if (profile.contact?.phone) lines.push(`Phone: ${profile.contact.phone}`);

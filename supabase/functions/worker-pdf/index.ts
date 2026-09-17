@@ -29,7 +29,7 @@ import type { DocSpec } from '../_shared/pdf.ts';
 import { resolveSku, shapeInstruction, type CatalogItem } from '../_shared/catalog.ts';
 import { getBrandProfile, brandFactsForPrompt, brandStyleForPrompt, extractUrl, normalizeUrl, type BrandProfile } from '../_shared/brandProfile.ts';
 import { stationeryFooterLines } from '../_shared/brandScrape.ts';
-import { hasPricingDetail, pricingRequest } from '../_shared/offer.ts';
+import { hasOffer, pricingRequest } from '../_shared/offer.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -226,7 +226,7 @@ async function generateDocSpec(catalogItem: CatalogItem, type: string, payload: 
     'You are a professional business copywriter and document designer. Given a brief, produce the ' +
     'complete, ready-to-use content for the requested document (no placeholder/lorem ipsum text). ' +
     'Use only as many sections as the brief genuinely needs, never padded just to add more. ' +
-    `${catalogItem.needsPricing ? 'The brief contains packages and prices: give them a section of their own, laid out so a reader can compare the options at a glance, and use the exact figures given -- never round, adjust or invent one. ' : ''}` +
+    `${catalogItem.needsPricing ? 'Packages and prices are supplied below, from the brief or the client\'s own site: give them a section of their own, laid out so a reader can compare the options at a glance, and use the exact figures given -- never round, adjust or invent one. ' : ''}` +
     'EACH SECTION IS ONE PRINTED PAGE and must be complete on it: aim for 90-140 words of body, and never ' +
     'exceed 200. A section that runs longer is the wrong shape -- split the idea into two sections, each ' +
     'self-contained under its own heading, rather than writing one long one. Do not end a section mid-thought ' +
@@ -363,7 +363,7 @@ export async function handleRequest(req: Request): Promise<Response> {
     // Stopping costs the client a reply; shipping without it costs them the
     // document's whole point, and inventing figures costs them a promise they
     // never made.
-    if (catalogItem.needsPricing && !hasPricingDetail(payload)) {
+    if (catalogItem.needsPricing && !hasOffer(payload, await getBrandProfile(brandUrlFor(payload)))) {
       const question = pricingRequest(catalogItem.name);
       await markNeedsInfo(taskId, question);
       await notifyOwner(`${task.public_id} needs pricing before it can be built.\n\n${question}`);

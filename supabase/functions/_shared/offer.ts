@@ -5,11 +5,11 @@
 // primarily for. Nothing in the system had ever said a brochure needs an
 // offer, so nothing noticed it was missing.
 //
-// The brand profile scrapes services, socials and contact details, never
-// pricing, so for these products the figures can only come from the brief.
-// When they are absent the task stops and asks, rather than shipping a
-// brochure that quietly omits its own purpose or, worse, inventing numbers a
-// client would have to honour.
+// An offer can come from two places: the brief, or the client's own site --
+// most businesses put their packages on their landing page, and the brand
+// profile now reads them. Only when BOTH are empty does the task stop and
+// ask, rather than shipping a brochure that quietly omits its own purpose
+// or, worse, inventing numbers a client would have to honour.
 //
 // Deliberately generous about what counts: the cost of a false positive is a
 // brochure built from a thin offer, while a false negative stops a client who
@@ -29,7 +29,8 @@ function briefText(payload: Record<string, unknown>): string {
     .join(' ');
 }
 
-export function hasPricingDetail(payload: Record<string, unknown>): boolean {
+/** Just the payload. Kept separate so the site's own offer can be checked too. */
+export function briefHasPricing(payload: Record<string, unknown>): boolean {
   // An explicit field always counts, whatever it says.
   if (typeof payload.pricing === 'string' && payload.pricing.trim() !== '') return true;
   if (Array.isArray(payload.packages) && payload.packages.length > 0) return true;
@@ -39,6 +40,18 @@ export function hasPricingDetail(payload: Record<string, unknown>): boolean {
   // $99"). Words alone without any figure are not -- "our packages are great"
   // is not an offer.
   return CURRENCY.test(text) && OFFER_WORDS.test(text) ? true : CURRENCY.test(text);
+}
+
+// The offer as a whole: what the client typed, or what their site already
+// publishes. Asking a business for prices it has printed on its own homepage
+// is the kind of thing that makes a system feel stupid.
+export function hasOffer(
+  payload: Record<string, unknown>,
+  profile: { packages?: { name: string; price?: string }[] } | null
+): boolean {
+  if (briefHasPricing(payload)) return true;
+  // A package list without any figures is a menu, not an offer.
+  return (profile?.packages ?? []).some((item) => !!item.price?.trim());
 }
 
 // What to say when it is missing. Specific enough to answer in one message,

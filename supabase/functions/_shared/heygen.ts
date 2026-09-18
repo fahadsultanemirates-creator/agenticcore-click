@@ -127,7 +127,7 @@ async function fetchVoices(url: string, pick: (data: any) => any[]): Promise<Cat
     console.log(`heygen voices from ${url}: ${raw.length} records, fields: ${Object.keys(raw[0]).join(', ')}`);
   }
 
-  return raw.map((v: any) => ({
+  const mapped = raw.map((v: any) => ({
     providerId: v.voice_id,
     name: v.name,
     language: v.language ?? null,
@@ -135,6 +135,21 @@ async function fetchVoices(url: string, pick: (data: any) => any[]): Promise<Cat
     // Recognised rather than named -- see heygenFields.ts.
     previewAudioUrl: previewAudioUrl(v)
   }));
+
+  const listenable = mapped.filter((voice: CatalogVoice) => voice.previewAudioUrl).length;
+  console.log(`heygen voices: ${listenable} of ${mapped.length} carry a sample`);
+
+  // Voices you can hear come first.
+  //
+  // `preview_audio` exists on every record and is empty on most of HeyGen's
+  // stock library -- only cloned voices reliably carry one. Ordering by name
+  // therefore buried the handful of listenable voices somewhere on page 200,
+  // which is the same as not having them. This is a stable partition: the
+  // order within each group is untouched.
+  return [
+    ...mapped.filter((voice: CatalogVoice) => voice.previewAudioUrl),
+    ...mapped.filter((voice: CatalogVoice) => !voice.previewAudioUrl)
+  ];
 }
 
 // v2 first, because it is the one that carries a sample.

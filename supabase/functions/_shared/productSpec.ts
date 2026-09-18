@@ -206,7 +206,9 @@ export const SPECS: Record<number, ProductSpec> = {
     must: ['topic'],
     nice: ['businessName', 'services', 'packages', 'contact', 'website'],
     rules: [
-      'About 35 spoken words. That is roughly fifteen seconds at a natural pace, and a longer script is cut off mid-sentence.',
+      'At most 30 spoken words. The product is sold as fifteen seconds and a longer script simply runs past it.',
+      'Name at most three things. A spoken list of four or more is heard as noise, and it is what pushes a clip past its length.',
+      'Short sentences. A presenter reading a long comma-stacked sentence rushes it, and rushed speech is where the lip sync visibly drifts.',
       'The hook is the first sentence. Nobody reaches the second sentence of a video that opened slowly.',
       'End on one specific action — visit the site, send a message, book a call — named outright, not implied.',
       'Spoken words only. No stage directions, no scene headings, no music cues, no on-screen text instructions: every word is read aloud exactly as written.',
@@ -232,7 +234,8 @@ export const SPECS: Record<number, ProductSpec> = {
     must: ['topic'],
     nice: ['businessName', 'services', 'packages', 'contact', 'website'],
     rules: [
-      'Roughly 150 spoken words per minute of the length ordered, and never more — the render stops at the length paid for.',
+      'Roughly 150 spoken words per minute of the length ordered, and never more — the render runs past the length paid for otherwise.',
+      'Short sentences throughout. A presenter reading a long comma-stacked sentence rushes it, and rushed speech is where the lip sync visibly drifts.',
       'Give it a shape: the hook, what it is, why it matters, what to do next.',
       'End on one specific action, named outright.',
       'Spoken words only. No stage directions, no scene headings, no music cues.',

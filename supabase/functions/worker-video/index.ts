@@ -153,7 +153,10 @@ async function resolveCasting(
 // is sized off the duration the client actually paid for (30-second blocks)
 // rather than three coarse buckets that capped out at 90 seconds.
 function targetWords(payload: Record<string, unknown>): number {
-  if (payload.length !== 'long') return 35; // short clip, ~10-15s spoken
+  // 30, not 35. A 41-word script rendered as an 18-second clip on a product
+  // sold as "15 seconds or less", so the budget needs headroom rather than
+  // being the limit itself -- a presenter pauses, and pauses are seconds.
+  if (payload.length !== 'long') return 30; // short clip, ~12s spoken
   const seconds = longVideoSeconds(payload) ?? 30;
   return Math.max(60, Math.round((seconds / 60) * 150));
 }
@@ -318,7 +321,13 @@ export async function handleRequest(req: Request): Promise<Response> {
     const videoId = await submitHeygenVideo(script, dimension, character, voiceId);
 
     await setProviderJob(taskId, videoId);
-    await logEvent(taskId, 'video_submitted', 'worker', { videoId, dimension, character, voiceId, script });
+    const scriptWords = script.trim().split(/\s+/).filter(Boolean).length;
+    if (scriptWords > targetWords(payload) * 1.15) {
+      // Not fatal, but it is the difference between a 15-second product and
+      // an 18-second one, and it was only noticeable by watching the clip.
+      console.warn(`worker-video: ${task.public_id} script is ${scriptWords} words against a ${targetWords(payload)} budget`);
+    }
+    await logEvent(taskId, 'video_submitted', 'worker', { videoId, dimension, character, voiceId, script, scriptWords });
 
     return jsonResponse({ ok: true, videoId });
   } catch (err) {

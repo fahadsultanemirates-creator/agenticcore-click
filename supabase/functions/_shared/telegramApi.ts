@@ -99,3 +99,16 @@ export async function sendTelegramAudio(chatId: number, url: string, caption?: s
     throw new Error(`Telegram sendAudio failed (${resp.status}): ${await resp.text()}`);
   }
 }
+
+// Video by URL, so a delivered render plays inline in the chat instead of
+// arriving as a file to download. Telegram fetches the URL itself.
+export async function sendTelegramVideo(chatId: number, url: string, caption?: string): Promise<void> {
+  const resp = await fetch(`${TELEGRAM_API}/sendVideo`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chat_id: chatId, video: url, caption })
+  });
+  if (!resp.ok) {
+    throw new Error(`Telegram sendVideo failed (${resp.status}): ${await resp.text()}`);
+  }
+}

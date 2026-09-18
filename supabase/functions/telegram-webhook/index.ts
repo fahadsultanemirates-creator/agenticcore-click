@@ -23,6 +23,13 @@ import { listAvatars, listVoices } from '../_shared/heygen.ts';
 import { transcribeAudio } from '../_shared/voice.ts';
 import { downloadTelegramFile, sendTelegramAudio, sendTelegramPhoto, sendTelegramText } from '../_shared/telegramApi.ts';
 import { paginate, parseBrowseArgs, browseFooter } from '../_shared/catalogBrowse.ts';
+import {
+  getVideoDefaults,
+  hasDefaultAvatar,
+  hasDefaultVoice,
+  setDefaultAvatar,
+  setDefaultVoice
+} from '../_shared/videoDefaults.ts';
 import { uploadClientMedia } from '../_shared/storage.ts';
 import { detectLanguage, getOwnerLanguage, setOwnerLanguage, sendBotMessage } from '../_shared/botMessage.ts';
 import { converse } from '../_shared/botConversation.ts';
@@ -49,6 +56,9 @@ const VOICES_PATTERN = /^\/voices(?:@\S+)?((?:\s+\S+)*)\s*$/i;
 const ADDAVATAR_PATTERN = /^\/addavatar(?:@\S+)?\s+(\S+)\s+([\s\S]+)$/i;
 const ADDVOICE_PATTERN = /^\/addvoice(?:@\S+)?\s+(\S+)\s+([\s\S]+)$/i;
 const REPORT_PATTERN = /^\/report(?:@\S+)?\s+(\S+)$/i;
+const SETAVATAR_PATTERN = /^\/setavatar(?:@\S+)?\s+(\S+)(?:\s+(photo))?\s*$/i;
+const SETVOICE_PATTERN = /^\/setvoice(?:@\S+)?\s+(\S+)\s*$/i;
+const CASTING_PATTERN = /^\/casting(?:@\S+)?$/i;
 
 
 const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
@@ -80,6 +90,9 @@ function helpText(): string {
     "/voices [language|gender|name] [page] — browse voices, playable",
     '/addavatar <id> <name> — add an avatar to the client-facing picker',
     '/addvoice <id> <name> — add a voice to the client-facing picker',
+    '/casting — who appears in a video that names nobody',
+    '/setavatar <id> [photo] — set the default avatar',
+    '/setvoice <id> — set the default voice',
     '',
     'Send /products for the numbered list.',
     'You can also just type or speak what you want in plain English or Urdu.'
@@ -342,7 +355,62 @@ async function handleAddCatalogCommand(kind: 'avatar' | 'voice', providerId: str
     console.error(`telegram-webhook: /add${kind} failed`, error);
     return `Could not add that ${kind}.`;
   }
-  return `Added "${name}" (${providerId}) to the ${kind} picker.`;
+
+  // The first one added becomes the house default too. Adding an avatar to
+  // an empty picker and then finding your test video rendered somebody
+  // else's face is a surprise nobody should have to debug; adopting the
+  // first choice is what a person means by it, and the reply says so rather
+  // than doing it silently. Later ones only join the picker -- changing the
+  // default after that is an explicit /setavatar.
+  const alreadySet = kind === 'avatar' ? await hasDefaultAvatar() : await hasDefaultVoice();
+  if (!alreadySet) {
+    if (kind === 'avatar') await setDefaultAvatar(providerId);
+    else await setDefaultVoice(providerId);
+  }
+  const adopted = !alreadySet;
+
+  const note = adopted
+    ? `\n\nThis is now the default ${kind} for videos that don't name one. Change it any time with /set${kind} <id>.`
+    : '';
+  return `Added "${name}" (${providerId}) to the ${kind} picker.${note}`;
+}
+
+// Setting the house presenter from where the previews are. It used to be a
+// Supabase environment variable, which the person choosing it cannot reach
+// from a phone at the moment they are actually looking at the faces.
+async function handleSetAvatarCommand(providerId: string, asPhoto?: string): Promise<string> {
+  try {
+    await setDefaultAvatar(providerId, asPhoto ? 'talking_photo' : 'avatar');
+    return `Videos will now use ${providerId} unless an order names a different avatar.`;
+  } catch (err) {
+    console.error('telegram-webhook: /setavatar failed', err);
+    return 'Could not save that avatar.';
+  }
+}
+
+async function handleSetVoiceCommand(providerId: string): Promise<string> {
+  try {
+    await setDefaultVoice(providerId);
+    return `Videos will now use voice ${providerId} unless an order names a different one.`;
+  } catch (err) {
+    console.error('telegram-webhook: /setvoice failed', err);
+    return 'Could not save that voice.';
+  }
+}
+
+// Answering "who is actually going to be in the video?" without reading logs
+// or guessing which of three fallbacks won.
+async function handleCastingCommand(): Promise<string> {
+  const defaults = await getVideoDefaults();
+  const source = (chosen: boolean) => (chosen ? 'chosen here' : 'deployment fallback');
+  return [
+    'Videos with no avatar or voice named on the order will use:',
+    '',
+    `Avatar: ${defaults.character.providerId} (${defaults.character.type}, ${source(defaults.avatarChosen)})`,
+    `Voice:  ${defaults.voiceId} (${source(defaults.voiceChosen)})`,
+    '',
+    'Change with /setavatar <id> or /setvoice <id>.'
+  ].join('\n');
 }
 
 async function handleReportCommand(chatId: number, url: string): Promise<string> {
@@ -506,6 +574,14 @@ async function routeMessage(chatId: number, text: string, attachmentUrls: string
 
   const voicesMatch = text.match(VOICES_PATTERN);
   if (voicesMatch) return handleVoicesCommand(chatId, voicesMatch[1]);
+
+  const setAvatarMatch = text.match(SETAVATAR_PATTERN);
+  if (setAvatarMatch) return handleSetAvatarCommand(setAvatarMatch[1], setAvatarMatch[2]);
+
+  const setVoiceMatch = text.match(SETVOICE_PATTERN);
+  if (setVoiceMatch) return handleSetVoiceCommand(setVoiceMatch[1]);
+
+  if (CASTING_PATTERN.test(text)) return handleCastingCommand();
 
   const reportMatch = text.match(REPORT_PATTERN);
   if (reportMatch) return handleReportCommand(chatId, reportMatch[1].trim());

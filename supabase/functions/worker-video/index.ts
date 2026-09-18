@@ -21,7 +21,8 @@ import { longVideoSeconds } from '../_shared/pricing.ts';
 import { getBrandProfile, brandFactsForPrompt, brandStyleForPrompt, extractUrl, normalizeUrl } from '../_shared/brandProfile.ts';
 import { grokChat, grokVisionChat } from '../_shared/grok.ts';
 import { fetchAttachments } from '../_shared/attachments.ts';
-import { submitHeygenVideo, DEFAULT_AVATAR, DEFAULT_VOICE_ID, type VideoDimension, type CharacterChoice } from '../_shared/heygen.ts';
+import { submitHeygenVideo, type VideoDimension, type CharacterChoice } from '../_shared/heygen.ts';
+import { getVideoDefaults } from '../_shared/videoDefaults.ts';
 import { submitGrokVideo } from '../_shared/grokVideo.ts';
 import { notifyOwner } from '../_shared/telegram.ts';
 import { logEvent, markNeedsInfo, markFailed, setProviderJob } from '../_shared/task.ts';
@@ -122,17 +123,27 @@ function normalizeVideoPayload(raw: Record<string, unknown>): VideoDefaulting {
 // submit-task already verified ownership of any custom/catalog pick
 // (see validateVideoCharacterChoice) -- this just falls back to the house
 // default when the client didn't choose anything specific.
-function resolveCharacter(payload: Record<string, unknown>): CharacterChoice {
+// What the order asked for, else the house default the owner picked from
+// Telegram, else the deployment's env fallback. The middle step is new: the
+// presenter used to be an environment variable, which meant the person
+// choosing it (looking at previews, on a phone) could not actually set it.
+async function resolveCasting(
+  payload: Record<string, unknown>
+): Promise<{ character: CharacterChoice; voiceId: string; usedDefaultAvatar: boolean }> {
+  const defaults = await getVideoDefaults();
+
   const providerId = payload.avatarProviderId;
   const characterType = payload.avatarType;
-  if (typeof providerId === 'string' && (characterType === 'avatar' || characterType === 'talking_photo')) {
-    return { type: characterType, providerId };
-  }
-  return DEFAULT_AVATAR;
-}
+  const ordered =
+    typeof providerId === 'string' && (characterType === 'avatar' || characterType === 'talking_photo')
+      ? ({ type: characterType, providerId } as CharacterChoice)
+      : null;
 
-function resolveVoiceId(payload: Record<string, unknown>): string {
-  return typeof payload.voiceProviderId === 'string' ? payload.voiceProviderId : DEFAULT_VOICE_ID;
+  return {
+    character: ordered ?? defaults.character,
+    voiceId: typeof payload.voiceProviderId === 'string' ? payload.voiceProviderId : defaults.voiceId,
+    usedDefaultAvatar: ordered === null
+  };
 }
 
 function dimensionFor(payload: Record<string, unknown>): VideoDimension {
@@ -270,15 +281,16 @@ export async function handleRequest(req: Request): Promise<Response> {
   }
 
   try {
-    const character = resolveCharacter(payload);
-    const voiceId = resolveVoiceId(payload);
+    const { character, voiceId, usedDefaultAvatar } = await resolveCasting(payload);
 
-    if (character === DEFAULT_AVATAR && ['standard', 'premium', 'elite'].includes(payload.avatarStyle as string)) {
-      // Client didn't pick a specific avatar -- all three tiers fall back to
-      // the same house avatar/voice, so pricing differentiates by
-      // resolution/duration only for this task. Logged so it's visible.
+    if (usedDefaultAvatar) {
+      // All three avatar tiers fall back to the same house presenter, so
+      // pricing differentiates by resolution/duration only for this task.
+      // Logged so which face actually rendered is never a mystery afterwards.
       await logEvent(taskId, 'avatar_tier_note', 'worker', {
-        note: 'No avatar/voice selected -- fell back to the shared house default.'
+        note: 'No avatar named on the order -- used the house default.',
+        character,
+        voiceId
       });
     }
 

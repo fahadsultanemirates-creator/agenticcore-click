@@ -21,8 +21,9 @@ import { longVideoSeconds } from '../_shared/pricing.ts';
 import { getBrandProfile, brandFactsForPrompt, brandStyleForPrompt, extractUrl, normalizeUrl } from '../_shared/brandProfile.ts';
 import { grokChat, grokVisionChat } from '../_shared/grok.ts';
 import { fetchAttachments } from '../_shared/attachments.ts';
-import { submitHeygenVideo, type VideoDimension, type CharacterChoice } from '../_shared/heygen.ts';
+import { submitHeygenVideo, type CharacterChoice } from '../_shared/heygen.ts';
 import { getVideoDefaults } from '../_shared/videoDefaults.ts';
+import { dimensionFor } from '../_shared/videoFormat.ts';
 import { submitGrokVideo } from '../_shared/grokVideo.ts';
 import { notifyOwner } from '../_shared/telegram.ts';
 import { logEvent, markNeedsInfo, markFailed, setProviderJob } from '../_shared/task.ts';
@@ -144,12 +145,6 @@ async function resolveCasting(
     voiceId: typeof payload.voiceProviderId === 'string' ? payload.voiceProviderId : defaults.voiceId,
     usedDefaultAvatar: ordered === null
   };
-}
-
-function dimensionFor(payload: Record<string, unknown>): VideoDimension {
-  if (payload.length === 'long') return { width: 1920, height: 1080 };
-  const resolution = payload.resolution === '720p' ? 720 : 1080;
-  return { width: resolution, height: Math.round((resolution * 16) / 9) };
 }
 
 // ~150 spoken words per minute is the usual presenter pace, so the script

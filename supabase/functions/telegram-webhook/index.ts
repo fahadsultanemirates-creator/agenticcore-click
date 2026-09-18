@@ -350,7 +350,16 @@ async function handleVoicesCommand(chatId: number, raw?: string): Promise<string
       }
     }
 
-    return browseFooter('voices', filter, p, voices.length);
+    // Say how many of these can actually be heard, because "no sample" on
+    // four of five looks like a fault rather than what it is: HeyGen only
+    // publishes samples for some voices, and the listenable ones are sorted
+    // to the front.
+    const listenable = voices.filter((voice) => voice.previewAudioUrl).length;
+    const note = listenable === 0
+      ? '\n\nNone of these have a sample from HeyGen. Pick by description, or say the word and I will record one line in each voice so you can hear them.'
+      : `\n\n${listenable} of these have a sample to play, and they are listed first.`;
+
+    return browseFooter('voices', filter, p, voices.length) + note;
   } catch (err) {
     console.error('telegram-webhook: /voices failed', err);
     return 'Could not load HeyGen voices right now.';

@@ -24,6 +24,8 @@ import { fetchAttachments } from '../_shared/attachments.ts';
 import { submitHeygenVideo, type CharacterChoice } from '../_shared/heygen.ts';
 import { getVideoDefaults } from '../_shared/videoDefaults.ts';
 import { dimensionFor } from '../_shared/videoFormat.ts';
+import { resolveSku, shapeInstruction, specOf } from '../_shared/catalog.ts';
+import { missingRequired, infoRequest } from '../_shared/requirements.ts';
 import { submitGrokVideo } from '../_shared/grokVideo.ts';
 import { notifyOwner } from '../_shared/telegram.ts';
 import { logEvent, markNeedsInfo, markFailed, setProviderJob } from '../_shared/task.ts';
@@ -156,10 +158,23 @@ function targetWords(payload: Record<string, unknown>): number {
   return Math.max(60, Math.round((seconds / 60) * 150));
 }
 
+// The one part of a video that is ours.
+//
+// HeyGen renders the presenter and needs no teaching. The words it speaks
+// were, until now, requested with a single sentence -- "write a natural
+// spoken-word script of about N words" -- which is why the first real clip
+// opened well, quoted the right price, and then stopped without ever telling
+// a viewer what to do. Nothing had asked it to. The product's own definition
+// now carries that, along with everything else that makes fifteen seconds
+// worth the render.
 async function generateScript(payload: Record<string, unknown>): Promise<string> {
   const words = targetWords(payload);
   const profile = await getBrandProfile(brandUrlFor(payload));
-  const systemPrompt = `Write a natural, spoken-word video script of approximately ${words} words. Output ONLY the script text -- no stage directions, no scene headings, no markdown.`;
+  const product = resolveSku('video', payload);
+  const systemPrompt =
+    `${product ? shapeInstruction(product) + ' ' : ''}` +
+    `Write it as approximately ${words} spoken words. ` +
+    'Output ONLY the script text -- no stage directions, no scene headings, no markdown.';
   const brief = String(payload.description ?? '') + brandFactsForPrompt(profile) + revisionInstruction(payload);
 
   const attachments = await fetchAttachments(payload.referenceFiles);
@@ -186,10 +201,11 @@ async function generateScript(payload: Record<string, unknown>): Promise<string>
 async function generateNoAvatarPrompt(payload: Record<string, unknown>): Promise<string> {
   const profile = await getBrandProfile(brandUrlFor(payload));
   const brief = String(payload.description ?? '') + brandStyleForPrompt(profile);
+  const product = resolveSku('video', payload);
   const systemPrompt =
-    'Write a single, vivid visual prompt for an AI video generator producing a short business promo clip -- ' +
-    'no dialogue, no avatar, no on-screen text. Describe the scene/subject, camera movement, lighting, and mood ' +
-    'in 2-3 sentences. Output ONLY the prompt text.';
+    `${product ? shapeInstruction(product) + ' ' : ''}` +
+    'Write a single, vivid visual prompt for an AI video generator. ' +
+    'Output ONLY the prompt text.';
 
   const attachments = await fetchAttachments(payload.referenceFiles);
   if (attachments.length > 0) {
@@ -232,11 +248,19 @@ export async function handleRequest(req: Request): Promise<Response> {
 
   const { payload, defaulted } = normalizeVideoPayload(task.payload ?? {});
 
-  // No brief at all means there is nothing to make a video from -- stop
-  // before spending a HeyGen render or a Grok video generation on it.
-  if (!payload.description) {
-    await markNeedsInfo(taskId, 'No description/brief on this video task -- nothing to generate from.');
-    await notifyOwner(`${task.public_id} has no brief text, so there's nothing to build a video from. Send the brief and re-queue it.`);
+  // The same requirements gate the other workers use. A video is the most
+  // expensive thing here to get wrong, so it is the last place that should
+  // guess at a brief it does not have.
+  const product = resolveSku('video', payload);
+  const profileForGate = product?.urlUse === 'brand' ? await getBrandProfile(brandUrlFor(payload)) : null;
+  const missing = missingRequired(specOf(product), payload, profileForGate);
+  if (!payload.description || missing.length > 0) {
+    const question = missing.length > 0
+      ? infoRequest(product?.name ?? 'video', missing)
+      : 'No description or brief on this video task -- there is nothing to build one from.';
+    await logEvent(taskId, 'requirements_missing', 'worker', { sku: product?.sku, missing });
+    await markNeedsInfo(taskId, question);
+    await notifyOwner(`${task.public_id} cannot be built yet.\n\n${question}`);
     return jsonResponse({ ok: true, needsInfo: true });
   }
 

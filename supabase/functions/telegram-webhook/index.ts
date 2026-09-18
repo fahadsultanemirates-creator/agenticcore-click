@@ -298,9 +298,13 @@ async function handleAvatarsCommand(chatId: number, raw?: string): Promise<strin
       // The caption IS the command. Copy one line, send it, done.
       const caption = `${avatar.name} (${avatar.gender ?? '?'})\n\n/addavatar ${avatar.providerId} ${avatar.name}`;
       const preview = avatar.previewImageUrl ?? avatar.previewVideoUrl;
+      // A preview that fails to send must still leave something choosable in
+      // the chat -- a silent gap is worse than a plain link, because the
+      // option simply disappears from the page you are picking from.
       if (preview) {
-        await sendTelegramPhoto(chatId, preview, caption).catch((err) => {
+        await sendTelegramPhoto(chatId, preview, caption).catch(async (err) => {
           console.error('telegram-webhook: avatar preview failed', err);
+          await sendTelegramText(chatId, `${caption}\n\nPreview: ${preview}`).catch(() => {});
         });
       } else {
         await sendTelegramText(chatId, `${caption}\n\n(no preview image)`).catch(() => {});
@@ -333,12 +337,16 @@ async function handleVoicesCommand(chatId: number, raw?: string): Promise<string
     for (const voice of voices.slice(p.from, p.to)) {
       // Choosing a voice means hearing it. A link to an mp3 is not hearing it.
       const caption = `${voice.name} (${voice.language ?? '?'}, ${voice.gender ?? '?'})\n\n/addvoice ${voice.providerId} ${voice.name}`;
-      if (voice.previewAudioUrl) {
-        await sendTelegramAudio(chatId, voice.previewAudioUrl, caption, voice.name).catch((err) => {
+      const sample = voice.previewAudioUrl;
+      if (sample) {
+        await sendTelegramAudio(chatId, sample, caption, voice.name).catch(async (err) => {
           console.error('telegram-webhook: voice preview failed', err);
+          await sendTelegramText(chatId, `${caption}\n\nSample: ${sample}`).catch(() => {});
         });
       } else {
-        await sendTelegramText(chatId, `${caption}\n\n(no preview audio)`).catch(() => {});
+        // The name is not nothing -- "Bright & Energetic" is still a choice --
+        // so say the sample is missing rather than dropping the option.
+        await sendTelegramText(chatId, `${caption}\n\n(no sample available for this voice)`).catch(() => {});
       }
     }
 

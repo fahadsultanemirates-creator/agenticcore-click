@@ -98,7 +98,9 @@ test('the provider column is left undefined on purpose', () => {
 test('the three delivery kinds land where they should', () => {
   const kind = (sku: number) => deliveryOf(CATALOG.find((item) => item.sku === sku)!);
   assert.equal(kind(10), 'provider', 'a website is made by Grok');
-  assert.equal(kind(40), 'provider', 'a video is made by HeyGen');
+  // HeyGen renders the presenter, but the words it speaks are ours -- which
+  // is the same split as a QR code on a card.
+  assert.equal(kind(40), 'hybrid', 'HeyGen renders it; the script is ours');
   assert.equal(kind(30), 'provider', 'a logo is an image, made by Grok');
   assert.equal(kind(72), 'composed', 'a letterhead is HTML we wrote');
   assert.equal(kind(21), 'composed', 'a brochure is HTML we wrote');

@@ -703,8 +703,14 @@ export function shapeInstruction(item: CatalogItem): string {
 
   if (item.branding === 'client') {
     parts.push(
-      "This deliverable belongs to the CLIENT and carries THEIR branding. Never reference agenticcore, .click, " +
-        'or our own colours anywhere in it.'
+      // Named as a domain, not as a word. A client called "AgenticCore
+      // Agency" is a real client, and telling a writer never to say
+      // "agenticcore" while handing it that business name is a
+      // contradiction it has to resolve on its own -- which is exactly the
+      // kind of instruction that produces a deliverable with the client's
+      // own name quietly missing from it.
+      "This deliverable belongs to the CLIENT and carries THEIR branding. Never mention agenticcore.click, " +
+        'our own agency, or our own colours anywhere in it. The client\'s own name always belongs in their work.'
     );
   } else {
     parts.push('This is our own analysis document and correctly carries agenticcore branding.');

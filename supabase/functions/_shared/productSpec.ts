@@ -190,6 +190,56 @@ export const SPECS: Record<number, ProductSpec> = {
     rules: ['Follow the brief exactly. Use only as many sections as it genuinely needs.']
   },
 
+  // ---- 40s: Video ----------------------------------------------------
+  // HeyGen renders the presenter and Grok renders the motion clip, and
+  // neither needs teaching. The SCRIPT is ours, and it is the part that
+  // decides whether the video is worth the render.
+  //
+  // The first one proved the point in both directions. It opened with a real
+  // hook and quoted the client's actual price -- and then simply stopped,
+  // having told a viewer what the business is and never once what to do
+  // about it. Fifteen seconds is too expensive to end on nothing.
+  40: {
+    purpose: 'A presenter says one thing to camera and tells the viewer what to do next.',
+    wrongWhen:
+      'It describes the business and never asks for anything. Fifteen seconds that end without a call to action is an advert that forgot its last line.',
+    must: ['topic'],
+    nice: ['businessName', 'services', 'packages', 'contact', 'website'],
+    rules: [
+      'About 35 spoken words. That is roughly fifteen seconds at a natural pace, and a longer script is cut off mid-sentence.',
+      'The hook is the first sentence. Nobody reaches the second sentence of a video that opened slowly.',
+      'End on one specific action — visit the site, send a message, book a call — named outright, not implied.',
+      'Spoken words only. No stage directions, no scene headings, no music cues, no on-screen text instructions: every word is read aloud exactly as written.',
+      'Never say a figure that was not supplied.'
+    ]
+  },
+  41: {
+    purpose: 'A short moving scene that shows the business, with nobody speaking.',
+    wrongWhen:
+      'It asks for dialogue or on-screen text. There is no presenter to say it, and generated lettering comes out as gibberish that makes the clip unusable.',
+    must: ['topic'],
+    nice: ['businessName', 'colours'],
+    rules: [
+      'Describe one scene: subject, camera movement, lighting, mood. Two or three sentences.',
+      'Never ask for text, captions, logos, or a person speaking to camera.',
+      'Ten seconds of material, no more.'
+    ]
+  },
+  42: {
+    purpose: 'A presenter explains something properly, and closes by telling the viewer what to do.',
+    wrongWhen:
+      'It is one undifferentiated pitch with no shape, or it runs past the length that was paid for and gets cut.',
+    must: ['topic'],
+    nice: ['businessName', 'services', 'packages', 'contact', 'website'],
+    rules: [
+      'Roughly 150 spoken words per minute of the length ordered, and never more — the render stops at the length paid for.',
+      'Give it a shape: the hook, what it is, why it matters, what to do next.',
+      'End on one specific action, named outright.',
+      'Spoken words only. No stage directions, no scene headings, no music cues.',
+      'Never say a figure that was not supplied.'
+    ]
+  },
+
   // ---- 50s: Social ---------------------------------------------------
   50: {
     purpose: 'Ready-to-post graphics, each readable in a feed at thumbnail size.',

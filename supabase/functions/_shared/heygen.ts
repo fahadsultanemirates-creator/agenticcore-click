@@ -113,26 +113,49 @@ export interface CatalogVoice {
   previewAudioUrl: string | null;
 }
 
-export async function listVoices(): Promise<CatalogVoice[]> {
-  // Defaults to 20 results/page server-side -- 100 (its max) is plenty for
-  // browsing/curation without needing full cursor-based pagination here.
-  const resp = await fetch(`${HEYGEN_API}/v3/voices?limit=100`, {
-    headers: { 'X-Api-Key': HEYGEN_API_KEY }
-  });
+async function fetchVoices(url: string, pick: (data: any) => any[]): Promise<CatalogVoice[]> {
+  const resp = await fetch(url, { headers: { 'X-Api-Key': HEYGEN_API_KEY } });
   if (!resp.ok) {
     throw new Error(`HeyGen list voices failed (${resp.status}): ${await resp.text()}`);
   }
-  const data = await resp.json();
-  const voices = data?.data ?? [];
-  return voices.map((v: any) => ({
+  const raw = pick(await resp.json());
+
+  // Which fields a voice record actually carries, once, so the next time a
+  // key is missing it is a five-second answer from the logs rather than
+  // another round of guessing in front of the owner.
+  if (raw.length > 0) {
+    console.log(`heygen voices from ${url}: ${raw.length} records, fields: ${Object.keys(raw[0]).join(', ')}`);
+  }
+
+  return raw.map((v: any) => ({
     providerId: v.voice_id,
     name: v.name,
     language: v.language ?? null,
     gender: v.gender ?? null,
-    // Recognised rather than named -- see heygenFields.ts. Reading one
-    // hard-coded key produced five voices nobody could listen to.
+    // Recognised rather than named -- see heygenFields.ts.
     previewAudioUrl: previewAudioUrl(v)
   }));
+}
+
+// v2 first, because it is the one that carries a sample.
+//
+// /v3/voices returns richer voice records and no preview audio whatsoever,
+// so every voice arrived unlistenable. Choosing a voice you have not heard
+// is not choosing. /v2/voices carries preview_audio, so it leads; v3 stays
+// as the fallback for the case where v2 is empty or gone, since a list with
+// no samples still beats no list at all.
+export async function listVoices(): Promise<CatalogVoice[]> {
+  try {
+    const v2 = await fetchVoices(`${HEYGEN_API}/v2/voices`, (d) => d?.data?.voices ?? []);
+    if (v2.some((voice) => voice.previewAudioUrl)) return v2;
+    // v2 answered but carried no samples either -- keep whichever list is
+    // longer rather than silently preferring the one we happened to try first.
+    const v3 = await fetchVoices(`${HEYGEN_API}/v3/voices?limit=100`, (d) => d?.data ?? []);
+    return v3.length > v2.length ? v3 : v2;
+  } catch (err) {
+    console.error('heygen: v2 voices failed, falling back to v3', err);
+    return await fetchVoices(`${HEYGEN_API}/v3/voices?limit=100`, (d) => d?.data ?? []);
+  }
 }
 
 // Talking photo: HeyGen's instant custom-avatar path -- one uploaded photo,

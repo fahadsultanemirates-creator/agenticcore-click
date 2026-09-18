@@ -27,12 +27,25 @@ test('1080p is 1920x1080', () => {
   assert.deepEqual(dimensionFor({ length: 'short', resolution: '1080p' }), { width: 1920, height: 1080 });
 });
 
-test('an unspecified resolution is 720p rather than the expensive one', () => {
+// Short and long disagreeing about which way up a video goes is what let the
+// original mistake hide.
+// A long video is watched on something bigger than a phone. `resolution` is
+// only ever filled in for short clips, so reading it alone dropped every long
+// video to 720p -- a regression nothing would have reported except a
+// soft-looking video on a client's homepage.
+test('a long video is 1080p without being asked', () => {
+  assert.deepEqual(dimensionFor({ length: 'long' }), { width: 1920, height: 1080 });
+});
+
+test('a short clip stays 720p without being asked', () => {
   assert.deepEqual(dimensionFor({ length: 'short' }), { width: 1280, height: 720 });
 });
 
-// Short and long disagreeing about which way up a video goes is what let the
-// original mistake hide.
+test('what the order asked for still wins over the length default', () => {
+  assert.deepEqual(dimensionFor({ length: 'long', resolution: '720p' }), { width: 1280, height: 720 });
+  assert.deepEqual(dimensionFor({ length: 'short', resolution: '1080p' }), { width: 1920, height: 1080 });
+});
+
 test('short and long agree on orientation', () => {
   const short = dimensionFor({ length: 'short', resolution: '1080p' });
   const long = dimensionFor({ length: 'long', resolution: '1080p' });

@@ -34,7 +34,18 @@ export function dimensionFor(payload: Record<string, unknown>): VideoDimension {
   // somebody plays on a laptop is landscape; guessing otherwise wastes half
   // the frame.
   const wantsPortrait = payload.aspect === '9:16' || payload.orientation === 'portrait';
-  const height = payload.resolution === '1080p' ? 1080 : 720;
+
+  // What the order asked for wins. Otherwise the length decides: a long video
+  // gets watched on something bigger than a phone, so it is 1080p, while a
+  // fifteen second clip bound for a feed is 720p.
+  //
+  // The default matters more than it looks. `resolution` is only filled in
+  // for short clips, so reading it alone -- as this did briefly -- silently
+  // dropped every long video to 720p, and nothing would have said so except
+  // a soft-looking video on somebody's homepage.
+  const asked =
+    payload.resolution === '1080p' ? 1080 : payload.resolution === '720p' ? 720 : null;
+  const height = asked ?? (payload.length === 'long' ? 1080 : 720);
 
   return wantsPortrait ? portrait(height) : landscape(height);
 }

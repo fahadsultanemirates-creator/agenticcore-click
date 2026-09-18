@@ -5,9 +5,12 @@
 // per task, either from the owner-curated catalog or a client's own
 // custom avatar/voice.
 
+import { previewAudioUrl } from './heygenFields.ts';
+
 const HEYGEN_API_KEY = Deno.env.get('HEYGEN_API_KEY')!;
 const HEYGEN_AVATAR_ID = Deno.env.get('HEYGEN_AVATAR_ID')!;
 const HEYGEN_VOICE_ID = Deno.env.get('HEYGEN_VOICE_ID')!;
+
 const HEYGEN_API = 'https://api.heygen.com';
 const HEYGEN_UPLOAD_API = 'https://upload.heygen.com';
 
@@ -126,7 +129,9 @@ export async function listVoices(): Promise<CatalogVoice[]> {
     name: v.name,
     language: v.language ?? null,
     gender: v.gender ?? null,
-    previewAudioUrl: v.preview_audio_url ?? null
+    // Recognised rather than named -- see heygenFields.ts. Reading one
+    // hard-coded key produced five voices nobody could listen to.
+    previewAudioUrl: previewAudioUrl(v)
   }));
 }
 

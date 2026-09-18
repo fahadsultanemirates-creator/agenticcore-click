@@ -6,6 +6,11 @@
 // custom avatar/voice.
 
 import { previewAudioUrl } from './heygenFields.ts';
+import type { VideoDimension } from './videoFormat.ts';
+
+// Re-exported so callers that already import the HeyGen client keep working;
+// the shape itself belongs with the code that computes it.
+export type { VideoDimension };
 
 const HEYGEN_API_KEY = Deno.env.get('HEYGEN_API_KEY')!;
 const HEYGEN_AVATAR_ID = Deno.env.get('HEYGEN_AVATAR_ID')!;
@@ -13,11 +18,6 @@ const HEYGEN_VOICE_ID = Deno.env.get('HEYGEN_VOICE_ID')!;
 
 const HEYGEN_API = 'https://api.heygen.com';
 const HEYGEN_UPLOAD_API = 'https://upload.heygen.com';
-
-export interface VideoDimension {
-  width: number;
-  height: number;
-}
 
 export interface CharacterChoice {
   type: 'avatar' | 'talking_photo';

@@ -21,7 +21,8 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { listAvatars, listVoices } from '../_shared/heygen.ts';
 import { transcribeAudio } from '../_shared/voice.ts';
-import { downloadTelegramFile } from '../_shared/telegramApi.ts';
+import { downloadTelegramFile, sendTelegramAudio, sendTelegramPhoto, sendTelegramText } from '../_shared/telegramApi.ts';
+import { paginate, parseBrowseArgs, browseFooter } from '../_shared/catalogBrowse.ts';
 import { uploadClientMedia } from '../_shared/storage.ts';
 import { detectLanguage, getOwnerLanguage, setOwnerLanguage, sendBotMessage } from '../_shared/botMessage.ts';
 import { converse } from '../_shared/botConversation.ts';
@@ -43,12 +44,12 @@ const FILES_PATTERN = /^\/files(?:@\S+)?\s+(AC-\d{4}-\d{2,}|AC-CLICK-\d{4})\b/i;
 const DELIVER_PATTERN = /^\/deliver(?:@\S+)?\s+(AC-\d{4}-\d{2,}|AC-CLICK-\d{4})\s+(\S+)$/i;
 const QUEUE_PATTERN = /^\/queue(?:@\S+)?$/i;
 const HELP_PATTERN = /^\/(start|help)(?:@\S+)?$/i;
-const AVATARS_PATTERN = /^\/avatars(?:@\S+)?(?:\s+(\S+))?$/i;
-const VOICES_PATTERN = /^\/voices(?:@\S+)?(?:\s+(\S+))?$/i;
+const AVATARS_PATTERN = /^\/avatars(?:@\S+)?((?:\s+\S+)*)\s*$/i;
+const VOICES_PATTERN = /^\/voices(?:@\S+)?((?:\s+\S+)*)\s*$/i;
 const ADDAVATAR_PATTERN = /^\/addavatar(?:@\S+)?\s+(\S+)\s+([\s\S]+)$/i;
 const ADDVOICE_PATTERN = /^\/addvoice(?:@\S+)?\s+(\S+)\s+([\s\S]+)$/i;
 const REPORT_PATTERN = /^\/report(?:@\S+)?\s+(\S+)$/i;
-const CATALOG_LIST_LIMIT = 15;
+
 
 const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
@@ -75,8 +76,8 @@ function helpText(): string {
     "/files <task id> — list a task's deliverable files",
     '/deliver <task id> <url> — manually attach a file and mark delivered',
     "/report <url> — owner-only business report (flaws, improvements, marketing plan)",
-    "/avatars [gender] — browse HeyGen's avatar catalog",
-    "/voices [language|gender] — browse HeyGen's voice catalog",
+    "/avatars [gender|name] [page] — browse avatars as previews",
+    "/voices [language|gender|name] [page] — browse voices, playable",
     '/addavatar <id> <name> — add an avatar to the client-facing picker',
     '/addvoice <id> <name> — add a voice to the client-facing picker',
     '',
@@ -254,41 +255,81 @@ async function handleFilesCommand(publicId: string): Promise<string> {
   return `Files for ${publicId}:\n\n${lines.join('\n')}`;
 }
 
-// Browse HeyGen's live catalog to pick candidates for /addavatar --
-// picking a good avatar needs a human actually looking at the preview
-// image/video, so this just surfaces the raw options rather than
-// guessing which ones look professional.
-async function handleAvatarsCommand(genderFilter?: string): Promise<string> {
+// Browsing a catalog you cannot see is not browsing.
+//
+// This used to print fifteen lines of text with a preview URL on each, out
+// of 1266 avatars -- so choosing one meant opening links one at a time and
+// remembering which id belonged to which face. Nobody picks an avatar that
+// way, and picking the avatar is the whole decision.
+//
+// Now each option arrives as the actual preview, and the caption under it is
+// the exact command that selects it: one tap to copy, one send to add. The
+// id never has to be typed or matched up by hand.
+
+async function handleAvatarsCommand(chatId: number, raw?: string): Promise<string> {
+  const { filter, page } = parseBrowseArgs(raw);
   try {
     let avatars = await listAvatars();
-    if (genderFilter) avatars = avatars.filter((a) => a.gender?.toLowerCase() === genderFilter.toLowerCase());
-    if (avatars.length === 0) return 'No avatars found.';
+    if (filter) {
+      // Gender OR name, because "female" and "abigail" are both things a
+      // person actually types, and neither should return nothing.
+      const needle = filter.toLowerCase();
+      avatars = avatars.filter(
+        (a) => a.gender?.toLowerCase() === needle || a.name.toLowerCase().includes(needle)
+      );
+    }
+    if (avatars.length === 0) return `No avatars found${filter ? ` matching "${filter}"` : ''}.`;
 
-    const lines = avatars
-      .slice(0, CATALOG_LIST_LIMIT)
-      .map((a) => `${a.name} (${a.gender ?? '?'})\nid: ${a.providerId}\npreview: ${a.previewImageUrl ?? a.previewVideoUrl ?? 'none'}`);
+    const p = paginate(avatars.length, page);
+    for (const avatar of avatars.slice(p.from, p.to)) {
+      // The caption IS the command. Copy one line, send it, done.
+      const caption = `${avatar.name} (${avatar.gender ?? '?'})\n\n/addavatar ${avatar.providerId} ${avatar.name}`;
+      const preview = avatar.previewImageUrl ?? avatar.previewVideoUrl;
+      if (preview) {
+        await sendTelegramPhoto(chatId, preview, caption).catch((err) => {
+          console.error('telegram-webhook: avatar preview failed', err);
+        });
+      } else {
+        await sendTelegramText(chatId, `${caption}\n\n(no preview image)`).catch(() => {});
+      }
+    }
 
-    return `HeyGen avatars (showing ${Math.min(avatars.length, CATALOG_LIST_LIMIT)} of ${avatars.length}):\n\n${lines.join('\n\n')}\n\nUse /addavatar <id> <name> to add one to the picker.`;
+    return browseFooter('avatars', filter, p, avatars.length);
   } catch (err) {
     console.error('telegram-webhook: /avatars failed', err);
     return 'Could not load HeyGen avatars right now.';
   }
 }
 
-async function handleVoicesCommand(filter?: string): Promise<string> {
+async function handleVoicesCommand(chatId: number, raw?: string): Promise<string> {
+  const { filter, page } = parseBrowseArgs(raw);
   try {
     let voices = await listVoices();
     if (filter) {
       const needle = filter.toLowerCase();
-      voices = voices.filter((v) => v.language?.toLowerCase().includes(needle) || v.gender?.toLowerCase() === needle);
+      voices = voices.filter(
+        (v) =>
+          v.language?.toLowerCase().includes(needle) ||
+          v.gender?.toLowerCase() === needle ||
+          v.name.toLowerCase().includes(needle)
+      );
     }
-    if (voices.length === 0) return 'No voices found.';
+    if (voices.length === 0) return `No voices found${filter ? ` matching "${filter}"` : ''}.`;
 
-    const lines = voices
-      .slice(0, CATALOG_LIST_LIMIT)
-      .map((v) => `${v.name} (${v.language ?? '?'}, ${v.gender ?? '?'})\nid: ${v.providerId}\npreview: ${v.previewAudioUrl ?? 'none'}`);
+    const p = paginate(voices.length, page);
+    for (const voice of voices.slice(p.from, p.to)) {
+      // Choosing a voice means hearing it. A link to an mp3 is not hearing it.
+      const caption = `${voice.name} (${voice.language ?? '?'}, ${voice.gender ?? '?'})\n\n/addvoice ${voice.providerId} ${voice.name}`;
+      if (voice.previewAudioUrl) {
+        await sendTelegramAudio(chatId, voice.previewAudioUrl, caption, voice.name).catch((err) => {
+          console.error('telegram-webhook: voice preview failed', err);
+        });
+      } else {
+        await sendTelegramText(chatId, `${caption}\n\n(no preview audio)`).catch(() => {});
+      }
+    }
 
-    return `HeyGen voices (showing ${Math.min(voices.length, CATALOG_LIST_LIMIT)} of ${voices.length}):\n\n${lines.join('\n\n')}\n\nUse /addvoice <id> <name> to add one to the picker.`;
+    return browseFooter('voices', filter, p, voices.length);
   } catch (err) {
     console.error('telegram-webhook: /voices failed', err);
     return 'Could not load HeyGen voices right now.';
@@ -461,10 +502,10 @@ async function routeMessage(chatId: number, text: string, attachmentUrls: string
   if (addVoiceMatch) return handleAddCatalogCommand('voice', addVoiceMatch[1], addVoiceMatch[2].trim());
 
   const avatarsMatch = text.match(AVATARS_PATTERN);
-  if (avatarsMatch) return handleAvatarsCommand(avatarsMatch[1]);
+  if (avatarsMatch) return handleAvatarsCommand(chatId, avatarsMatch[1]);
 
   const voicesMatch = text.match(VOICES_PATTERN);
-  if (voicesMatch) return handleVoicesCommand(voicesMatch[1]);
+  if (voicesMatch) return handleVoicesCommand(chatId, voicesMatch[1]);
 
   const reportMatch = text.match(REPORT_PATTERN);
   if (reportMatch) return handleReportCommand(chatId, reportMatch[1].trim());
@@ -504,9 +545,9 @@ async function routeMessage(chatId: number, text: string, attachmentUrls: string
       return resolved.publicId ? handleDeliverCommand(resolved.publicId, parsed.url) : resolved.reply!;
     }
     case 'avatars':
-      return handleAvatarsCommand(parsed.gender);
+      return handleAvatarsCommand(chatId, parsed.gender);
     case 'voices':
-      return handleVoicesCommand(parsed.filter);
+      return handleVoicesCommand(chatId, parsed.filter);
     case 'addavatar':
       return handleAddCatalogCommand('avatar', parsed.id, parsed.name);
     case 'addvoice':

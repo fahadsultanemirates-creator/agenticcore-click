@@ -85,3 +85,17 @@ export async function downloadTelegramFile(fileId: string): Promise<Uint8Array> 
   }
   return new Uint8Array(await fileResp.arrayBuffer());
 }
+
+// Audio by URL, so a HeyGen voice preview plays inline in the chat with a
+// title rather than arriving as a file to download. Choosing a voice means
+// hearing it; a link to an mp3 is not hearing it.
+export async function sendTelegramAudio(chatId: number, url: string, caption?: string, title?: string): Promise<void> {
+  const resp = await fetch(`${TELEGRAM_API}/sendAudio`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chat_id: chatId, audio: url, caption, title })
+  });
+  if (!resp.ok) {
+    throw new Error(`Telegram sendAudio failed (${resp.status}): ${await resp.text()}`);
+  }
+}

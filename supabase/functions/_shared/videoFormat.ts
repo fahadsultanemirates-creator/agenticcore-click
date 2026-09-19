@@ -35,17 +35,33 @@ export function dimensionFor(payload: Record<string, unknown>): VideoDimension {
   // the frame.
   const wantsPortrait = payload.aspect === '9:16' || payload.orientation === 'portrait';
 
-  // What the order asked for wins. Otherwise the length decides: a long video
-  // gets watched on something bigger than a phone, so it is 1080p, while a
-  // fifteen second clip bound for a feed is 720p.
+  // What the order asked for wins; otherwise 1080p, whatever the length.
   //
-  // The default matters more than it looks. `resolution` is only filled in
-  // for short clips, so reading it alone -- as this did briefly -- silently
-  // dropped every long video to 720p, and nothing would have said so except
-  // a soft-looking video on somebody's homepage.
+  // Short clips used to default to 720p on the reasoning that they are bound
+  // for a feed. That had it backwards: the fifteen second clip is the one
+  // doing the selling, and it is the first thing a prospective client ever
+  // sees. Standard generation is billed by the minute rather than by the
+  // pixel, so the cheaper-looking option was not buying anything.
+  //
+  // 720p remains available, and an order that names it still gets it.
   const asked =
     payload.resolution === '1080p' ? 1080 : payload.resolution === '720p' ? 720 : null;
-  const height = asked ?? (payload.length === 'long' ? 1080 : 720);
+  const height = asked ?? 1080;
 
   return wantsPortrait ? portrait(height) : landscape(height);
+}
+
+/**
+ * A resolution named in ordinary words.
+ *
+ * Telegram orders arrive as one line of free text with no structured fields,
+ * so "make it 1080p" or "in HD" is the only way to ask for a quality from
+ * there. The website form has a picker; this is the same choice for everyone
+ * else.
+ */
+export function resolutionIn(text: string): '720p' | '1080p' | null {
+  const haystack = text.toLowerCase();
+  if (/\b(1080p?|full\s*hd|fhd|high\s*quality|best\s*quality)\b/.test(haystack)) return '1080p';
+  if (/\b(720p?|hd\s*ready|standard\s*quality|lower\s*quality)\b/.test(haystack)) return '720p';
+  return null;
 }

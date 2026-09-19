@@ -1,7 +1,7 @@
 // Run with: node --experimental-strip-types supabase/functions/_shared/videoFormat.test.ts
 
 import assert from 'node:assert/strict';
-import { dimensionFor, landscape, portrait } from './videoFormat.ts';
+import { dimensionFor, landscape, portrait, resolutionIn } from './videoFormat.ts';
 
 let passed = 0;
 let failed = 0;
@@ -35,13 +35,34 @@ test('a long video is 1080p without being asked', () => {
   assert.deepEqual(dimensionFor({ length: 'long' }), { width: 1920, height: 1080 });
 });
 
-test('a short clip stays 720p without being asked', () => {
-  assert.deepEqual(dimensionFor({ length: 'short' }), { width: 1280, height: 720 });
+// The short clip is the one doing the selling -- it is the first thing a
+// prospective client ever sees -- and standard generation is billed by the
+// minute rather than by the pixel, so the cheaper-looking default was not
+// buying anything.
+test('a short clip is 1080p too, without being asked', () => {
+  assert.deepEqual(dimensionFor({ length: 'short' }), { width: 1920, height: 1080 });
+  assert.deepEqual(dimensionFor({}), { width: 1920, height: 1080 });
 });
 
-test('what the order asked for still wins over the length default', () => {
+test('what the order asked for still wins over the default', () => {
   assert.deepEqual(dimensionFor({ length: 'long', resolution: '720p' }), { width: 1280, height: 720 });
-  assert.deepEqual(dimensionFor({ length: 'short', resolution: '1080p' }), { width: 1920, height: 1080 });
+  assert.deepEqual(dimensionFor({ length: 'short', resolution: '720p' }), { width: 1280, height: 720 });
+});
+
+// A Telegram order is one line of free text with no structured fields, so
+// words are the only way to ask for a quality from there.
+test('a resolution asked for in words is recognised', () => {
+  assert.equal(resolutionIn('15 second intro, make it 1080p'), '1080p');
+  assert.equal(resolutionIn('short clip in full HD'), '1080p');
+  assert.equal(resolutionIn('keep it 720p, it is just for a story'), '720p');
+  assert.equal(resolutionIn('a 15 second intro for my agency'), null);
+});
+
+// "15 second" and "30 seconds" must never be read as a resolution.
+test('a length in the brief is not mistaken for a quality', () => {
+  assert.equal(resolutionIn('720 second explainer'), '720p');
+  assert.equal(resolutionIn('a 60 second video about our services'), null);
+  assert.equal(resolutionIn('10800 words'), null);
 });
 
 // Short and long disagreeing about which way up a video goes is what let the
@@ -54,7 +75,8 @@ test('short and long agree on orientation', () => {
 
 test('vertical happens only when it is asked for', () => {
   assert.deepEqual(dimensionFor({ aspect: '9:16', resolution: '720p' }), { width: 720, height: 1280 });
-  assert.deepEqual(dimensionFor({ orientation: 'portrait' }), { width: 720, height: 1280 });
+  assert.deepEqual(dimensionFor({ orientation: 'portrait' }), { width: 1080, height: 1920 });
+  assert.deepEqual(dimensionFor({ resolution: '1080p' }), { width: 1920, height: 1080 });
 });
 
 test('every canvas is a real 16:9 rectangle either way up', () => {

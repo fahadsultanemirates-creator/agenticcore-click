@@ -23,7 +23,7 @@ import { grokChat, grokVisionChat } from '../_shared/grok.ts';
 import { fetchAttachments } from '../_shared/attachments.ts';
 import { submitHeygenVideo, type CharacterChoice } from '../_shared/heygen.ts';
 import { getVideoDefaults } from '../_shared/videoDefaults.ts';
-import { dimensionFor } from '../_shared/videoFormat.ts';
+import { dimensionFor, resolutionIn } from '../_shared/videoFormat.ts';
 import { resolveSku, shapeInstruction, specOf } from '../_shared/catalog.ts';
 import { missingRequired, infoRequest } from '../_shared/requirements.ts';
 import { submitGrokVideo } from '../_shared/grokVideo.ts';
@@ -110,9 +110,15 @@ function normalizeVideoPayload(raw: Record<string, unknown>): VideoDefaulting {
     defaulted.push('noAvatarMode=full');
   }
 
-  if (payload.length === 'short' && payload.resolution !== '720p' && payload.resolution !== '1080p') {
-    payload.resolution = '720p';
-    defaulted.push('resolution=720p');
+  // Quality: what the order names, else what the brief asks for in words,
+  // else 1080p. A Telegram order is one line of free text with no structured
+  // fields, so "make it 720p" is the only way to ask from there -- and
+  // without it the picker would exist on the website only, which is where
+  // the avatar choice was stuck an hour ago.
+  if (payload.resolution !== '720p' && payload.resolution !== '1080p') {
+    const asked = resolutionIn(description);
+    payload.resolution = asked ?? '1080p';
+    defaulted.push(asked ? `resolution=${asked} (from the brief)` : 'resolution=1080p');
   }
 
   if (payload.length === 'long' && longVideoSeconds(payload) === null) {

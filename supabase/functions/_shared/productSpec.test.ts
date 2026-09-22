@@ -54,6 +54,26 @@ test('every spec answers what would make the product wrong', () => {
   }
 });
 
+// Rules and recipe are not the same thing, and only having one of them is
+// what every live failure looked like. The rules said a brochure needs an
+// offer; nothing said where in the brochure the offer goes. A product with
+// rules and no steps will fail the same way, so it fails here first.
+test('every product says how to build it, in order', () => {
+  for (const [sku, spec] of Object.entries(SPECS)) {
+    assert.ok(spec.build.length >= 2, `sku ${sku} has no build recipe — nothing says what to put where`);
+    for (const step of spec.build) {
+      assert.ok(step.length > 10, `sku ${sku} has a build step too short to act on: "${step}"`);
+    }
+  }
+});
+
+test('the recipe reaches the prompt as a numbered sequence', () => {
+  const text = specInstruction(specFor(60));
+  assert.ok(text.includes('How to build it, in this order:'), 'the recipe is missing from the prompt');
+  assert.ok(text.includes('1. Header:'), 'the steps are not numbered');
+  assert.ok(text.indexOf('Rules you must obey') < text.indexOf('How to build it'), 'rules come before the steps');
+});
+
 test('every field a spec names actually exists', () => {
   for (const [sku, spec] of Object.entries(SPECS)) {
     for (const key of [...spec.must, ...spec.nice]) {

@@ -24,7 +24,7 @@ import { transcribeAudio } from '../_shared/voice.ts';
 import { downloadTelegramFile, sendTelegramAudio, sendTelegramPhoto, sendTelegramText } from '../_shared/telegramApi.ts';
 import { paginate, parseBrowseArgs, browseFooter } from '../_shared/catalogBrowse.ts';
 import { clearRoute, externalEnabled, GROKBOT_AGENT, listRoutes, setRoute } from '../_shared/agents.ts';
-import { fallbackToBuiltIn } from '../_shared/grokbot.ts';
+import { fallbackToBuiltIn, grokbotSecretStatus } from '../_shared/grokbot.ts';
 import {
   getVideoDefaults,
   hasDefaultAvatar,
@@ -422,9 +422,20 @@ async function handleUnassignCommand(skuText: string): Promise<string> {
 
 async function handleRoutesCommand(): Promise<string> {
   const routes = await listRoutes();
+
+  // Report the secrets too. Saying "switched ON" while the webhook URL or
+  // key is missing is a status that is true about the switch and useless
+  // about the thing being switched.
+  const secrets = grokbotSecretStatus();
+  const ready = secrets.url !== null && secrets.key !== null;
+  const secretLine = ready
+    ? `Webhook secrets found (${secrets.url}, ${secrets.key}).`
+    : `Webhook secrets MISSING — ${secrets.url ? '' : 'no URL, '}${secrets.key ? '' : 'no key, '}` +
+      `so nothing can actually be handed over.\nName them ${secrets.expected.url[0]} and ${secrets.expected.key[0]}.`;
+
   const header = externalEnabled()
-    ? 'Grok Bot is switched ON.'
-    : 'Grok Bot is switched OFF (GROKBOT_ENABLED is not true) — these routes are recorded but inactive.';
+    ? `Grok Bot is switched ON.\n${secretLine}`
+    : `Grok Bot is switched OFF (GROKBOT_ENABLED is not true) — these routes are recorded but inactive.\n${secretLine}`;
   if (routes.length === 0) return `${header}\n\nNo products are assigned to an external agent. Everything is built in-house.`;
 
   const lines = routes.map((route) => `${route.sku} — ${getSku(route.sku)?.name ?? 'unknown product'} → ${route.agent}`);

@@ -50,9 +50,29 @@ export interface GrokbotConfig {
   from: { url: string; key: string };
 }
 
+const URL_NAMES = ['GROKBOT_WEBHOOK_URL', 'GROKBOT_URL', 'GROK_BOT_WEBHOOK_URL'];
+const KEY_NAMES = ['GROKBOT_WEBHOOK_KEY', 'GROKBOT_KEY', 'GROKBOT_SECRET', 'GROKBOT_API_KEY', 'GROK_BOT_KEY'];
+
+/**
+ * Whether the secrets are actually there, without logging and without
+ * revealing them.
+ *
+ * /routes reported "switched ON" while these could still be missing, which
+ * is a half-true status: the first real task would have bounced straight
+ * back in-house and the reason would only have been in the logs. A status
+ * command should be able to fail the whole check, not part of it.
+ */
+export function grokbotSecretStatus(): { url: string | null; key: string | null; expected: { url: string[]; key: string[] } } {
+  return {
+    url: firstSecret(URL_NAMES)?.name ?? null,
+    key: firstSecret(KEY_NAMES)?.name ?? null,
+    expected: { url: URL_NAMES, key: KEY_NAMES }
+  };
+}
+
 export function grokbotConfig(): GrokbotConfig | null {
-  const url = firstSecret(['GROKBOT_WEBHOOK_URL', 'GROKBOT_URL', 'GROK_BOT_WEBHOOK_URL']);
-  const key = firstSecret(['GROKBOT_WEBHOOK_KEY', 'GROKBOT_KEY', 'GROKBOT_SECRET', 'GROKBOT_API_KEY', 'GROK_BOT_KEY']);
+  const url = firstSecret(URL_NAMES);
+  const key = firstSecret(KEY_NAMES);
   if (!url || !key) {
     console.error(
       `grokbot: not configured (url=${url?.name ?? 'missing'}, key=${key?.name ?? 'missing'}). ` +

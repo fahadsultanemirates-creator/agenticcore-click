@@ -52,6 +52,16 @@ verify_jwt = false
 [functions.create-custom-voice]
 verify_jwt = false
 
+# grokbot-callback is called by Grok Bot, which holds no Supabase JWT by
+# design. It authenticates every request itself with a per-job token and an
+# HMAC signature over the body and timestamp -- see _shared/hmac.ts.
+[functions.grokbot-callback]
+verify_jwt = false
+
+# worker-grokbot is NOT listed, deliberately. It keeps the platform's JWT
+# gate AND checks requireInternalCaller on top, because verify_jwt alone
+# accepts the anon key, which ships in the browser bundle.
+
 # webhook-diag and voice-diag are deliberately NOT listed here. They are live
 # on the project with verify_jwt = false but have no source in this repo --
 # they were deployed by hand during setup and never committed. The CLI tries

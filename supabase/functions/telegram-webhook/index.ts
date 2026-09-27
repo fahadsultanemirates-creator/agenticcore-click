@@ -23,6 +23,8 @@ import { listAvatars, listVoices } from '../_shared/heygen.ts';
 import { transcribeAudio } from '../_shared/voice.ts';
 import { downloadTelegramFile, sendTelegramAudio, sendTelegramPhoto, sendTelegramText } from '../_shared/telegramApi.ts';
 import { paginate, parseBrowseArgs, browseFooter } from '../_shared/catalogBrowse.ts';
+import { clearRoute, externalEnabled, GROKBOT_AGENT, listRoutes, setRoute } from '../_shared/agents.ts';
+import { fallbackToBuiltIn } from '../_shared/grokbot.ts';
 import {
   getVideoDefaults,
   hasDefaultAvatar,
@@ -59,6 +61,11 @@ const REPORT_PATTERN = /^\/report(?:@\S+)?\s+(\S+)$/i;
 const SETAVATAR_PATTERN = /^\/setavatar(?:@\S+)?\s+(\S+)(?:\s+(photo))?\s*$/i;
 const SETVOICE_PATTERN = /^\/setvoice(?:@\S+)?\s+(\S+)\s*$/i;
 const CASTING_PATTERN = /^\/casting(?:@\S+)?$/i;
+const ASSIGN_PATTERN = /^\/assign(?:@\S+)?\s+(\d{1,3})\s+(\S+)\s*$/i;
+const UNASSIGN_PATTERN = /^\/unassign(?:@\S+)?\s+(\d{1,3})\s*$/i;
+const ROUTES_PATTERN = /^\/routes(?:@\S+)?$/i;
+const JOBS_PATTERN = /^\/jobs(?:@\S+)?$/i;
+const FALLBACK_PATTERN = /^\/fallback(?:@\S+)?\s+(\S+)\s*$/i;
 
 
 const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
@@ -93,6 +100,11 @@ function helpText(): string {
     '/casting — who appears in a video that names nobody',
     '/setavatar <id> [photo] — set the default avatar',
     '/setvoice <id> — set the default voice',
+    '/assign <sku> grokbot — send a product to Grok Bot instead',
+    '/unassign <sku> — bring a product back in-house',
+    '/routes — which products go to an external agent',
+    '/jobs — open external jobs',
+    '/fallback <task id> — take a job back from an external agent',
     '',
     'Send /products for the numbered list.',
     'You can also just type or speak what you want in plain English or Urdu.'
@@ -366,6 +378,102 @@ async function handleVoicesCommand(chatId: number, raw?: string): Promise<string
   }
 }
 
+
+// ---- External agents -------------------------------------------------
+//
+// Which products leave the building is a decision, never an inference, so
+// it is made here by hand and readable here at any time. /routes answers
+// "what is currently going outside?" in one line, which is the question
+// somebody asks the moment a deliverable looks unfamiliar.
+
+async function handleAssignCommand(skuText: string, agentWord: string): Promise<string> {
+  const sku = Number(skuText);
+  const item = getSku(sku);
+  if (!item) return `There is no product ${sku}. Send /products for the list.`;
+
+  const agent = agentWord.toLowerCase() === 'grokbot' ? GROKBOT_AGENT : agentWord;
+  if (agent !== GROKBOT_AGENT) return `I only know one external agent: grokbot.`;
+
+  try {
+    await setRoute(sku, agent, 'telegram');
+  } catch (err) {
+    console.error('telegram-webhook: /assign failed', err);
+    return `Could not assign product ${sku}.`;
+  }
+
+  const live = externalEnabled()
+    ? ''
+    : '\n\nNote: GROKBOT_ENABLED is not set to true, so nothing actually goes to Grok Bot yet.';
+  return `${sku} — ${item.name} now goes to Grok Bot.\n\nClient orders only; your own /new tasks stay in-house.${live}`;
+}
+
+async function handleUnassignCommand(skuText: string): Promise<string> {
+  const sku = Number(skuText);
+  const item = getSku(sku);
+  try {
+    const removed = await clearRoute(sku);
+    if (!removed) return `${sku} was not assigned to anyone.`;
+    return `${sku} — ${item?.name ?? 'product'} is back to the built-in worker.`;
+  } catch (err) {
+    console.error('telegram-webhook: /unassign failed', err);
+    return `Could not unassign product ${sku}.`;
+  }
+}
+
+async function handleRoutesCommand(): Promise<string> {
+  const routes = await listRoutes();
+  const header = externalEnabled()
+    ? 'Grok Bot is switched ON.'
+    : 'Grok Bot is switched OFF (GROKBOT_ENABLED is not true) — these routes are recorded but inactive.';
+  if (routes.length === 0) return `${header}\n\nNo products are assigned to an external agent. Everything is built in-house.`;
+
+  const lines = routes.map((route) => `${route.sku} — ${getSku(route.sku)?.name ?? 'unknown product'} → ${route.agent}`);
+  return `${header}\n\n${lines.join('\n')}`;
+}
+
+async function handleJobsCommand(): Promise<string> {
+  const { data } = await supabaseAdmin
+    .from('agent_jobs')
+    .select('id, task_id, agent, status, accept_deadline, note, created_at')
+    .in('status', ['offered', 'accepted', 'submitted'])
+    .order('created_at', { ascending: false })
+    .limit(10);
+
+  const jobs = data ?? [];
+  if (jobs.length === 0) return 'No external jobs are open.';
+
+  const lines: string[] = [];
+  for (const job of jobs) {
+    const { data: task } = await supabaseAdmin.from('tasks').select('public_id').eq('id', job.task_id).maybeSingle();
+    const waiting = job.status === 'offered' ? ` (accept by ${new Date(job.accept_deadline).toISOString().slice(11, 16)} UTC)` : '';
+    lines.push(`${task?.public_id ?? job.task_id} — ${job.agent}: ${job.status}${waiting}`);
+  }
+  return `Open external jobs:\n\n${lines.join('\n')}`;
+}
+
+// Taking a job back by hand, without waiting for the deadline. The reason a
+// human needs this: the ten minute window is right for an agent that is
+// merely slow, and far too long for one you already know is not coming.
+async function handleFallbackCommand(publicId: string): Promise<string> {
+  const { data: task } = await supabaseAdmin
+    .from('tasks')
+    .select('id, public_id')
+    .eq('public_id', publicId.toUpperCase())
+    .maybeSingle();
+  if (!task) return `No task called ${publicId}.`;
+
+  const { data: job } = await supabaseAdmin
+    .from('agent_jobs')
+    .select('id, task_id, agent, status, token, accept_deadline, note')
+    .eq('task_id', task.id)
+    .in('status', ['offered', 'accepted', 'submitted'])
+    .maybeSingle();
+  if (!job) return `${task.public_id} has no open external job.`;
+
+  await fallbackToBuiltIn(job as never, task.public_id as string, 'Taken back by the owner.');
+  return `${task.public_id} has been taken back from ${job.agent} and re-queued in-house.`;
+}
+
 async function handleAddCatalogCommand(kind: 'avatar' | 'voice', providerId: string, name: string): Promise<string> {
   const { error } = await supabaseAdmin.from('catalog_options').insert({ kind, provider_id: providerId, name });
   if (error) {
@@ -599,6 +707,18 @@ async function routeMessage(chatId: number, text: string, attachmentUrls: string
   if (setVoiceMatch) return handleSetVoiceCommand(setVoiceMatch[1]);
 
   if (CASTING_PATTERN.test(text)) return handleCastingCommand();
+
+  const assignMatch = text.match(ASSIGN_PATTERN);
+  if (assignMatch) return handleAssignCommand(assignMatch[1], assignMatch[2]);
+
+  const unassignMatch = text.match(UNASSIGN_PATTERN);
+  if (unassignMatch) return handleUnassignCommand(unassignMatch[1]);
+
+  if (ROUTES_PATTERN.test(text)) return handleRoutesCommand();
+  if (JOBS_PATTERN.test(text)) return handleJobsCommand();
+
+  const fallbackMatch = text.match(FALLBACK_PATTERN);
+  if (fallbackMatch) return handleFallbackCommand(fallbackMatch[1]);
 
   const reportMatch = text.match(REPORT_PATTERN);
   if (reportMatch) return handleReportCommand(chatId, reportMatch[1].trim());

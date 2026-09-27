@@ -34,6 +34,16 @@ async function callWorker(functionName: string, taskId: string): Promise<void> {
   }
 }
 
+// Fire and forget: a sweep that fails is retried in two minutes, and making
+// the dispatcher wait on it would delay real work behind housekeeping.
+function sweepExternalAgents(): void {
+  fetch(`${SUPABASE_URL}/functions/v1/worker-grokbot`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({})
+  }).catch((err) => console.error('dispatcher: external agent sweep failed', err));
+}
+
 function retrigger(): void {
   fetch(`${SUPABASE_URL}/functions/v1/dispatcher`, {
     method: 'POST',
@@ -81,6 +91,17 @@ export async function handleRequest(req: Request): Promise<Response> {
   if (processed === MAX_TASKS_PER_INVOCATION) {
     retrigger();
   }
+
+  // Sweep up hand-offs an external agent never accepted.
+  //
+  // This rides the dispatcher's own cron rather than getting one of its own
+  // on purpose. A separate pg_cron entry would have to carry an
+  // Authorization header in a committed migration file, and worker-grokbot
+  // requires the service role key -- so the schedule would mean writing that
+  // key into git. The dispatcher already holds it in its environment and
+  // already runs every two minutes, which is well inside the ten-minute
+  // window an offer stays open.
+  sweepExternalAgents();
 
   return jsonResponse({ ok: true, processed });
 }

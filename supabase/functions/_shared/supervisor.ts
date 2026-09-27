@@ -24,6 +24,7 @@
 // fifteen-page deck when a one-page letterhead was ordered.
 
 import { getSku, resolveSku, expandSku, type CatalogItem } from './catalog.ts';
+import { chooseAgent, externalEnabled, routeForSku } from './agents.ts';
 import { supabaseAdmin } from './storage.ts';
 
 // Which agent owns which block of product numbers. Keyed by the catalog's
@@ -41,6 +42,8 @@ const AGENT_BY_SERVICE: Record<string, string> = {
 };
 
 export interface SupervisedTask {
+  /** Set by /assign on a single task, overriding its product's route. */
+  assigned_agent?: string | null;
   id: string;
   public_id: string;
   type: string;
@@ -171,6 +174,22 @@ export async function superviseTask(task: SupervisedTask): Promise<Routing> {
     };
   }
 
+  // An outside agent may be standing in for the built-in worker on this
+  // product. Decided here rather than in the worker, because the supervisor
+  // is the one place that already answers "who builds this", and having two
+  // places answer it is how a task ends up in neither.
+  const routed = chooseAgent({
+    externalEnabled: externalEnabled(),
+    source: task.source ?? null,
+    assignedAgent: task.assigned_agent ?? null,
+    routedAgent: await routeForSku(item.sku),
+    builtIn: agent
+  });
+
   const corrections = await reconcile(task, item);
-  return { agent, item, corrections };
+  if (routed.external) {
+    corrections.push(`handed to ${routed.agent} (${routed.why.replace('_', ' ')})`);
+  }
+
+  return { agent: routed.agent, item, corrections };
 }

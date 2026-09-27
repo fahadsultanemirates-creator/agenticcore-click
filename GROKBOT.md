@@ -9,11 +9,21 @@ the contract between it and the framework.
 Two Edge Function secrets, in Supabase → project `vuutmxrunxkjydcryeoa` →
 Edge Functions → Secrets:
 
-| Secret | What it is |
-| --- | --- |
-| `GROKBOT_WEBHOOK_URL` | the URL the notice is POSTed to |
-| `GROKBOT_WEBHOOK_KEY` | the shared key: bearer token out, HMAC secret both ways |
-| `GROKBOT_ENABLED` | `true` to arm the path; anything else disables it entirely |
+| Secret | Direction | What it is |
+| --- | --- | --- |
+| `GROKBOT_WEBHOOK_URL` | out | the URL the notice is POSTed to |
+| `GROKBOT_WEBHOOK_KEY` | out | bearer token and signature on what we send |
+| `GROKBOT_CALLBACK_SECRET` | in | the signature on everything Grok Bot sends back |
+| `GROKBOT_ENABLED` | — | `true` to arm the path; anything else disables it entirely |
+
+Two secrets, one per direction, on purpose. The outbound key is a bearer
+token Grok Bot holds in full; the callback secret only ever appears as a
+signature. One key doing both jobs would mean anyone who could read what we
+send could also forge what comes back.
+
+`GROKBOT_CALLBACK_SECRET` falls back to the outbound key when unset, so the
+path works before it is in place — and `/routes` says plainly which of the
+two is being used.
 
 The handoff document named the two values but not the variables, so the code
 also accepts `GROKBOT_URL` / `GROK_BOT_WEBHOOK_URL` for the first and
@@ -80,6 +90,9 @@ Every callback is `POST` to the `callback` URL, signed the same way, with
 | `needs_info` | offered, accepted | `{question}` → task goes to `needs_info`, owner is told |
 | `release` | offered, accepted | hands the job back |
 | `failed` | offered, accepted | reports it could not be done |
+
+Callbacks are signed with `GROKBOT_CALLBACK_SECRET`; the notice we send is
+signed with `GROKBOT_WEBHOOK_KEY`. Both use the same scheme.
 
 The signature covers the timestamp and the exact body bytes, and is refused
 if the timestamp is more than five minutes old — otherwise one captured

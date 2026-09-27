@@ -427,11 +427,19 @@ async function handleRoutesCommand(): Promise<string> {
   // key is missing is a status that is true about the switch and useless
   // about the thing being switched.
   const secrets = grokbotSecretStatus();
-  const ready = secrets.url !== null && secrets.key !== null;
-  const secretLine = ready
-    ? `Webhook secrets found (${secrets.url}, ${secrets.key}).`
-    : `Webhook secrets MISSING — ${secrets.url ? '' : 'no URL, '}${secrets.key ? '' : 'no key, '}` +
-      `so nothing can actually be handed over.\nName them ${secrets.expected.url[0]} and ${secrets.expected.key[0]}.`;
+  const missing: string[] = [];
+  if (!secrets.url) missing.push(secrets.expected.url[0]);
+  if (!secrets.key) missing.push(secrets.expected.key[0]);
+
+  const callbackLine = secrets.callback
+    ? `Callback secret: ${secrets.callback}.`
+    : `Callback secret: NOT SET — falling back to the outbound key, so Grok Bot must sign with that same value. ` +
+      `Set ${secrets.expected.callback[0]} on both sides to separate the two directions.`;
+
+  const secretLine =
+    missing.length === 0
+      ? `Outbound secrets found (${secrets.url}, ${secrets.key}).\n${callbackLine}`
+      : `Outbound secrets MISSING: ${missing.join(', ')} — nothing can be handed over.\n${callbackLine}`;
 
   const header = externalEnabled()
     ? `Grok Bot is switched ON.\n${secretLine}`

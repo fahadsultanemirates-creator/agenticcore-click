@@ -45,13 +45,28 @@ function firstSecret(names: string[]): { name: string; value: string } | null {
 
 export interface GrokbotConfig {
   webhookUrl: string;
+  /** Authenticates US to Grok Bot: bearer token and signature on the way out. */
   sharedKey: string;
+  /** Authenticates GROK BOT to us: the signature on every callback. */
+  callbackSecret: string;
   /** Which environment variable each value came from, for the log. */
-  from: { url: string; key: string };
+  from: { url: string; key: string; callback: string };
 }
 
 const URL_NAMES = ['GROKBOT_WEBHOOK_URL', 'GROKBOT_URL', 'GROK_BOT_WEBHOOK_URL'];
-const KEY_NAMES = ['GROKBOT_WEBHOOK_KEY', 'GROKBOT_KEY', 'GROKBOT_SECRET', 'GROKBOT_API_KEY', 'GROK_BOT_KEY'];
+const KEY_NAMES = ['GROKBOT_WEBHOOK_KEY', 'GROKBOT_KEY', 'GROKBOT_API_KEY', 'GROK_BOT_KEY'];
+
+// A second secret, for the other direction.
+//
+// One key both ways was simpler and weaker: whoever could read what we send
+// could also forge what comes back. Grok Bot asked for a separate callback
+// secret and it is right to -- the outbound key is a bearer token it holds
+// in full, while this one only ever appears as a signature.
+//
+// It falls back to the outbound key when unset, so the path still works
+// before the second secret is in place, and /routes says plainly which of
+// the two is being used.
+const CALLBACK_NAMES = ['GROKBOT_CALLBACK_SECRET', 'GROKBOT_CALLBACK_KEY'];
 
 /**
  * Whether the secrets are actually there, without logging and without
@@ -62,11 +77,17 @@ const KEY_NAMES = ['GROKBOT_WEBHOOK_KEY', 'GROKBOT_KEY', 'GROKBOT_SECRET', 'GROK
  * back in-house and the reason would only have been in the logs. A status
  * command should be able to fail the whole check, not part of it.
  */
-export function grokbotSecretStatus(): { url: string | null; key: string | null; expected: { url: string[]; key: string[] } } {
+export function grokbotSecretStatus(): {
+  url: string | null;
+  key: string | null;
+  callback: string | null;
+  expected: { url: string[]; key: string[]; callback: string[] };
+} {
   return {
     url: firstSecret(URL_NAMES)?.name ?? null,
     key: firstSecret(KEY_NAMES)?.name ?? null,
-    expected: { url: URL_NAMES, key: KEY_NAMES }
+    callback: firstSecret(CALLBACK_NAMES)?.name ?? null,
+    expected: { url: URL_NAMES, key: KEY_NAMES, callback: CALLBACK_NAMES }
   };
 }
 
@@ -80,7 +101,13 @@ export function grokbotConfig(): GrokbotConfig | null {
     );
     return null;
   }
-  return { webhookUrl: url.value, sharedKey: key.value, from: { url: url.name, key: key.name } };
+  const callback = firstSecret(CALLBACK_NAMES);
+  return {
+    webhookUrl: url.value,
+    sharedKey: key.value,
+    callbackSecret: callback?.value ?? key.value,
+    from: { url: url.name, key: key.name, callback: callback?.name ?? `${key.name} (shared, no separate callback secret set)` }
+  };
 }
 
 export interface AgentJob {

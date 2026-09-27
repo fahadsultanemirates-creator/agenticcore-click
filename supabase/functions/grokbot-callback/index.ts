@@ -47,8 +47,10 @@ export async function handleRequest(req: Request): Promise<Response> {
   // The signature covers these exact bytes, so read them once and parse
   // afterwards -- re-serialising the object would change what is signed.
   const raw = await req.text();
+  // The inbound secret, which is not the key we send with -- see the note
+  // on CALLBACK_NAMES in grokbot.ts.
   const check = await verify(
-    config.sharedKey,
+    config.callbackSecret,
     req.headers.get(TIMESTAMP_HEADER) ?? req.headers.get(TIMESTAMP_HEADER.toLowerCase()),
     req.headers.get(SIGNATURE_HEADER) ?? req.headers.get(SIGNATURE_HEADER.toLowerCase()),
     raw

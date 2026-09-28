@@ -22,7 +22,7 @@
 import { supabaseAdmin, uploadDeliverable } from './storage.ts';
 import { addTaskFile, logEvent, markDelivered, markFailed } from './task.ts';
 import { notifyOwner } from './telegram.ts';
-import { sign, SIGNATURE_HEADER, TIMESTAMP_HEADER } from './hmac.ts';
+import { sealNotice } from './noticeEnvelope.ts';
 import { isStatus, movesForward } from './agentJobState.ts';
 import { type ExternalAgent } from './agentRouting.ts';
 import { fileProblem } from './deliverableTypes.ts';
@@ -116,6 +116,16 @@ export function grokbotConfig(): GrokbotConfig | null {
     return null;
   }
   const callback = firstSecret(CALLBACK_NAMES);
+  if (!callback) {
+    // Worth a line in the log rather than a silent fallback. This secret
+    // now signs outbound notices too, so if it is missing here every notice
+    // we send fails verification at the far end -- and the only symptom is
+    // Grok Bot quietly ignoring work while this side reports success.
+    console.error(
+      'grokbot: GROKBOT_CALLBACK_SECRET is not set, falling back to the webhook key. ' +
+        'Notices will only verify if Grok Bot is checking against that same value.'
+    );
+  }
   return {
     webhookUrl: url.value,
     sharedKey: key.value,
@@ -212,22 +222,20 @@ export async function sendNotice(
   job: AgentJob,
   notice: { type: NoticeType; sku: number | null; product: string; brief: string; publicId: string; note?: string }
 ): Promise<void> {
-  // The signature travels in the body as well as the headers.
+  // The signature travels in the body, because nothing else survives.
   //
-  // The first live order arrived at Grok Bot with no signature headers at
-  // all, while the same request returned 200 -- so something between us
-  // strips them, which is ordinary for a webhook relay that forwards only
-  // the payload. A signature that a middlebox can silently remove is not a
-  // signature; it is a header the recipient has to hope survived.
+  // The first live order reached Grok Bot with no signature at all, while
+  // the same request returned 200 -- so it looked fine from here. Their
+  // gateway forwards only content-type and user-agent to their code:
+  // Authorization is consumed by the gateway itself, and every
+  // X-AgenticCore-* header is dropped. That is how the gateway is built,
+  // not a list anybody can add to. A signature a middlebox can silently
+  // remove is not a signature; it is a header the recipient has to hope
+  // survived.
   //
-  // `signedPayload` is the exact string that was signed, carried verbatim.
-  // The alternative -- asking the recipient to re-serialise the object and
-  // hope their JSON matches ours byte for byte -- makes key order and
-  // whitespace part of the security contract, which is how signature
-  // verification quietly breaks later.
-  //
-  // The original fields stay at the root, so nothing that reads the notice
-  // today has to change.
+  // Envelope and canonical form are Grok Bot's spec, not ours to vary: the
+  // two sides have to compute the same string or nothing ever verifies.
+  // See noticeEnvelope.ts for why this signs with the callback secret.
   const payload = {
     type: notice.type,
     job: { id: job.id, token: job.token, acceptBy: job.accept_deadline },
@@ -235,11 +243,7 @@ export async function sendNotice(
     callback: `${SUPABASE_URL}/functions/v1/grokbot-callback`
   };
 
-  const signedPayload = JSON.stringify(payload);
-  const timestamp = String(Math.floor(Date.now() / 1000));
-  const signature = await sign(config.sharedKey, timestamp, signedPayload);
-
-  const body = JSON.stringify({ ...payload, timestamp, signature, signedPayload });
+  const body = JSON.stringify(await sealNotice(config.callbackSecret, payload));
 
   // Three attempts with backoff. One dropped connection should not cost a
   // client their order and send the task round the fallback path -- and a
@@ -257,9 +261,10 @@ export async function sendNotice(
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${config.sharedKey}`,
-          [TIMESTAMP_HEADER]: timestamp,
-          [SIGNATURE_HEADER]: signature
+          // Still sent: the gateway consumes this to authenticate us before
+          // Grok Bot's code runs. It is why the signature cannot also live
+          // up here -- the gateway strips what it does not forward.
+          Authorization: `Bearer ${config.sharedKey}`
         },
         body,
         signal: AbortSignal.timeout(10_000)

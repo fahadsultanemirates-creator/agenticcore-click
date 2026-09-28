@@ -12,18 +12,27 @@ Edge Functions → Secrets:
 | Secret | Direction | What it is |
 | --- | --- | --- |
 | `GROKBOT_WEBHOOK_URL` | out | the URL the notice is POSTed to |
-| `GROKBOT_WEBHOOK_KEY` | out | bearer token and signature on what we send |
-| `GROKBOT_CALLBACK_SECRET` | in | the signature on everything Grok Bot sends back |
+| `GROKBOT_WEBHOOK_KEY` | out | bearer token on what we send, read by Grok Bot's gateway |
+| `GROKBOT_CALLBACK_SECRET` | both | the signature on every notice and every callback |
 | `GROKBOT_ENABLED` | — | `true` to arm the path; anything else disables it entirely |
 
-Two secrets, one per direction, on purpose. The outbound key is a bearer
-token Grok Bot holds in full; the callback secret only ever appears as a
-signature. One key doing both jobs would mean anyone who could read what we
-send could also forge what comes back.
+Two secrets, but not one per direction any more. That was the design, and
+it was better: a bearer token Grok Bot held in full, and a separate secret
+that only ever appeared as a signature, so reading what we send would not
+let anyone forge what comes back.
+
+Grok Bot's gateway consumes `Authorization` before their code runs and
+forwards only `content-type` and `user-agent`. The outbound key therefore
+never reaches the code that would have to check it, which leaves the
+callback secret as the only shared secret that survives the trip in either
+direction. Forced, not chosen — worth restoring if that gateway ever
+forwards a header of its own.
 
 `GROKBOT_CALLBACK_SECRET` falls back to the outbound key when unset, so the
-path works before it is in place — and `/routes` says plainly which of the
-two is being used.
+path works before it is in place — `/routes` says plainly which of the two is
+being used, and the log says so too. Since it now signs outbound notices as
+well, leaving it unset means every notice fails verification at the far end
+while this side reports a clean 200. Set it.
 
 The handoff document named the two values but not the variables, so the code
 also accepts `GROKBOT_URL` / `GROK_BOT_WEBHOOK_URL` for the first and
@@ -64,42 +73,42 @@ sent.
 ```
 POST <GROKBOT_WEBHOOK_URL>
 Authorization: Bearer <GROKBOT_WEBHOOK_KEY>
-X-AgenticCore-Timestamp: <unix seconds>
-X-AgenticCore-Signature: <hex hmac-sha256 of "timestamp.signedPayload">
+Content-Type: application/json
 
 {
-  "type": "task" | "revision" | "cancelled",
-  "job":  { "id": "...", "token": "...", "acceptBy": "<iso8601>" },
-  "task": { "reference": "AC-1007-03", "sku": 52, "product": "...", "brief": "...", "note": "..." },
-  "callback": "https://<project>.supabase.co/functions/v1/grokbot-callback",
-
-  "timestamp": "<unix seconds>",
-  "signature": "<hex hmac-sha256 of timestamp + \".\" + signedPayload>",
-  "signedPayload": "<the JSON string that was signed>"
+  "payload": {
+    "type": "task" | "revision" | "cancelled",
+    "job":  { "id": "...", "token": "...", "acceptBy": "<iso8601>" },
+    "task": { "reference": "AC-1007-03", "sku": 52, "product": "...", "brief": "...", "note": "..." },
+    "callback": "https://<project>.supabase.co/functions/v1/grokbot-callback"
+  },
+  "ts": <unix seconds>,
+  "sig": "<hex hmac-sha256>"
 }
 ```
 
 ### Verifying the notice
 
-The signature is sent **twice**: in the headers, and in the body. The first
-live order reached Grok Bot with no signature headers at all while the same
-request returned 200 — a relay between the two sides strips custom headers,
-which is ordinary behaviour and outside either side's control. A signature a
-middlebox can remove is not a signature.
-
-**Verify against `signedPayload`, not against the raw body.** It is the exact
-string that was signed, carried verbatim:
+The signature is in the body, and only in the body. We used to send it as
+`X-AgenticCore-Timestamp` / `X-AgenticCore-Signature` as well; those headers
+never arrived. Grok Bot's gateway forwards `content-type` and `user-agent`
+and nothing else — not an allowlist that can be opened. A signature a
+middlebox can silently remove is not a signature, so it travels where the
+data travels.
 
 ```
-expected = HMAC_SHA256(GROKBOT_WEBHOOK_KEY, timestamp + "." + signedPayload)
+sig = HMAC_SHA256(GROKBOT_CALLBACK_SECRET, ts + "." + canonical_json(payload))
 ```
 
-Re-serialising the root fields and signing that would make JSON key order and
-whitespace part of the security contract. `signedPayload` avoids it entirely.
+Canonical JSON means: object keys sorted, no whitespace between tokens,
+UTF-8, and no HTML escaping (`&` stays `&`, never `&amp;`). Array order is
+data and is left alone. Both sides must produce byte-identical text or every
+signature fails for a reason invisible in the payload — see
+`_shared/canonicalJson.ts`, and its tests for the cases that matter.
 
-`JSON.parse(signedPayload)` gives the same object as the root fields, which
-remain in place so nothing reading the notice today has to change. Reject a
-notice whose timestamp is more than five minutes old.
+Reject a notice whose `ts` is more than five minutes old, and keep the seen
+`(job.id, ts)` pairs for that window so a captured notice cannot be replayed
+inside it.
 
 ## What Grok Bot sends back
 

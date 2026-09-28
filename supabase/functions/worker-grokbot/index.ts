@@ -17,6 +17,7 @@ import {
   fallbackToBuiltIn,
   expiredJobs,
   overdueJobs,
+  stuckSubmissions,
   grokbotConfig,
   openJob,
   sendNotice,
@@ -68,7 +69,21 @@ async function sweepExpired(): Promise<{ unaccepted: number; abandoned: number }
     ).catch((err) => console.error(`worker-grokbot: fallback failed for job ${job.id}`, err));
   }
 
-  return { unaccepted: unaccepted.length, abandoned: abandoned.length };
+  // Submissions that never finished promoting. 'submitted' should last
+  // seconds; one that has sat for fifteen minutes means the callback died
+  // part-way and nobody else is coming for it.
+  const stuck = await stuckSubmissions();
+  for (const job of stuck) {
+    const { data: task } = await supabaseAdmin.from('tasks').select('public_id').eq('id', job.task_id).maybeSingle();
+    await fallbackToBuiltIn(
+      job,
+      (task?.public_id as string) ?? job.task_id,
+      'Submitted but never finished publishing.',
+      'failed'
+    ).catch((err) => console.error(`worker-grokbot: fallback failed for job ${job.id}`, err));
+  }
+
+  return { unaccepted: unaccepted.length, abandoned: abandoned.length, stuck: stuck.length };
 }
 
 export async function handleRequest(req: Request): Promise<Response> {

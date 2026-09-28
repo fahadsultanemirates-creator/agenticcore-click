@@ -45,8 +45,15 @@ export interface RoutingInputs {
    * dispatcher offers it straight back and the pair trade it forever, one
    * webhook call every two minutes. An agent that has said no to a task has
    * said no to that task.
+   *
+   * REQUIRED, deliberately. It was optional, and the supervisor simply did
+   * not pass it -- so the column was written on every hand-back and read by
+   * nobody, and the loop stayed open. The unit tests passed throughout,
+   * because they tested this function while the caller was the broken part.
+   * A required field makes that particular mistake a compile error instead
+   * of a silent one; pass [] when there are genuinely none.
    */
-  excludedAgents?: string[];
+  excludedAgents: string[];
   /** The worker that would have run before any of this existed. */
   builtIn: string;
 }
@@ -61,7 +68,7 @@ export interface RoutingChoice {
 
 export function chooseAgent(input: RoutingInputs): RoutingChoice {
   const builtIn = (why: RoutingChoice['why']): RoutingChoice => ({ agent: input.builtIn, external: false, why });
-  const excluded = new Set(input.excludedAgents ?? []);
+  const excluded = new Set(input.excludedAgents);
 
   // 1. The switch is off: nothing external, whatever else is configured.
   if (!input.externalEnabled) return builtIn('disabled');

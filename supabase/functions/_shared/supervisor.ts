@@ -44,6 +44,8 @@ const AGENT_BY_SERVICE: Record<string, string> = {
 export interface SupervisedTask {
   /** Set by /assign on a single task, overriding its product's route. */
   assigned_agent?: string | null;
+  /** Agents that have already released, failed or timed out on this task. */
+  excluded_agents?: string[] | null;
   id: string;
   public_id: string;
   type: string;
@@ -183,6 +185,10 @@ export async function superviseTask(task: SupervisedTask): Promise<Routing> {
     source: task.source ?? null,
     assignedAgent: task.assigned_agent ?? null,
     routedAgent: await routeForSku(item.sku),
+    // Agents that already handed this task back. Written on every
+    // hand-back and, until this line existed, read by nobody -- so a
+    // released task went straight back out to the agent that released it.
+    excludedAgents: task.excluded_agents ?? [],
     builtIn: agent
   });
 

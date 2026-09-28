@@ -85,7 +85,10 @@ export async function handleRequest(req: Request): Promise<Response> {
     submit: ['submitted', 'delivered']
   };
   if ((ALREADY[action] ?? []).includes(job.status)) {
-    return jsonResponse({ ok: true, status: job.status, repeated: true });
+    // Repeating an accept should answer the same thing the first one did,
+    // deadline included -- an agent that retried because it never saw the
+    // reply still needs to know when the work is due.
+    return jsonResponse({ ok: true, status: job.status, repeated: true, finishBy: job.work_deadline ?? null });
   }
 
   if (!canAct(action, job.status)) {
@@ -114,7 +117,7 @@ export async function handleRequest(req: Request): Promise<Response> {
         .eq('task_id', task.id);
       return jsonResponse({
         ok: true,
-        job: { id: job.id, status: job.status, acceptBy: job.accept_deadline },
+        job: { id: job.id, status: job.status, acceptBy: job.accept_deadline, finishBy: job.work_deadline ?? null },
         task: {
           reference: task.public_id,
           sku: task.sku,
@@ -134,15 +137,28 @@ export async function handleRequest(req: Request): Promise<Response> {
         accepted_at: new Date().toISOString(),
         work_deadline: workDeadline
       });
-      if (!moved) return jsonResponse({ ok: true, status: 'already moved on', repeated: true });
+      // Losing the race to the expiry sweep is not "already done". Saying
+      // ok here would leave the agent building something that has already
+      // been handed to a built-in worker.
+      if (!moved) {
+        return jsonResponse({ error: 'This job expired before the acceptance arrived.', status: 'expired' }, 409);
+      }
 
       await logEvent(task.id, 'agent_accepted', 'worker', { agent: job.agent, jobId: job.id, workDeadline });
       return jsonResponse({ ok: true, status: 'accepted', finishBy: workDeadline });
     }
 
     case 'progress': {
+      // Not a status change -- accepted to accepted is refused, and rightly
+      // so, which silently threw the note away. A progress note is just a
+      // note, so write it as one.
       const note = typeof body.note === 'string' ? body.note.slice(0, 500) : '';
-      await setJobStatus(job.id, 'accepted', { note });
+      const { error: noteError } = await supabaseAdmin
+        .from('agent_jobs')
+        .update({ note, updated_at: new Date().toISOString() })
+        .eq('id', job.id)
+        .eq('status', 'accepted');
+      if (noteError) console.error(`grokbot-callback: could not record progress on ${job.id}`, noteError);
       return jsonResponse({ ok: true });
     }
 
@@ -191,7 +207,18 @@ export async function handleRequest(req: Request): Promise<Response> {
     // The only action that reaches the client. Files are copied out of
     // staging together, so a half-uploaded set never appears on a dashboard.
     case 'submit': {
-      await setJobStatus(job.id, 'submitted', { submitted_at: new Date().toISOString() });
+      // If this did not move the job, something else already closed it --
+      // the expiry sweep, a release, a racing duplicate. Delivering anyway
+      // would hand the client files for a task a built-in worker is already
+      // rebuilding, and they would receive the order twice.
+      const claimed = await setJobStatus(job.id, 'submitted', { submitted_at: new Date().toISOString() });
+      if (!claimed) {
+        return jsonResponse(
+          { error: 'This job was closed before the submission arrived; it has been re-queued in-house.', status: job.status },
+          409
+        );
+      }
+
       try {
         const count = await promoteAndDeliver(job, task.public_id as string, task.owner_channel_id as string | null);
         return jsonResponse({ ok: true, delivered: count });

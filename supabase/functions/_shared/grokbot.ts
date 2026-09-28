@@ -24,6 +24,7 @@ import { addTaskFile, logEvent, markDelivered } from './task.ts';
 import { notifyOwner } from './telegram.ts';
 import { sign, SIGNATURE_HEADER, TIMESTAMP_HEADER } from './hmac.ts';
 import { isStatus, movesForward } from './agentJobState.ts';
+import { fileProblem } from './deliverableTypes.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const STAGING_BUCKET = 'agent-staging';
@@ -228,6 +229,9 @@ export async function sendNotice(
   let lastProblem = '';
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
+      // Ten seconds. A webhook that accepts the connection and then never
+      // answers would otherwise hold this worker open until the platform
+      // kills the whole invocation -- and the retry below would never run.
       const resp = await fetch(config.webhookUrl, {
         method: 'POST',
         headers: {
@@ -236,7 +240,8 @@ export async function sendNotice(
           [TIMESTAMP_HEADER]: timestamp,
           [SIGNATURE_HEADER]: signature
         },
-        body
+        body,
+        signal: AbortSignal.timeout(10_000)
       });
 
       if (resp.ok) {
@@ -420,41 +425,24 @@ export async function overdueJobs(): Promise<AgentJob[]> {
   return (data as AgentJob[] | null) ?? [];
 }
 
-// What an outside agent is allowed to put in front of a client.
-//
-// Anything staged was uploaded by a process we do not run, and promoting it
-// makes it public and hands it to a paying client. So the deliverable types
-// are a list, not a guess -- an HTML file or a script in the deliverables
-// bucket is served from our own domain, which is somebody else's problem to
-// exploit and ours to have allowed.
-const ALLOWED_TYPES = new Set([
-  'application/pdf',
-  'image/png',
-  'image/jpeg',
-  'image/webp',
-  'image/svg+xml',
-  'image/gif',
-  'video/mp4',
-  'audio/mpeg',
-  'text/plain',
-  'text/csv',
-  'application/zip',
-  'application/json',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-]);
-
-/** 50 MB. Large enough for a video, small enough that a runaway upload is caught. */
-const MAX_FILE_BYTES = 50 * 1024 * 1024;
-
-export function fileProblem(fileType: string | null, bytes: number): string | null {
-  if (bytes === 0) return 'the file is empty';
-  if (bytes > MAX_FILE_BYTES) return `the file is ${Math.round(bytes / 1024 / 1024)} MB, over the 50 MB limit`;
-  if (!fileType) return 'no file type was declared';
-  const base = fileType.split(';')[0].trim().toLowerCase();
-  if (!ALLOWED_TYPES.has(base)) return `"${base}" is not a deliverable type we publish`;
-  return null;
+/**
+ * Jobs stuck part-way through being submitted.
+ *
+ * 'submitted' is meant to last seconds: the callback sets it, promotes the
+ * files and closes the job. If promotion throws in a way the handler never
+ * catches -- the function timing out mid-upload, the isolate dying -- the
+ * job sits submitted with the task neither delivered nor re-queued, and
+ * nothing was looking for it. Fifteen minutes is far longer than the step
+ * can legitimately take.
+ */
+export async function stuckSubmissions(): Promise<AgentJob[]> {
+  const cutoff = new Date(Date.now() - 15 * 60_000).toISOString();
+  const { data } = await supabaseAdmin
+    .from('agent_jobs')
+    .select(JOB_COLUMNS)
+    .eq('status', 'submitted')
+    .lt('updated_at', cutoff);
+  return (data as AgentJob[] | null) ?? [];
 }
 
 export { STAGING_BUCKET };

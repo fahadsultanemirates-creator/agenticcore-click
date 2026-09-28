@@ -83,9 +83,9 @@ Every callback is `POST` to the `callback` URL, signed the same way, with
 | action | from | does |
 | --- | --- | --- |
 | `fetch` | offered, accepted, submitted | returns the full brief, payload and existing files |
-| `accept` | offered | claims the job; must happen within 10 minutes |
-| `progress` | accepted | records a note, keeps the job alive |
-| `upload_url` | accepted | `{filename, fileType}` → a one-time signed upload URL into private staging |
+| `accept` | offered | claims the job; must happen within 10 minutes. Returns `finishBy` |
+| `progress` | accepted | records a note |
+| `upload_url` | accepted | `{filename, fileType, idempotencyKey?}` → a one-time signed upload URL into private staging |
 | `submit` | accepted | promotes everything staged into the client's deliverables and closes the task |
 | `needs_info` | offered, accepted | `{question}` → task goes to `needs_info`, owner is told |
 | `release` | offered, accepted | hands the job back |
@@ -102,15 +102,57 @@ A closed job (`delivered`, `released`, `failed`, `expired`) refuses every
 action. By then the task has already been re-queued in-house, and a late
 callback would deliver the same work twice.
 
+### Two deadlines
+
+`accept` must arrive within **10 minutes** of the notice — `acceptBy` says
+when. It returns **`finishBy`**, which is 45 minutes later: submit by then
+or the task goes back to a built-in worker and you get a `cancelled`
+notice. `fetch` returns both, so a restarted agent can recover them.
+
+### Retries
+
+A retried `accept` or `submit` that names something already done returns
+**`200 {ok: true, repeated: true}`**, with `finishBy` on a repeated accept.
+Treat it as success — answering `409` to a retry would make a completed
+step look like a failure.
+
+A genuine conflict still returns **409**: submitting a job that was closed
+first, or accepting one that expired while the acceptance was in flight.
+Both mean the task is already being rebuilt in-house, so stop work on it.
+
+`upload_url` takes an optional **`idempotencyKey`** (the filename is used
+when it is absent). Asking twice with the same key returns the same path
+rather than staging the file twice.
+
+### What may be published
+
+Staged files are checked before *any* of them are promoted, so a bad file
+does not leave a half-delivered order. A file is refused if it is empty,
+over **50 MB**, has no declared type, or is not one of: PDF, PNG, JPEG,
+WebP, GIF, MP4, MP3, plain text, CSV, ZIP, JSON, DOCX, PPTX, XLSX.
+
+**SVG is not publishable.** It is an image everywhere except in a browser,
+where it is a document that can carry script — and deliverables are served
+from our own domain to our own clients.
+
 ## When it goes wrong
 
 All four of these re-queue the task to a built-in worker and tell Fahad on
 Telegram:
 
-- nobody accepted within 10 minutes (swept by the dispatcher every 2 minutes)
+- nobody accepted within 10 minutes
+- accepted but nothing submitted within 45 minutes
 - `release` or `failed`
-- the webhook could not be reached at all
-- `submit` arrived but the staged files could not be read
+- the webhook could not be reached after 3 attempts
+- `submit` arrived but the staged files could not be read or published
+- a submission that began publishing and never finished (stuck 15 minutes)
+
+All of these are swept by the dispatcher every 2 minutes. An agent that had
+*accepted* the job is sent a `cancelled` notice so it can stop working.
+
+An agent that hands a task back is **not offered that task again** — the
+task records who returned it. The product stays routed to that agent for
+every other order.
 
 The client is owed a deliverable either way, and the framework still knows
 how to make one. A task changing hands silently is how a quality problem

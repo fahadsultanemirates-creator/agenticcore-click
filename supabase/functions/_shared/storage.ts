@@ -1,5 +1,6 @@
 import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import type { Bytes } from './bytes.ts';
+import { servableContentType } from './contentType.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -13,7 +14,11 @@ async function uploadTo(bucket: string, scopeId: string, filename: string, data:
   const path = `${scopeId}/${Date.now()}-${filename}`;
 
   const { error } = await supabaseAdmin.storage.from(bucket).upload(path, data, {
-    contentType,
+    // Applied here rather than at each caller, because the content type set
+    // at upload is what Supabase serves the file with forever after -- and
+    // a text deliverable without a charset renders as mojibake in the
+    // client's browser while being perfectly correct on disk.
+    contentType: servableContentType(contentType),
     upsert: false
   });
   if (error) {

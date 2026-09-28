@@ -113,7 +113,12 @@ export async function handleRequest(req: Request): Promise<Response> {
       break;
     }
 
-    const { data: task, error: insertError } = await supabaseAdmin
+    // The result is annotated rather than inferred, because inferring it
+    // is circular: `task` comes from this insert, the insert carries
+    // `parent_task_id: anchorTaskId`, and `anchorTaskId` is assigned from
+    // `task.id` below. TypeScript follows that loop back to the start and
+    // gives up with an implicit any.
+    const { data: task, error: insertError } = (await supabaseAdmin
       .from('tasks')
       .insert({
         public_id: identity.publicId,
@@ -131,7 +136,7 @@ export async function handleRequest(req: Request): Promise<Response> {
         payload
       })
       .select('id, public_id')
-      .single();
+      .single()) as { data: { id: string; public_id: string } | null; error: { message: string } | null };
 
     if (insertError || !task) {
       console.error('forge-submit: task insert failed', insertError);

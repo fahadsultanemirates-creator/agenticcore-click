@@ -26,6 +26,7 @@ import { sign, SIGNATURE_HEADER, TIMESTAMP_HEADER } from './hmac.ts';
 import { isStatus, movesForward } from './agentJobState.ts';
 import { type ExternalAgent } from './agentRouting.ts';
 import { fileProblem } from './deliverableTypes.ts';
+import type { Bytes } from './bytes.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const STAGING_BUCKET = 'agent-staging';
@@ -287,7 +288,7 @@ export async function promoteAndDeliver(job: AgentJob, publicId: string, ownerCh
   // Promoting as we go would leave a client looking at two of four files
   // when the third turns out to be a 200 MB video or a type we do not
   // publish -- a half-delivered order that reads as a finished one.
-  const ready: { name: string; bytes: Uint8Array; type: string }[] = [];
+  const ready: { name: string; bytes: Bytes; type: string }[] = [];
   for (const file of staged) {
     const path = file.storage_path as string;
     const { data: blob, error: downloadError } = await supabaseAdmin.storage.from(STAGING_BUCKET).download(path);

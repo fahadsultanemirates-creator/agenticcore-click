@@ -1,3 +1,4 @@
+import type { Bytes } from './bytes.ts';
 // Grok's real STT/TTS APIs (api.x.ai/v1/stt, /v1/tts) -- confirmed via
 // xAI's own docs, not guessed. STT's `language` field only documents 24
 // explicit codes (no 'ur'), but omitting it just disables number/currency
@@ -15,7 +16,7 @@ export interface Transcription {
   language: string;
 }
 
-export async function transcribeAudio(bytes: Uint8Array, filename: string): Promise<Transcription> {
+export async function transcribeAudio(bytes: Bytes, filename: string): Promise<Transcription> {
   const form = new FormData();
   form.set('file', new Blob([bytes]), filename);
 
@@ -36,7 +37,7 @@ export async function transcribeAudio(bytes: Uint8Array, filename: string): Prom
 
 // Returns raw audio bytes (mp3) ready to send as a Telegram voice note
 // (Telegram accepts mp3 for sendVoice, alongside ogg/opus).
-export async function synthesizeSpeech(text: string, language: string): Promise<Uint8Array> {
+export async function synthesizeSpeech(text: string, language: string): Promise<Bytes> {
   const resp = await fetch(`${XAI_BASE_URL}/tts`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${XAI_API_KEY}`, 'Content-Type': 'application/json' },

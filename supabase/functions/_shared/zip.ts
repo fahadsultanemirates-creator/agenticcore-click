@@ -1,3 +1,4 @@
+import type { Bytes } from './bytes.ts';
 // Minimal, dependency-free ZIP writer (stored/no compression) -- Deno's
 // std no longer ships an archive module, and this only ever needs to
 // package a handful of small text files for Netlify's zip-deploy
@@ -25,7 +26,7 @@ export interface ZipEntry {
   data: Uint8Array;
 }
 
-export function buildZip(entries: ZipEntry[]): Uint8Array {
+export function buildZip(entries: ZipEntry[]): Bytes {
   const encoder = new TextEncoder();
   const localParts: Uint8Array[] = [];
   const centralParts: Uint8Array[] = [];

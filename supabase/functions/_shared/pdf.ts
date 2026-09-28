@@ -23,6 +23,7 @@
 // deck actually looks designed instead of a plain heading+paragraph
 // dump. This module only lays them out; it never calls Grok itself.
 import { renderHtmlToPdf } from './htmlPdf.ts';
+import type { Bytes } from './bytes.ts';
 
 export interface DocSection {
   heading: string;
@@ -190,7 +191,7 @@ function renderSection(section: DocSection, docLanguage: 'en' | 'ur', index: num
     </section>`;
 }
 
-export async function renderDocumentPdf(spec: DocSpec): Promise<Uint8Array> {
+export async function renderDocumentPdf(spec: DocSpec): Promise<Bytes> {
   const language = spec.language ?? 'en';
   const rtl = language === 'ur';
   const titleFont = rtl ? "'Noto Nastaliq Urdu', serif" : "'Fraunces', serif";
@@ -315,7 +316,7 @@ ${FONT_LINK}
 const ASSET_PAGE_WIDTH = 794;
 const ASSET_PAGE_HEIGHT = 1123;
 
-export async function renderBrandKitAsset(spec: DocSpec): Promise<Uint8Array> {
+export async function renderBrandKitAsset(spec: DocSpec): Promise<Bytes> {
   if (spec.stationery) return renderStationery(spec);
 
   const section = spec.sections[0];
@@ -369,7 +370,7 @@ ${FONT_LINK}
 // Printed paper: identity at the top, contact strip at the foot, nothing in
 // between. The middle is empty on purpose -- it is where the client's own
 // letter goes, and it is the reason the product exists.
-async function renderStationery(spec: DocSpec): Promise<Uint8Array> {
+async function renderStationery(spec: DocSpec): Promise<Bytes> {
   const rtl = spec.language === 'ur';
   const fontFamily = rtl ? "'Noto Nastaliq Urdu', serif" : "'Inter', sans-serif";
   const nameColor = spec.brand?.primaryColor ?? '#14161b';

@@ -1,3 +1,4 @@
+import type { Bytes } from './bytes.ts';
 // Thin wrapper around xAI's OpenAI-compatible API (https://api.x.ai/v1).
 // XAI_API_KEY is the only required secret; model names are overridable via
 // env vars so a model rename doesn't require a redeploy.
@@ -46,7 +47,7 @@ export async function grokChat(
   return content;
 }
 
-function bytesToBase64(bytes: Uint8Array): string {
+function bytesToBase64(bytes: Bytes): string {
   let binary = '';
   const chunkSize = 0x8000;
   for (let i = 0; i < bytes.length; i += chunkSize) {
@@ -62,7 +63,7 @@ function bytesToBase64(bytes: Uint8Array): string {
 export async function grokVisionChat(
   systemPrompt: string,
   userText: string,
-  images: { bytes: Uint8Array; mimeType: string }[],
+  images: { bytes: Bytes; mimeType: string }[],
   opts: { temperature?: number; maxTokens?: number } = {}
 ): Promise<string> {
   const content: Record<string, unknown>[] = [{ type: 'text', text: userText }];
@@ -121,7 +122,7 @@ export function extractCodeBlock(text: string, lang?: string): string {
 // a document with many per-slide visuals can burst past that even with
 // caller-side concurrency limits, so this retries a 429 with backoff
 // before giving up rather than failing the whole document.
-export async function grokImage(prompt: string): Promise<Uint8Array> {
+export async function grokImage(prompt: string): Promise<Bytes> {
   const maxAttempts = 4;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const resp = await fetch(`${XAI_BASE_URL}/images/generations`, {

@@ -1,4 +1,5 @@
 import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import type { Bytes } from './bytes.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -8,7 +9,7 @@ export const supabaseAdmin: SupabaseClient = createClient(SUPABASE_URL, SUPABASE
 const DELIVERABLES_BUCKET = 'deliverables';
 const CLIENT_MEDIA_BUCKET = 'client-media';
 
-async function uploadTo(bucket: string, scopeId: string, filename: string, data: Uint8Array, contentType: string): Promise<{ path: string; url: string }> {
+async function uploadTo(bucket: string, scopeId: string, filename: string, data: Bytes, contentType: string): Promise<{ path: string; url: string }> {
   const path = `${scopeId}/${Date.now()}-${filename}`;
 
   const { error } = await supabaseAdmin.storage.from(bucket).upload(path, data, {
@@ -29,7 +30,7 @@ async function uploadTo(bucket: string, scopeId: string, filename: string, data:
 export async function uploadDeliverable(
   taskId: string,
   filename: string,
-  data: Uint8Array,
+  data: Bytes,
   contentType: string
 ): Promise<{ path: string; url: string }> {
   return uploadTo(DELIVERABLES_BUCKET, taskId, filename, data, contentType);
@@ -40,7 +41,7 @@ export async function uploadDeliverable(
 export async function uploadClientMedia(
   scopeId: string,
   filename: string,
-  data: Uint8Array,
+  data: Bytes,
   contentType: string
 ): Promise<{ path: string; url: string }> {
   return uploadTo(CLIENT_MEDIA_BUCKET, scopeId, filename, data, contentType);

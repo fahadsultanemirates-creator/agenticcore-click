@@ -7,6 +7,7 @@
 
 import { previewAudioUrl } from './heygenFields.ts';
 import type { VideoDimension } from './videoFormat.ts';
+import type { Bytes } from './bytes.ts';
 
 // Re-exported so callers that already import the HeyGen client keep working;
 // the shape itself belongs with the code that computes it.
@@ -175,7 +176,7 @@ export async function listVoices(): Promise<CatalogVoice[]> {
 
 // Talking photo: HeyGen's instant custom-avatar path -- one uploaded photo,
 // no training job, no polling. Returns the talking_photo_id synchronously.
-export async function uploadTalkingPhoto(imageBytes: Uint8Array, contentType: string): Promise<string> {
+export async function uploadTalkingPhoto(imageBytes: Bytes, contentType: string): Promise<string> {
   const resp = await fetch(`${HEYGEN_UPLOAD_API}/v1/talking_photo`, {
     method: 'POST',
     headers: { 'X-Api-Key': HEYGEN_API_KEY, 'Content-Type': contentType },
@@ -192,7 +193,7 @@ export async function uploadTalkingPhoto(imageBytes: Uint8Array, contentType: st
   return id;
 }
 
-async function uploadAsset(bytes: Uint8Array, contentType: string): Promise<string> {
+async function uploadAsset(bytes: Bytes, contentType: string): Promise<string> {
   const form = new FormData();
   form.set('file', new Blob([bytes], { type: contentType }));
   const resp = await fetch(`${HEYGEN_API}/v3/assets`, {
@@ -213,7 +214,7 @@ async function uploadAsset(bytes: Uint8Array, contentType: string): Promise<stri
 
 // Voice cloning is async -- HeyGen trains it. Returns a voice_clone_id to
 // poll (see voice-clone-poll), not a usable voice_id yet.
-export async function cloneVoice(audioBytes: Uint8Array, contentType: string, voiceName: string): Promise<string> {
+export async function cloneVoice(audioBytes: Bytes, contentType: string, voiceName: string): Promise<string> {
   const assetId = await uploadAsset(audioBytes, contentType);
 
   const resp = await fetch(`${HEYGEN_API}/v3/voices/clone`, {

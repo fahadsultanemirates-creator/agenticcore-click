@@ -1,3 +1,4 @@
+import type { Bytes } from './bytes.ts';
 // Fetches client/owner-supplied reference files (logos, photos, product
 // shots) from their public client-media URLs so a worker can hand the raw
 // bytes to grokVisionChat. Capped in count and size -- reference material,
@@ -8,7 +9,7 @@ const MAX_ATTACHMENTS = 5;
 const MAX_BYTES_PER_FILE = 8 * 1024 * 1024;
 
 export interface FetchedAttachment {
-  bytes: Uint8Array;
+  bytes: Bytes;
   mimeType: string;
 }
 

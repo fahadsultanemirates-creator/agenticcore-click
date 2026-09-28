@@ -1,3 +1,4 @@
+import type { Bytes } from './bytes.ts';
 // Low-level Telegram Bot API calls -- sending/receiving both text and
 // voice notes. Voice notes: Telegram accepts mp3/ogg-opus/m4a on the way
 // out (sendVoice) and stores incoming ones as .oga (ogg/opus) on the way
@@ -20,7 +21,7 @@ export async function sendTelegramText(chatId: number, text: string): Promise<vo
   }
 }
 
-export async function sendTelegramVoice(chatId: number, mp3Bytes: Uint8Array): Promise<void> {
+export async function sendTelegramVoice(chatId: number, mp3Bytes: Bytes): Promise<void> {
   const form = new FormData();
   form.set('chat_id', String(chatId));
   form.set('voice', new Blob([mp3Bytes], { type: 'audio/mpeg' }), 'reply.mp3');
@@ -68,7 +69,7 @@ export async function sendTelegramPhoto(chatId: number, url: string, caption?: s
   }
 }
 
-export async function downloadTelegramFile(fileId: string): Promise<Uint8Array> {
+export async function downloadTelegramFile(fileId: string): Promise<Bytes> {
   const metaResp = await fetch(`${TELEGRAM_API}/getFile?file_id=${fileId}`);
   if (!metaResp.ok) {
     throw new Error(`Telegram getFile failed (${metaResp.status}): ${await metaResp.text()}`);

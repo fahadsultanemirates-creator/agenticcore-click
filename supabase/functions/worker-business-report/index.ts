@@ -14,6 +14,7 @@ import { sendTelegramDocument } from '../_shared/telegramApi.ts';
 import { addTaskFile, logEvent, markDelivered, markFailed } from '../_shared/task.ts';
 import { jsonResponse } from '../_shared/cors.ts';
 import { requireInternalCaller } from '../_shared/internal.ts';
+import type { Bytes } from '../_shared/bytes.ts';
 
 interface ReportSlide {
   heading: string;
@@ -37,7 +38,7 @@ async function fetchPageText(url: string): Promise<string> {
   }
 }
 
-async function analyzeSite(url: string, desktopShot: Uint8Array, mobileShot: Uint8Array, html: string): Promise<ReportContent> {
+async function analyzeSite(url: string, desktopShot: Bytes, mobileShot: Bytes, html: string): Promise<ReportContent> {
   const raw = await claudeVisionChat(
     'You are a senior web design, UX, and digital marketing consultant preparing a client-facing report. ' +
       'You are given a desktop screenshot, a mobile screenshot, and the raw HTML of a business website. ' +

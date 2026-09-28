@@ -7,6 +7,7 @@
 // HeyGen for avatar video, and Grok STT/TTS for voice, since none of those
 // are things Claude's API does.
 import Anthropic from 'https://esm.sh/@anthropic-ai/sdk@0.125.0';
+import type { Bytes } from './bytes.ts';
 
 const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY')!;
 const MODEL = Deno.env.get('ANTHROPIC_MODEL') || 'claude-opus-5';
@@ -54,7 +55,7 @@ export async function claudeChat(
   return text;
 }
 
-function bytesToBase64(bytes: Uint8Array): string {
+function bytesToBase64(bytes: Bytes): string {
   let binary = '';
   const chunkSize = 0x8000;
   for (let i = 0; i < bytes.length; i += chunkSize) {
@@ -66,7 +67,7 @@ function bytesToBase64(bytes: Uint8Array): string {
 export async function claudeVisionChat(
   systemPrompt: string,
   userText: string,
-  images: { bytes: Uint8Array; mimeType: string }[],
+  images: { bytes: Bytes; mimeType: string }[],
   opts: { maxTokens?: number; effort?: Effort } = {}
 ): Promise<string> {
   const content = [

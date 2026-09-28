@@ -15,7 +15,7 @@
 // intake -- see the note at the top of that file.
 
 import { supabaseAdmin } from '../_shared/storage.ts';
-import { superviseTask } from '../_shared/supervisor.ts';
+import { superviseTask, type SupervisedTask } from '../_shared/supervisor.ts';
 import { markNeedsInfo, logEvent } from '../_shared/task.ts';
 import { jsonResponse } from '../_shared/cors.ts';
 
@@ -65,7 +65,13 @@ export async function handleRequest(req: Request): Promise<Response> {
   let processed = 0;
 
   for (let i = 0; i < MAX_TASKS_PER_INVOCATION; i++) {
-    const { data: task, error } = await supabaseAdmin.rpc('claim_next_task').maybeSingle();
+    // rpc() has no schema to infer a row shape from, so its result is `{}`
+    // and every field access on it is an error under a strict check. The
+    // shape is the function's own contract -- claim_next_task returns a
+    // tasks row -- so it is stated here rather than left unknown.
+    const { data: task, error } = await supabaseAdmin
+      .rpc('claim_next_task')
+      .maybeSingle<SupervisedTask & { id: string }>();
     if (error) {
       console.error('dispatcher: claim_next_task failed', error);
       break;

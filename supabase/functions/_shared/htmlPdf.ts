@@ -1,3 +1,4 @@
+import type { Bytes } from './bytes.ts';
 // Wraps PDFShift (Chromium-based rendering, confirmed via its own docs):
 // real browser text layout, so Arabic/Urdu shapes correctly (pdf-lib's
 // built-in fonts can't do that at all) and normal CSS gives real design
@@ -6,7 +7,7 @@
 const PDFSHIFT_API_KEY = Deno.env.get('PDFSHIFT_API_KEY')!;
 const PDFSHIFT_API = 'https://api.pdfshift.io/v3';
 
-export async function renderHtmlToPdf(html: string, opts: { format?: string; landscape?: boolean } = {}): Promise<Uint8Array> {
+export async function renderHtmlToPdf(html: string, opts: { format?: string; landscape?: boolean } = {}): Promise<Bytes> {
   const resp = await fetch(`${PDFSHIFT_API}/convert/pdf`, {
     method: 'POST',
     headers: { 'X-API-Key': PDFSHIFT_API_KEY, 'Content-Type': 'application/json' },
@@ -26,7 +27,7 @@ export async function renderHtmlToPdf(html: string, opts: { format?: string; lan
 // Screenshots a live URL (not HTML we authored) -- used for the business
 // report's visual review. viewport "375x812" gives a phone-sized render,
 // "1440x900" a desktop one; fullpage captures the whole scrollable page.
-export async function screenshotUrl(url: string, viewport: string, fullpage = true): Promise<Uint8Array> {
+export async function screenshotUrl(url: string, viewport: string, fullpage = true): Promise<Bytes> {
   const resp = await fetch(`${PDFSHIFT_API}/convert/png`, {
     method: 'POST',
     headers: { 'X-API-Key': PDFSHIFT_API_KEY, 'Content-Type': 'application/json' },

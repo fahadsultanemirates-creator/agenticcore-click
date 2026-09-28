@@ -61,7 +61,12 @@ export async function allocateClientOrder(
   const product = resolveSku(type, payload) ?? (typeof payload.sku === 'number' ? getSku(payload.sku) : null);
   if (!product) return null;
 
-  const { data, error } = await supabaseAdmin.rpc('allocate_order', { p_user_id: userId }).maybeSingle();
+  // Same as the dispatcher's claim_next_task: rpc() returns `{}` because
+  // there is no schema to infer from, so the function's own contract is
+  // stated here instead of read off an untyped object.
+  const { data, error } = await supabaseAdmin
+    .rpc('allocate_order', { p_user_id: userId })
+    .maybeSingle<{ account_no: number; order_no: number }>();
   if (error || !data) {
     console.error('allocateClientOrder: allocate_order failed', error);
     return null;

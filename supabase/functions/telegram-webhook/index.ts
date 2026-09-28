@@ -498,8 +498,8 @@ async function handleRoutesCommand(): Promise<string> {
 
   const callbackLine = secrets.callback
     ? `Callback secret: ${secrets.callback}.`
-    : `Callback secret: NOT SET — falling back to the outbound key, so Grok Bot must sign with that same value. ` +
-      `Set ${secrets.expected.callback[0]} on both sides to separate the two directions.`;
+    : `Callback secret: NOT SET — this signs notices going OUT as well as callbacks coming in, so ` +
+      `every notice we send will be rejected as a signature mismatch. Set ${secrets.expected.callback[0]}.`;
 
   const secretLine =
     missing.length === 0

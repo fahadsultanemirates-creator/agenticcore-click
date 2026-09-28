@@ -100,11 +100,21 @@ data travels.
 sig = HMAC_SHA256(GROKBOT_CALLBACK_SECRET, ts + "." + canonical_json(payload))
 ```
 
-Canonical JSON means: object keys sorted, no whitespace between tokens,
-UTF-8, and no HTML escaping (`&` stays `&`, never `&amp;`). Array order is
-data and is left alone. Both sides must produce byte-identical text or every
-signature fails for a reason invisible in the payload — see
+Canonical JSON means: object keys sorted by code unit, no whitespace between
+tokens, UTF-8, and no HTML escaping (`&` stays `&`, never `&amp;`). Array
+order is data and is left alone. Both sides must produce byte-identical text
+or every signature fails for a reason invisible in the payload — see
 `_shared/canonicalJson.ts`, and its tests for the cases that matter.
+
+It builds the string itself rather than sorting an object's keys and handing
+that to `JSON.stringify`. The first version did the latter, which does not
+work: JavaScript keeps integer-like keys in ascending *numeric* order ahead
+of every string key, whatever order they were inserted in, so `{"10":…}` and
+`{"9":…}` came back out numerically sorted rather than lexicographically.
+Grok Bot found it by differential-testing their verifier against ours. No
+notice payload has a numeric key, so it cost nothing — but the symptom, the
+first time one did, would be a signature mismatch between two
+implementations that both look correct.
 
 Reject a notice whose `ts` is more than five minutes old, and keep the seen
 `(job.id, ts)` pairs for that window so a captured notice cannot be replayed

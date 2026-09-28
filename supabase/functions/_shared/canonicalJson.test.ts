@@ -79,5 +79,38 @@ test('a notice payload canonicalises the same either way', () => {
   assert.ok(canonicalJson(a).includes('Caption & hashtag pack'), 'the ampersand must survive');
 });
 
+// The bug Grok Bot found by differential-testing their verifier against
+// ours. The first version sorted the keys and then handed the rebuilt
+// object to JSON.stringify, which puts integer-like keys in ascending
+// NUMERIC order ahead of every string key -- so "10" came out after "9"
+// instead of before it. Lexicographic sort is what the spec says, and now
+// what the code does.
+test('integer-like keys sort lexicographically, not numerically', () => {
+  assert.equal(canonicalJson({ '10': 'a', '9': 'b', z: 'c' }), '{"10":"a","9":"b","z":"c"}');
+  assert.equal(canonicalJson({ '2': 1, '10': 2, '1': 3 }), '{"1":3,"10":2,"2":1}');
+});
+
+test('integer-like keys sort the same whichever order they are built in', () => {
+  assert.equal(canonicalJson({ '9': 1, '10': 2 }), canonicalJson({ '10': 2, '9': 1 }));
+});
+
+test('a numeric key mixed with string keys keeps one ordering', () => {
+  assert.equal(canonicalJson({ b: 1, '7': 2, a: 3 }), '{"7":2,"a":3,"b":1}');
+});
+
+// A Date would otherwise serialise as its own (empty) key list.
+test('values with toJSON resolve the way JSON.stringify resolves them', () => {
+  assert.equal(canonicalJson({ at: new Date('2026-09-28T20:06:13.000Z') }), '{"at":"2026-09-28T20:06:13.000Z"}');
+});
+
+// Dropping the element instead would shift every index after it.
+test('undefined inside an array becomes null, keeping positions', () => {
+  assert.equal(canonicalJson({ xs: [1, undefined, 3] }), '{"xs":[1,null,3]}');
+});
+
+test('nested arrays of objects are sorted inside but kept in order', () => {
+  assert.equal(canonicalJson([{ b: 1, '2': 2 }, { a: 3 }]), '[{"2":2,"b":1},{"a":3}]');
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

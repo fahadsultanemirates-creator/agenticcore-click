@@ -13,6 +13,7 @@ import { sendBotMessage, getOwnerLanguage } from '../_shared/botMessage.ts';
 import { sendTelegramDocument } from '../_shared/telegramApi.ts';
 import { addTaskFile, logEvent, markDelivered, markFailed } from '../_shared/task.ts';
 import { jsonResponse } from '../_shared/cors.ts';
+import { requireInternalCaller } from '../_shared/internal.ts';
 
 interface ReportSlide {
   heading: string;
@@ -143,6 +144,11 @@ async function generateAllSlideVisuals(
 
 export async function handleRequest(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response(null, { headers: {} });
+
+  // Dispatcher only. verify_jwt accepts the anon key from the browser
+  // bundle, so this is the check that actually keeps the door shut.
+  const denied = requireInternalCaller(req);
+  if (denied) return denied;
 
   let body: any;
   try {

@@ -15,6 +15,7 @@ import { sendTelegramDocument, sendTelegramPhoto } from '../_shared/telegramApi.
 import { notifyOwner } from '../_shared/telegram.ts';
 import { addTaskFile, logEvent, markDelivered, markFailed, markNeedsInfo } from '../_shared/task.ts';
 import { jsonResponse } from '../_shared/cors.ts';
+import { requireInternalCaller } from '../_shared/internal.ts';
 
 const IMAGE_REQUEST_TYPES = new Set(['posts', 'profile']);
 const DEFAULT_OPTION_COUNT = 3;
@@ -193,6 +194,11 @@ async function handleCopyRequest(taskId: string, version: number, payload: Recor
 
 export async function handleRequest(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response(null, { headers: {} });
+
+  // Dispatcher only. verify_jwt accepts the anon key from the browser
+  // bundle, so this is the check that actually keeps the door shut.
+  const denied = requireInternalCaller(req);
+  if (denied) return denied;
 
   let body: any;
   try {

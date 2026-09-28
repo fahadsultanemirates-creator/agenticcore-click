@@ -25,6 +25,7 @@ import { screenshotUrl } from '../_shared/htmlPdf.ts';
 import { addTaskFile, logEvent, markDelivered, markFailed, markNeedsInfo } from '../_shared/task.ts';
 import { notifyOwner } from '../_shared/telegram.ts';
 import { jsonResponse } from '../_shared/cors.ts';
+import { requireInternalCaller } from '../_shared/internal.ts';
 import type { DocSpec } from '../_shared/pdf.ts';
 import { resolveSku, shapeInstruction, needsPricing, specOf, type CatalogItem } from '../_shared/catalog.ts';
 import { getBrandProfile, brandFactsForPrompt, brandStyleForPrompt, extractUrl, normalizeUrl, type BrandProfile } from '../_shared/brandProfile.ts';
@@ -330,6 +331,11 @@ function triggerPdfRender(taskId: string): void {
 
 export async function handleRequest(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response(null, { headers: {} });
+
+  // Dispatcher only. verify_jwt accepts the anon key from the browser
+  // bundle, so this is the check that actually keeps the door shut.
+  const denied = requireInternalCaller(req);
+  if (denied) return denied;
 
   let body: any;
   try {

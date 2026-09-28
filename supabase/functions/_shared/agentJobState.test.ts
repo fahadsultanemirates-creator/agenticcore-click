@@ -1,7 +1,7 @@
 // Run with: node --experimental-strip-types supabase/functions/_shared/agentJobState.test.ts
 
 import assert from 'node:assert/strict';
-import { ALLOWED_FROM, canAct, isClosed, isKnownAction, type JobAction } from './agentJobState.ts';
+import { ALLOWED_FROM, canAct, isClosed, isKnownAction, movesForward, type JobAction } from './agentJobState.ts';
 
 let passed = 0;
 let failed = 0;
@@ -67,6 +67,43 @@ test('no action can act from a status that is not real', () => {
     assert.equal(canAct(action, 'in_progress'), false);
     assert.equal(canAct(action, ''), false);
   }
+});
+
+// The second bug the review found. fallbackToBuiltIn wrote back the status
+// it had read a moment earlier, so releasing an accepted job set it to
+// 'released' and then straight back to 'accepted' -- leaving a closed job
+// open to be acted on again.
+test('a job never moves backwards', () => {
+  assert.equal(movesForward('accepted', 'offered'), false);
+  assert.equal(movesForward('submitted', 'accepted'), false);
+  assert.equal(movesForward('released', 'accepted'), false, 'the exact regression');
+});
+
+test('a job moves forward along the line', () => {
+  assert.ok(movesForward('offered', 'accepted'));
+  assert.ok(movesForward('accepted', 'submitted'));
+  assert.ok(movesForward('submitted', 'delivered'));
+  assert.ok(movesForward('offered', 'expired'));
+  assert.ok(movesForward('accepted', 'failed'));
+});
+
+// Two callbacks arriving together, or a sweep racing a release: whichever
+// lands second must be refused, not applied on top.
+test('a finished job cannot be finished a second way', () => {
+  for (const ending of ['delivered', 'released', 'failed', 'expired']) {
+    for (const next of ['delivered', 'released', 'failed', 'expired', 'accepted']) {
+      assert.equal(movesForward(ending, next), false, `${ending} → ${next} must be refused`);
+    }
+  }
+});
+
+test('the same status twice is not a move', () => {
+  assert.equal(movesForward('accepted', 'accepted'), false);
+});
+
+test('a status nobody defined is not a move', () => {
+  assert.equal(movesForward('offered', 'in_progress'), false);
+  assert.equal(movesForward('made_up', 'delivered'), false);
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

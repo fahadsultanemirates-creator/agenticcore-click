@@ -5,9 +5,15 @@
 
 import { listAvatars, listVoices } from '../_shared/heygen.ts';
 import { jsonResponse } from '../_shared/cors.ts';
+import { requireInternalCaller } from '../_shared/internal.ts';
 
 export async function handleRequest(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response(null, { headers: {} });
+
+  // A read-only proxy onto HeyGen, but one that spends our API quota on
+  // every call, so it is not left open to anyone holding the anon key.
+  const denied = requireInternalCaller(req);
+  if (denied) return denied;
 
   const url = new URL(req.url);
   const kind = url.searchParams.get('kind');

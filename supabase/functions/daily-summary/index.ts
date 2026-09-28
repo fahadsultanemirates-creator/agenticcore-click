@@ -7,6 +7,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { sendBotMessage, getOwnerLanguage } from '../_shared/botMessage.ts';
 import { jsonResponse } from '../_shared/cors.ts';
+import { requireInternalCaller } from '../_shared/internal.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -16,6 +17,11 @@ const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
 export async function handleRequest(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response(null, { headers: {} });
+
+  // pg_cron only. verify_jwt accepts the anon key from the site bundle,
+  // and this one reports the day's revenue and task counts.
+  const denied = requireInternalCaller(req);
+  if (denied) return denied;
   if (!OWNER_TELEGRAM_ID) return jsonResponse({ ok: false, error: 'OWNER_TELEGRAM_ID not set' }, 500);
 
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();

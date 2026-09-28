@@ -19,6 +19,7 @@ import { jsonResponse } from '../_shared/cors.ts';
 import { verify, SIGNATURE_HEADER, TIMESTAMP_HEADER } from '../_shared/hmac.ts';
 import { canAct, isKnownAction } from '../_shared/agentJobState.ts';
 import {
+  WORK_WINDOW_MINUTES,
   fallbackToBuiltIn,
   grokbotConfig,
   jobByToken,
@@ -72,9 +73,24 @@ export async function handleRequest(req: Request): Promise<Response> {
   if (!job) return deny('unknown job token');
 
   if (!isKnownAction(action)) return jsonResponse({ error: `Unknown action "${action}"` }, 400);
+
+  // A retry of something that already happened is success, not a conflict.
+  //
+  // An agent whose connection dropped mid-reply does not know whether we
+  // got it, so it sends again. Answering 409 makes a completed step look
+  // like a failure and pushes a working agent into the fallback path; the
+  // honest answer is "yes, that is done".
+  const ALREADY: Partial<Record<typeof action, string[]>> = {
+    accept: ['accepted', 'submitted'],
+    submit: ['submitted', 'delivered']
+  };
+  if ((ALREADY[action] ?? []).includes(job.status)) {
+    return jsonResponse({ ok: true, status: job.status, repeated: true });
+  }
+
   if (!canAct(action, job.status)) {
-    // Not an auth failure, so it says so plainly -- an agent recovering from
-    // a crash needs to know the job moved on without it.
+    // Genuinely out of order -- an agent recovering from a crash needs to
+    // know the job moved on without it.
     return jsonResponse({ error: `Cannot ${action} a job that is ${job.status}`, status: job.status }, 409);
   }
 
@@ -111,9 +127,17 @@ export async function handleRequest(req: Request): Promise<Response> {
     }
 
     case 'accept': {
-      await setJobStatus(job.id, 'accepted', { accepted_at: new Date().toISOString() });
-      await logEvent(task.id, 'agent_accepted', 'worker', { agent: job.agent, jobId: job.id });
-      return jsonResponse({ ok: true, status: 'accepted' });
+      // Accepting starts a second clock. Without it a job could be taken
+      // and then abandoned, and nothing was watching for that.
+      const workDeadline = new Date(Date.now() + WORK_WINDOW_MINUTES * 60_000).toISOString();
+      const moved = await setJobStatus(job.id, 'accepted', {
+        accepted_at: new Date().toISOString(),
+        work_deadline: workDeadline
+      });
+      if (!moved) return jsonResponse({ ok: true, status: 'already moved on', repeated: true });
+
+      await logEvent(task.id, 'agent_accepted', 'worker', { agent: job.agent, jobId: job.id, workDeadline });
+      return jsonResponse({ ok: true, status: 'accepted', finishBy: workDeadline });
     }
 
     case 'progress': {
@@ -129,17 +153,39 @@ export async function handleRequest(req: Request): Promise<Response> {
       const filename = String(body.filename ?? '').replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 120);
       if (!filename) return jsonResponse({ error: 'filename is required' }, 400);
 
-      const path = `${job.id}/${Date.now()}-${filename}`;
-      const { data, error } = await supabaseAdmin.storage.from(STAGING_BUCKET).createSignedUploadUrl(path);
+      // The agent's own name for the file is its identity. Asking twice for
+      // the same one -- a retry after a dropped connection -- has to mean
+      // the same file, or the client receives it twice.
+      const clientKey = String(body.idempotencyKey ?? filename);
+
+      const { data: existing } = await supabaseAdmin
+        .from('agent_job_files')
+        .select('storage_path')
+        .eq('job_id', job.id)
+        .eq('client_key', clientKey)
+        .maybeSingle();
+
+      const path = (existing?.storage_path as string | undefined) ?? `${job.id}/${Date.now()}-${filename}`;
+      const { data, error } = await supabaseAdmin.storage
+        .from(STAGING_BUCKET)
+        .createSignedUploadUrl(path, { upsert: true });
       if (error || !data) return jsonResponse({ error: 'Could not create an upload URL' }, 500);
 
-      await supabaseAdmin.from('agent_job_files').insert({
-        job_id: job.id,
-        storage_path: path,
-        file_type: typeof body.fileType === 'string' ? body.fileType : null
-      });
+      if (!existing) {
+        const { error: insertError } = await supabaseAdmin.from('agent_job_files').insert({
+          job_id: job.id,
+          storage_path: path,
+          client_key: clientKey,
+          file_type: typeof body.fileType === 'string' ? body.fileType : null
+        });
+        // A unique-violation here means two identical requests raced; the
+        // other one won and the row exists, which is the outcome we wanted.
+        if (insertError && insertError.code !== '23505') {
+          return jsonResponse({ error: 'Could not stage that file' }, 500);
+        }
+      }
 
-      return jsonResponse({ ok: true, uploadUrl: data.signedUrl, token: data.token, path });
+      return jsonResponse({ ok: true, uploadUrl: data.signedUrl, token: data.token, path, repeated: !!existing });
     }
 
     // The only action that reaches the client. Files are copied out of
@@ -162,24 +208,26 @@ export async function handleRequest(req: Request): Promise<Response> {
 
     case 'needs_info': {
       const question = String(body.question ?? '').slice(0, 2000) || 'The agent needs more information to continue.';
-      await setJobStatus(job.id, 'released', { closed_at: new Date().toISOString(), note: question });
+      const closed = await setJobStatus(job.id, 'released', { closed_at: new Date().toISOString(), note: question });
+      if (!closed) return jsonResponse({ ok: true, repeated: true });
       await supabaseAdmin.from('tasks').update({ assigned_agent: null }).eq('id', task.id);
       await markNeedsInfo(task.id, question);
       await notifyOwner(`${task.public_id} — Grok Bot needs more information.\n\n${question}`).catch(() => {});
       return jsonResponse({ ok: true });
     }
 
+    // Both of these close the job inside fallbackToBuiltIn, which is the
+    // only place allowed to. Setting the status here first is what
+    // overwrote it with the stale value and left released jobs open.
     case 'release': {
       const note = String(body.note ?? '').slice(0, 500) || 'The agent released the job.';
-      await setJobStatus(job.id, 'released');
-      await fallbackToBuiltIn(job as AgentJob, task.public_id as string, note);
+      await fallbackToBuiltIn(job as AgentJob, task.public_id as string, note, 'released');
       return jsonResponse({ ok: true });
     }
 
     case 'failed': {
       const note = String(body.note ?? '').slice(0, 500) || 'The agent reported a failure.';
-      await setJobStatus(job.id, 'failed');
-      await fallbackToBuiltIn(job as AgentJob, task.public_id as string, note);
+      await fallbackToBuiltIn(job as AgentJob, task.public_id as string, note, 'failed');
       return jsonResponse({ ok: true });
     }
   }

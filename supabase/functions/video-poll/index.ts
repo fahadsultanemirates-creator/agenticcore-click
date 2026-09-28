@@ -14,6 +14,7 @@ import { addTaskFile, logEvent, markDelivered, markFailed } from '../_shared/tas
 import { sendTelegramVideo } from '../_shared/telegramApi.ts';
 import { notifyOwner } from '../_shared/telegram.ts';
 import { jsonResponse } from '../_shared/cors.ts';
+import { requireInternalCaller } from '../_shared/internal.ts';
 
 // A finished render that nobody is told about is not a delivery.
 //
@@ -38,6 +39,10 @@ async function handOver(
 
 export async function handleRequest(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response(null, { headers: {} });
+
+  // pg_cron only. verify_jwt accepts the anon key from the site bundle.
+  const denied = requireInternalCaller(req);
+  if (denied) return denied;
 
   const { data: pending, error } = await supabaseAdmin
     .from('tasks')

@@ -37,6 +37,16 @@ export interface RoutingInputs {
   assignedAgent: string | null;
   /** agent_routes for this product, when the owner assigned the SKU. */
   routedAgent: string | null;
+  /**
+   * Agents that already gave this task back.
+   *
+   * Without this the hand-back is a loop: releasing a task clears its
+   * assignment, but the product is still routed to the same agent, so the
+   * dispatcher offers it straight back and the pair trade it forever, one
+   * webhook call every two minutes. An agent that has said no to a task has
+   * said no to that task.
+   */
+  excludedAgents?: string[];
   /** The worker that would have run before any of this existed. */
   builtIn: string;
 }
@@ -46,11 +56,12 @@ export interface RoutingChoice {
   /** True when the work leaves this codebase. */
   external: boolean;
   /** Which rule decided, so a surprising route is explainable from the log. */
-  why: 'disabled' | 'owner' | 'task_override' | 'sku_route' | 'built_in';
+  why: 'disabled' | 'owner' | 'task_override' | 'sku_route' | 'built_in' | 'handed_back';
 }
 
 export function chooseAgent(input: RoutingInputs): RoutingChoice {
   const builtIn = (why: RoutingChoice['why']): RoutingChoice => ({ agent: input.builtIn, external: false, why });
+  const excluded = new Set(input.excludedAgents ?? []);
 
   // 1. The switch is off: nothing external, whatever else is configured.
   if (!input.externalEnabled) return builtIn('disabled');
@@ -59,13 +70,20 @@ export function chooseAgent(input: RoutingInputs): RoutingChoice {
   if (input.source === 'owner') return builtIn('owner');
 
   // 3. This exact task was pointed somewhere.
-  if (input.assignedAgent) {
+  if (input.assignedAgent && !excluded.has(input.assignedAgent)) {
     return { agent: input.assignedAgent, external: input.assignedAgent !== input.builtIn, why: 'task_override' };
   }
 
   // 4. This product was assigned.
-  if (input.routedAgent) {
+  if (input.routedAgent && !excluded.has(input.routedAgent)) {
     return { agent: input.routedAgent, external: input.routedAgent !== input.builtIn, why: 'sku_route' };
+  }
+
+  // Every candidate has already handed this task back. Say so distinctly
+  // from a plain built-in route, because "it was offered out and came back"
+  // and "it was never offered out" look identical in a log otherwise.
+  if ((input.assignedAgent && excluded.has(input.assignedAgent)) || (input.routedAgent && excluded.has(input.routedAgent))) {
+    return builtIn('handed_back');
   }
 
   return builtIn('built_in');

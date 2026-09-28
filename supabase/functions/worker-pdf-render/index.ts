@@ -14,6 +14,7 @@ import { generateBrandVisual, mapWithConcurrency } from '../_shared/images.ts';
 import { sendTelegramDocument } from '../_shared/telegramApi.ts';
 import { addTaskFile, logEvent, markDelivered, markFailed } from '../_shared/task.ts';
 import { jsonResponse } from '../_shared/cors.ts';
+import { requireInternalCaller } from '../_shared/internal.ts';
 
 // One real illustration per section, tied to that section's own heading/body
 // -- the same fix applied to the business report -- so a short section
@@ -35,6 +36,11 @@ async function generateSectionVisuals(taskId: string, sections: DocSection[], im
 
 export async function handleRequest(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response(null, { headers: {} });
+
+  // Chained from worker-pdf and from the pg_cron safety net, never from a
+  // browser. verify_jwt accepts the anon key from the site bundle.
+  const denied = requireInternalCaller(req);
+  if (denied) return denied;
 
   let body: any;
   try {

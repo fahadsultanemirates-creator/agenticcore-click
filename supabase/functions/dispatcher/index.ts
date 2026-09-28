@@ -34,14 +34,22 @@ async function callWorker(functionName: string, taskId: string): Promise<void> {
   }
 }
 
-// Fire and forget: a sweep that fails is retried in two minutes, and making
-// the dispatcher wait on it would delay real work behind housekeeping.
-function sweepExternalAgents(): void {
-  fetch(`${SUPABASE_URL}/functions/v1/worker-grokbot`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({})
-  }).catch((err) => console.error('dispatcher: external agent sweep failed', err));
+// Awaited, not fired and forgotten.
+//
+// An un-awaited fetch is not a background task here: the isolate can be
+// torn down the moment this function returns its response, so the request
+// may never leave. A sweep that silently never runs is worse than a slow
+// one -- expired jobs would sit until somebody noticed by hand.
+async function sweepExternalAgents(): Promise<void> {
+  try {
+    await fetch(`${SUPABASE_URL}/functions/v1/worker-grokbot`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
+    });
+  } catch (err) {
+    console.error('dispatcher: external agent sweep failed', err);
+  }
 }
 
 function retrigger(): void {
@@ -101,7 +109,7 @@ export async function handleRequest(req: Request): Promise<Response> {
   // key into git. The dispatcher already holds it in its environment and
   // already runs every two minutes, which is well inside the ten-minute
   // window an offer stays open.
-  sweepExternalAgents();
+  await sweepExternalAgents();
 
   return jsonResponse({ ok: true, processed });
 }

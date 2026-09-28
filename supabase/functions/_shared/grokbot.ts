@@ -23,12 +23,23 @@ import { supabaseAdmin, uploadDeliverable } from './storage.ts';
 import { addTaskFile, logEvent, markDelivered } from './task.ts';
 import { notifyOwner } from './telegram.ts';
 import { sign, SIGNATURE_HEADER, TIMESTAMP_HEADER } from './hmac.ts';
+import { isStatus, movesForward } from './agentJobState.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const STAGING_BUCKET = 'agent-staging';
 
 /** Minutes an offer stays open before it goes back to a built-in worker. */
 export const ACCEPT_WINDOW_MINUTES = 10;
+
+/**
+ * Minutes an accepted job has to finish.
+ *
+ * accept_deadline only governs the offer. Without this a job that was
+ * accepted and then went quiet stayed open forever with nothing watching
+ * it -- the client waits, the sweep ignores it because it is not 'offered',
+ * and nobody finds out until somebody asks.
+ */
+export const WORK_WINDOW_MINUTES = 45;
 
 // The handoff document says "the two values Fahad already copied" without
 // naming the variables, and a wrong guess here fails as a silent 401 rather
@@ -117,6 +128,7 @@ export interface AgentJob {
   status: string;
   token: string;
   accept_deadline: string;
+  work_deadline?: string | null;
   note: string | null;
 }
 
@@ -133,7 +145,7 @@ export async function openJob(taskId: string, agent: string): Promise<AgentJob> 
   const { data, error } = await supabaseAdmin
     .from('agent_jobs')
     .insert({ task_id: taskId, agent, token, accept_deadline: deadline })
-    .select('id, task_id, agent, status, token, accept_deadline, note')
+    .select('id, task_id, agent, status, token, accept_deadline, work_deadline, note')
     .single();
   if (error) throw new Error(`Could not open an agent job: ${error.message}`);
 
@@ -144,18 +156,42 @@ export async function openJob(taskId: string, agent: string): Promise<AgentJob> 
 export async function jobByToken(token: string): Promise<AgentJob | null> {
   const { data } = await supabaseAdmin
     .from('agent_jobs')
-    .select('id, task_id, agent, status, token, accept_deadline, note')
+    .select('id, task_id, agent, status, token, accept_deadline, work_deadline, note')
     .eq('token', token)
     .maybeSingle();
   return (data as AgentJob | null) ?? null;
 }
 
-export async function setJobStatus(jobId: string, status: string, patch: Record<string, unknown> = {}): Promise<void> {
-  const { error } = await supabaseAdmin
+/**
+ * Move a job forward, and only forward.
+ *
+ * The status is checked in the UPDATE itself rather than read first and
+ * written after, because two callbacks arriving together would both pass a
+ * read-then-write check and the later one would win. Postgres decides.
+ *
+ * Returns false when the move was refused, which callers treat as "somebody
+ * else already moved it" rather than as an error -- that is exactly what a
+ * retried callback looks like.
+ */
+export async function setJobStatus(jobId: string, status: string, patch: Record<string, unknown> = {}): Promise<boolean> {
+  if (!isStatus(status)) throw new Error(`Unknown job status "${status}"`);
+
+  // The statuses this move is legal from, computed here so the condition
+  // lives with the rule rather than being spelled out at each call site.
+  const from = (['offered', 'accepted', 'submitted'] as const).filter((current) => movesForward(current, status));
+  if (from.length === 0) return false;
+
+  const { data, error } = await supabaseAdmin
     .from('agent_jobs')
     .update({ status, updated_at: new Date().toISOString(), ...patch })
-    .eq('id', jobId);
+    .eq('id', jobId)
+    .in('status', from)
+    .select('id');
   if (error) throw new Error(`Could not set job ${jobId} to ${status}: ${error.message}`);
+
+  const moved = (data?.length ?? 0) > 0;
+  if (!moved) console.warn(`grokbot: refused to move job ${jobId} to ${status} -- it has already moved on`);
+  return moved;
 }
 
 export type NoticeType = 'task' | 'revision' | 'cancelled';
@@ -183,21 +219,42 @@ export async function sendNotice(
   const timestamp = String(Math.floor(Date.now() / 1000));
   const signature = await sign(config.sharedKey, timestamp, body);
 
-  const resp = await fetch(config.webhookUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${config.sharedKey}`,
-      [TIMESTAMP_HEADER]: timestamp,
-      [SIGNATURE_HEADER]: signature
-    },
-    body
-  });
+  // Three attempts with backoff. One dropped connection should not cost a
+  // client their order and send the task round the fallback path -- and a
+  // webhook restarting is ordinary, not exceptional.
+  //
+  // Only transport failures and 5xx are retried. A 4xx means the notice
+  // itself is wrong, and sending it again changes nothing.
+  let lastProblem = '';
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const resp = await fetch(config.webhookUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${config.sharedKey}`,
+          [TIMESTAMP_HEADER]: timestamp,
+          [SIGNATURE_HEADER]: signature
+        },
+        body
+      });
 
-  if (!resp.ok) {
-    throw new Error(`Grok Bot webhook responded ${resp.status}: ${(await resp.text().catch(() => '')).slice(0, 300)}`);
+      if (resp.ok) {
+        await jobEvent(job.id, 'notice_sent', { type: notice.type, status: resp.status, attempt });
+        return;
+      }
+
+      lastProblem = `${resp.status}: ${(await resp.text().catch(() => '')).slice(0, 300)}`;
+      if (resp.status < 500) break;
+    } catch (err) {
+      lastProblem = err instanceof Error ? err.message : String(err);
+    }
+
+    if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, attempt * 1000));
   }
-  await jobEvent(job.id, 'notice_sent', { type: notice.type, status: resp.status });
+
+  await jobEvent(job.id, 'notice_failed', { type: notice.type, problem: lastProblem });
+  throw new Error(`Grok Bot webhook did not accept the notice — ${lastProblem}`);
 }
 
 /**
@@ -219,19 +276,32 @@ export async function promoteAndDeliver(job: AgentJob, publicId: string, ownerCh
   const { data: task } = await supabaseAdmin.from('tasks').select('version').eq('id', job.task_id).maybeSingle();
   const version = (task?.version as number | undefined) ?? 1;
 
-  let index = 0;
+  // Read and check EVERY file before publishing ANY of them.
+  //
+  // Promoting as we go would leave a client looking at two of four files
+  // when the third turns out to be a 200 MB video or a type we do not
+  // publish -- a half-delivered order that reads as a finished one.
+  const ready: { name: string; bytes: Uint8Array; type: string }[] = [];
   for (const file of staged) {
-    const { data: blob, error: downloadError } = await supabaseAdmin.storage
-      .from(STAGING_BUCKET)
-      .download(file.storage_path as string);
-    if (downloadError || !blob) throw new Error(`Could not read staged file ${file.storage_path}: ${downloadError?.message}`);
+    const path = file.storage_path as string;
+    const { data: blob, error: downloadError } = await supabaseAdmin.storage.from(STAGING_BUCKET).download(path);
+    // A row with no object behind it: the agent asked for an upload URL and
+    // never used it, then submitted anyway.
+    if (downloadError || !blob) throw new Error(`Staged file ${path} was never uploaded (${downloadError?.message ?? 'not found'})`);
 
     const bytes = new Uint8Array(await blob.arrayBuffer());
-    const name = (file.storage_path as string).split('/').pop() ?? `deliverable-${index + 1}`;
-    const { url } = await uploadDeliverable(job.task_id, name, bytes, (file.file_type as string) ?? 'application/octet-stream');
+    const type = ((file.file_type as string) || blob.type || '').trim();
+    const problem = fileProblem(type || null, bytes.byteLength);
+    if (problem) throw new Error(`Cannot publish ${path}: ${problem}`);
 
+    ready.push({ name: path.split('/').pop() ?? `deliverable-${ready.length + 1}`, bytes, type });
+  }
+
+  let index = 0;
+  for (const file of ready) {
+    const { url } = await uploadDeliverable(job.task_id, file.name, file.bytes, file.type);
     index++;
-    await addTaskFile(job.task_id, { url, fileType: (file.file_type as string) ?? null, optionIndex: index, version });
+    await addTaskFile(job.task_id, { url, fileType: file.type, optionIndex: index, version });
   }
 
   await logEvent(job.task_id, 'agent_delivered', 'worker', { agent: job.agent, files: index, jobId: job.id });
@@ -253,17 +323,41 @@ export async function promoteAndDeliver(job: AgentJob, publicId: string, ownerCh
  * its external assignment cleared -- and the owner is told, because a task
  * silently changing hands is how a quality problem becomes a mystery.
  */
-export async function fallbackToBuiltIn(job: AgentJob, publicId: string, reason: string): Promise<void> {
+export async function fallbackToBuiltIn(
+  job: AgentJob,
+  publicId: string,
+  reason: string,
+  endedAs: 'expired' | 'released' | 'failed' = job.status === 'offered' ? 'expired' : 'released'
+): Promise<void> {
+  // Close the job FIRST. Re-queueing a task whose job is still open is what
+  // let a late callback deliver work for a task a built-in worker was
+  // already building.
+  const closed = await setJobStatus(job.id, endedAs, { closed_at: new Date().toISOString(), note: reason });
+  if (!closed) {
+    // Somebody already closed it -- a duplicate release, or the sweep and a
+    // callback arriving together. The first one did all of this.
+    console.warn(`grokbot: job ${job.id} was already closed; not re-queueing again`);
+    return;
+  }
+
+  // The agent that handed this back must not be offered it again. Clearing
+  // assigned_agent alone left the product still routed to them, so the
+  // dispatcher handed it straight back: an infinite loop at one webhook
+  // call every two minutes.
+  await excludeAgent(job.task_id, job.agent);
+
   await supabaseAdmin
     .from('tasks')
     .update({ assigned_agent: null, status: 'queued', updated_at: new Date().toISOString() })
     .eq('id', job.task_id);
 
-  await setJobStatus(job.id, job.status === 'offered' ? 'expired' : job.status, {
-    closed_at: new Date().toISOString(),
-    note: reason
-  });
-  await jobEvent(job.id, 'fell_back', { reason });
+  // Only when they had actually taken it. An unaccepted offer expiring is
+  // not news to anybody.
+  if (job.status === 'accepted' || job.status === 'submitted') {
+    await sendCancelled(job, publicId, reason);
+  }
+
+  await jobEvent(job.id, 'fell_back', { reason, endedAs });
   await logEvent(job.task_id, 'agent_fallback', 'worker', { agent: job.agent, reason });
 
   await notifyOwner(
@@ -271,14 +365,96 @@ export async function fallbackToBuiltIn(job: AgentJob, publicId: string, reason:
   ).catch(() => {});
 }
 
-/** Jobs that are past their deadline and still nobody's. */
+/**
+ * Tell the agent a job it may still be working on is no longer theirs.
+ *
+ * Best effort by design: the task has already moved on by the time this is
+ * sent, so a failure to deliver the news must not undo that. It exists so
+ * an agent is not still rendering something nobody will accept.
+ */
+export async function sendCancelled(job: AgentJob, publicId: string, reason: string): Promise<void> {
+  const config = grokbotConfig();
+  if (!config) return;
+  await sendNotice(config, job, {
+    type: 'cancelled',
+    sku: null,
+    product: '',
+    brief: '',
+    publicId,
+    note: reason
+  }).catch((err) => console.error(`grokbot: could not tell ${job.agent} that ${publicId} was cancelled`, err));
+}
+
+/** Record that this agent will not be offered this task again. */
+async function excludeAgent(taskId: string, agent: string): Promise<void> {
+  const { data } = await supabaseAdmin.from('tasks').select('excluded_agents').eq('id', taskId).maybeSingle();
+  const current = (data?.excluded_agents as string[] | null) ?? [];
+  if (current.includes(agent)) return;
+  const { error } = await supabaseAdmin
+    .from('tasks')
+    .update({ excluded_agents: [...current, agent] })
+    .eq('id', taskId);
+  if (error) console.error(`grokbot: could not exclude ${agent} from task ${taskId}`, error);
+}
+
+const JOB_COLUMNS = 'id, task_id, agent, status, token, accept_deadline, work_deadline, note';
+
+/** Offers nobody took. */
 export async function expiredJobs(): Promise<AgentJob[]> {
   const { data } = await supabaseAdmin
     .from('agent_jobs')
-    .select('id, task_id, agent, status, token, accept_deadline, note')
+    .select(JOB_COLUMNS)
     .eq('status', 'offered')
     .lt('accept_deadline', new Date().toISOString());
   return (data as AgentJob[] | null) ?? [];
+}
+
+/** Jobs that were accepted and then went quiet. */
+export async function overdueJobs(): Promise<AgentJob[]> {
+  const { data } = await supabaseAdmin
+    .from('agent_jobs')
+    .select(JOB_COLUMNS)
+    .eq('status', 'accepted')
+    .not('work_deadline', 'is', null)
+    .lt('work_deadline', new Date().toISOString());
+  return (data as AgentJob[] | null) ?? [];
+}
+
+// What an outside agent is allowed to put in front of a client.
+//
+// Anything staged was uploaded by a process we do not run, and promoting it
+// makes it public and hands it to a paying client. So the deliverable types
+// are a list, not a guess -- an HTML file or a script in the deliverables
+// bucket is served from our own domain, which is somebody else's problem to
+// exploit and ours to have allowed.
+const ALLOWED_TYPES = new Set([
+  'application/pdf',
+  'image/png',
+  'image/jpeg',
+  'image/webp',
+  'image/svg+xml',
+  'image/gif',
+  'video/mp4',
+  'audio/mpeg',
+  'text/plain',
+  'text/csv',
+  'application/zip',
+  'application/json',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+]);
+
+/** 50 MB. Large enough for a video, small enough that a runaway upload is caught. */
+const MAX_FILE_BYTES = 50 * 1024 * 1024;
+
+export function fileProblem(fileType: string | null, bytes: number): string | null {
+  if (bytes === 0) return 'the file is empty';
+  if (bytes > MAX_FILE_BYTES) return `the file is ${Math.round(bytes / 1024 / 1024)} MB, over the 50 MB limit`;
+  if (!fileType) return 'no file type was declared';
+  const base = fileType.split(';')[0].trim().toLowerCase();
+  if (!ALLOWED_TYPES.has(base)) return `"${base}" is not a deliverable type we publish`;
+  return null;
 }
 
 export { STAGING_BUCKET };

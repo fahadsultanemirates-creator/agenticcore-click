@@ -388,8 +388,13 @@ async function handleVoicesCommand(chatId: number, raw?: string): Promise<string
 
 async function handleAssignCommand(skuText: string, agentWord: string): Promise<string> {
   const sku = Number(skuText);
+  if (!Number.isInteger(sku)) return 'Give me a product number, for example /assign 52 grokbot.';
+
   const item = getSku(sku);
   if (!item) return `There is no product ${sku}. Send /products for the list.`;
+  // The business report is ours to write about a client; it is not theirs
+  // to order and not anybody else's to build.
+  if (item.ownerOnly) return `${sku} — ${item.name} is owner-only, so it never leaves the framework.`;
 
   const agent = agentWord.toLowerCase() === 'grokbot' ? GROKBOT_AGENT : agentWord;
   if (agent !== GROKBOT_AGENT) return `I only know one external agent: grokbot.`;
@@ -409,11 +414,28 @@ async function handleAssignCommand(skuText: string, agentWord: string): Promise<
 
 async function handleUnassignCommand(skuText: string): Promise<string> {
   const sku = Number(skuText);
+  if (!Number.isInteger(sku)) return 'Give me a product number, for example /unassign 52.';
   const item = getSku(sku);
+
   try {
     const removed = await clearRoute(sku);
-    if (!removed) return `${sku} was not assigned to anyone.`;
-    return `${sku} — ${item?.name ?? 'product'} is back to the built-in worker.`;
+
+    // Removing the product's route is not enough on its own: a task pinned
+    // to that agent by hand still goes to it, so unassigning a product
+    // would look done and not be.
+    const { data: pinned } = await supabaseAdmin
+      .from('tasks')
+      .update({ assigned_agent: null })
+      .eq('sku', sku)
+      .not('assigned_agent', 'is', null)
+      .in('status', ['queued', 'needs_info'])
+      .select('public_id');
+
+    const freed = pinned?.length ?? 0;
+    const alsoFreed = freed > 0 ? ` ${freed} pinned task${freed === 1 ? '' : 's'} released too.` : '';
+
+    if (!removed && freed === 0) return `${sku} was not assigned to anyone.`;
+    return `${sku} — ${item?.name ?? 'product'} is back to the built-in worker.${alsoFreed}`;
   } catch (err) {
     console.error('telegram-webhook: /unassign failed', err);
     return `Could not unassign product ${sku}.`;
@@ -481,16 +503,25 @@ async function handleFallbackCommand(publicId: string): Promise<string> {
     .maybeSingle();
   if (!task) return `No task called ${publicId}.`;
 
-  const { data: job } = await supabaseAdmin
+  // A task can have more than one open job -- a revision opens a second
+  // one, and a race can leave two. maybeSingle() throws on that rather than
+  // returning any of them, so the command failed exactly when it was most
+  // needed. Take them all back.
+  const { data: jobs } = await supabaseAdmin
     .from('agent_jobs')
-    .select('id, task_id, agent, status, token, accept_deadline, note')
+    .select('id, task_id, agent, status, token, accept_deadline, work_deadline, note')
     .eq('task_id', task.id)
     .in('status', ['offered', 'accepted', 'submitted'])
-    .maybeSingle();
-  if (!job) return `${task.public_id} has no open external job.`;
+    .order('created_at', { ascending: false });
 
-  await fallbackToBuiltIn(job as never, task.public_id as string, 'Taken back by the owner.');
-  return `${task.public_id} has been taken back from ${job.agent} and re-queued in-house.`;
+  const open = jobs ?? [];
+  if (open.length === 0) return `${task.public_id} has no open external job.`;
+
+  for (const job of open) {
+    await fallbackToBuiltIn(job as never, task.public_id as string, 'Taken back by the owner.', 'released');
+  }
+  const agents = [...new Set(open.map((job) => job.agent))].join(', ');
+  return `${task.public_id} has been taken back from ${agents} and re-queued in-house.`;
 }
 
 async function handleAddCatalogCommand(kind: 'avatar' | 'voice', providerId: string, name: string): Promise<string> {

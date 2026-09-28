@@ -106,5 +106,34 @@ test('every decision says which rule made it', () => {
   assert.deepEqual([...reasons].sort(), ['built_in', 'disabled', 'owner', 'sku_route', 'task_override']);
 });
 
+// The worst bug the first review found: releasing a task cleared its
+// assignment, but the product was still routed to the same agent, so the
+// dispatcher offered it straight back. The pair would have traded one task
+// forever, a webhook call every two minutes, with nobody watching.
+test('an agent that handed a task back is not offered it again', () => {
+  const choice = chooseAgent({ ...base, routedAgent: 'worker-grokbot', excludedAgents: ['worker-grokbot'] });
+  assert.equal(choice.agent, 'worker-pdf');
+  assert.equal(choice.external, false);
+  assert.equal(choice.why, 'handed_back');
+});
+
+test('an exclusion beats a per-task override too', () => {
+  const choice = chooseAgent({ ...base, assignedAgent: 'worker-grokbot', excludedAgents: ['worker-grokbot'] });
+  assert.equal(choice.agent, 'worker-pdf');
+  assert.equal(choice.why, 'handed_back');
+});
+
+// Handing back one task must not take the agent off the product.
+test('excluding an agent on one task leaves the route intact for others', () => {
+  const other = chooseAgent({ ...base, routedAgent: 'worker-grokbot', excludedAgents: [] });
+  assert.equal(other.agent, 'worker-grokbot');
+});
+
+test('an exclusion naming a different agent changes nothing', () => {
+  const choice = chooseAgent({ ...base, routedAgent: 'worker-grokbot', excludedAgents: ['worker-someone-else'] });
+  assert.equal(choice.agent, 'worker-grokbot');
+  assert.equal(choice.why, 'sku_route');
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

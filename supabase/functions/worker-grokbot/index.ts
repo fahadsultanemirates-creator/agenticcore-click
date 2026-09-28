@@ -13,7 +13,20 @@ import { requireInternalCaller } from '../_shared/internal.ts';
 import { resolveSku, specOf } from '../_shared/catalog.ts';
 import { missingRequired, infoRequest } from '../_shared/requirements.ts';
 import { getBrandProfile, extractUrl, normalizeUrl } from '../_shared/brandProfile.ts';
-import { fallbackToBuiltIn, expiredJobs, grokbotConfig, openJob, sendNotice, ACCEPT_WINDOW_MINUTES } from '../_shared/grokbot.ts';
+import {
+  fallbackToBuiltIn,
+  expiredJobs,
+  overdueJobs,
+  grokbotConfig,
+  openJob,
+  sendNotice,
+  ACCEPT_WINDOW_MINUTES,
+  WORK_WINDOW_MINUTES
+} from '../_shared/grokbot.ts';
+
+function revisionNotes(payload: Record<string, unknown>): string[] {
+  return Array.isArray(payload.revisionNotes) ? (payload.revisionNotes as string[]) : [];
+}
 
 function brandUrlFor(payload: Record<string, unknown>): string | null {
   const explicit = typeof payload.url === 'string' ? payload.url : null;
@@ -29,17 +42,33 @@ function brandUrlFor(payload: Record<string, unknown>): string | null {
  * that goes unanswered is not an error state to investigate later, it is
  * simply a decision to stop waiting.
  */
-async function sweepExpired(): Promise<number> {
-  const stale = await expiredJobs();
-  for (const job of stale) {
+async function sweepExpired(): Promise<{ unaccepted: number; abandoned: number }> {
+  const unaccepted = await expiredJobs();
+  for (const job of unaccepted) {
     const { data: task } = await supabaseAdmin.from('tasks').select('public_id').eq('id', job.task_id).maybeSingle();
     await fallbackToBuiltIn(
       job,
       (task?.public_id as string) ?? job.task_id,
-      `Not accepted within ${ACCEPT_WINDOW_MINUTES} minutes.`
+      `Not accepted within ${ACCEPT_WINDOW_MINUTES} minutes.`,
+      'expired'
     ).catch((err) => console.error(`worker-grokbot: fallback failed for job ${job.id}`, err));
   }
-  return stale.length;
+
+  // Accepted and then silent. The first sweep only looked at offers, so a
+  // job that was taken and abandoned stayed open with nobody watching it
+  // and the client simply waiting.
+  const abandoned = await overdueJobs();
+  for (const job of abandoned) {
+    const { data: task } = await supabaseAdmin.from('tasks').select('public_id').eq('id', job.task_id).maybeSingle();
+    await fallbackToBuiltIn(
+      job,
+      (task?.public_id as string) ?? job.task_id,
+      `Accepted but not delivered within ${WORK_WINDOW_MINUTES} minutes.`,
+      'expired'
+    ).catch((err) => console.error(`worker-grokbot: fallback failed for job ${job.id}`, err));
+  }
+
+  return { unaccepted: unaccepted.length, abandoned: abandoned.length };
 }
 
 export async function handleRequest(req: Request): Promise<Response> {
@@ -54,8 +83,7 @@ export async function handleRequest(req: Request): Promise<Response> {
 
   // Called with no task: this is the cron sweep.
   if (!body?.taskId) {
-    const recovered = await sweepExpired();
-    return jsonResponse({ ok: true, swept: recovered });
+    return jsonResponse({ ok: true, swept: await sweepExpired() });
   }
 
   const taskId = String(body.taskId);
@@ -91,12 +119,16 @@ export async function handleRequest(req: Request): Promise<Response> {
 
     const job = await openJob(taskId, 'grokbot');
     await sendNotice(config, job, {
-      type: (payload.revisionNotes as unknown[] | undefined)?.length ? 'revision' : 'task',
+      type: revisionNotes(payload).length > 0 ? 'revision' : 'task',
       sku: product?.sku ?? null,
       product: product?.name ?? task.type,
       brief: String(payload.description ?? payload.brief ?? ''),
       publicId: task.public_id as string,
-      note: typeof payload.revisionNote === 'string' ? payload.revisionNote : undefined
+      // The latest note, not a field that never existed. Every other worker
+      // reads `revisionNotes`; this read `revisionNote`, so a client's
+      // revision instructions reached Grok Bot as undefined and it rebuilt
+      // the same thing.
+      note: revisionNotes(payload).at(-1)
     });
 
     await logEvent(taskId, 'handed_to_agent', 'worker', {

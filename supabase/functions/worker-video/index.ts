@@ -30,6 +30,7 @@ import { submitGrokVideo } from '../_shared/grokVideo.ts';
 import { notifyOwner } from '../_shared/telegram.ts';
 import { logEvent, markNeedsInfo, markFailed, setProviderJob } from '../_shared/task.ts';
 import { jsonResponse } from '../_shared/cors.ts';
+import { requireInternalCaller } from '../_shared/internal.ts';
 
 // Owner-sourced tasks (Telegram /new, or a free-text brief the bot's
 // classifier turned into a task) carry only payload.brief -- none of the
@@ -241,6 +242,13 @@ const NO_AVATAR_CLIP_SECONDS = 10;
 
 export async function handleRequest(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response(null, { headers: {} });
+
+  // Called by the dispatcher or by pg_cron, never by a browser. Supabase's
+  // verify_jwt gate accepts the anon key, which ships in the site's own
+  // bundle, so without this anyone who opened the page could spend a
+  // HeyGen render.
+  const denied = requireInternalCaller(req);
+  if (denied) return denied;
 
   let body: any;
   try {

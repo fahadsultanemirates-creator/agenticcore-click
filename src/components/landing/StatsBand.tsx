@@ -3,7 +3,7 @@ import { Reveal } from "../Reveal";
 const stats = [
   { value: "20 min", label: "average turnaround*" },
   { value: "$20", label: "starting price*" },
-  { value: "8", label: "services (and counting)" },
+  { value: "7", label: "services (and counting)" },
   { value: "0", label: "meetings required" },
 ];
 

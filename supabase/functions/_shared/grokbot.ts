@@ -295,7 +295,7 @@ export async function sendNotice(
  * dashboard reads the public bucket. Nothing is promoted until the agent has
  * said it is finished, so a client never sees a partial upload.
  */
-export async function promoteAndDeliver(job: AgentJob, publicId: string, ownerChannelId?: string | null): Promise<number> {
+export async function promoteAndDeliver(job: AgentJob, publicId: string, _ownerChannelId?: string | null): Promise<number> {
   const { data: staged, error } = await supabaseAdmin
     .from('agent_job_files')
     .select('id, storage_path, file_type')

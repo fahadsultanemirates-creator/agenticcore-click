@@ -1,20 +1,15 @@
-import { Check, Copy, CreditCard, Loader2, QrCode, Sparkles, Wallet } from "lucide-react";
+import { Check, Loader2, Sparkles, Wallet } from "lucide-react";
 import { useEffect, useState } from "react";
 import { flagshipPackage, walletPackages } from "../../data/packages";
 import { supabase } from "../../lib/supabase";
-import { UsdtIcon } from "../icons/UsdtIcon";
 
-type Method = "card" | "usdt" | "payram";
 type CheckStatus = { status: "pending" | "confirmed" | "cancelled" } | { error: string };
 
-const DUMMY_ADDRESS = "TQrY8...mock...9fZk (TRC20)";
 const POLL_INTERVAL_MS = 4000;
 const POLL_MAX_ATTEMPTS = 45; // ~3 minutes
 
 export function BillingSection() {
   const [selectedWallet, setSelectedWallet] = useState("wallet-10");
-  const [method, setMethod] = useState<Method>("card");
-  const [copied, setCopied] = useState(false);
   const [payramLoading, setPayramLoading] = useState(false);
   const [payramError, setPayramError] = useState("");
   const [pollingInvoiceId, setPollingInvoiceId] = useState<string | null>(null);
@@ -155,16 +150,6 @@ export function BillingSection() {
     }
   };
 
-  const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(DUMMY_ADDRESS);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // clipboard not available — non-critical in this mockup
-    }
-  };
-
   return (
     <section className="border-t border-border py-10">
       <div>
@@ -256,112 +241,36 @@ export function BillingSection() {
         </div>
 
         <div className="mt-8 rounded-2xl border border-border bg-surface p-6">
-          <p className="font-display text-lg font-semibold text-fg">Payment method</p>
+          <p className="font-display text-lg font-semibold text-fg">Payment</p>
           <p className="mt-1 text-sm text-fg-muted">
-            PayRam is live. Card and USDT are still preview-only for now.
+            Card and USDT are coming. For now top-ups go through PayRam, which takes card and
+            crypto both.
           </p>
 
-          <div className="mt-4 flex flex-wrap gap-2">
+          <div className="mt-5 rounded-xl border border-dashed border-yellow-400/30 bg-void p-5">
+            <p className="text-sm text-fg-muted">
+              A new tab will open to add{" "}
+              <span className="font-semibold text-fg">
+                {walletPackages.find((p) => p.id === selectedWallet)?.price}
+              </span>{" "}
+              to your wallet — this page will confirm it automatically once it lands.
+            </p>
+            {payramError && <p className="mt-2 text-sm text-yellow-400">{payramError}</p>}
+            {pollingInvoiceId && (
+              <p className="mt-2 flex items-center gap-1.5 text-sm text-fg-muted">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" /> Waiting for payment confirmation...
+              </p>
+            )}
             <button
               type="button"
-              onClick={() => setMethod("card")}
-              className={`flex items-center gap-2 rounded-full border-2 px-4 py-2 text-sm font-semibold transition-colors ${
-                method === "card" ? "border-yellow-400 text-fg" : "border-border text-fg-muted hover:border-yellow-400/40"
-              }`}
+              onClick={handlePayramContinue}
+              disabled={payramLoading || !!pollingInvoiceId}
+              className="mt-3 flex items-center gap-2 rounded-full bg-yellow-400 px-4 py-2 text-sm font-semibold text-void transition-transform hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              <CreditCard className="h-4 w-4" /> Card
-            </button>
-            <button
-              type="button"
-              onClick={() => setMethod("usdt")}
-              className={`flex items-center gap-2 rounded-full border-2 px-4 py-2 text-sm font-semibold transition-colors ${
-                method === "usdt" ? "border-yellow-400 text-fg" : "border-border text-fg-muted hover:border-yellow-400/40"
-              }`}
-            >
-              <UsdtIcon className="h-4 w-4" /> USDT
-            </button>
-            <button
-              type="button"
-              onClick={() => setMethod("payram")}
-              className={`flex items-center gap-2 rounded-full border-2 px-4 py-2 text-sm font-semibold transition-colors ${
-                method === "payram" ? "border-yellow-400 text-fg" : "border-border text-fg-muted hover:border-yellow-400/40"
-              }`}
-            >
-              <Wallet className="h-4 w-4" /> PayRam
+              {payramLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wallet className="h-4 w-4" />}
+              {payramLoading ? "Starting payment..." : "Continue to PayRam"}
             </button>
           </div>
-
-          {method === "card" && (
-            <div className="mt-5 grid gap-3 sm:grid-cols-2">
-              <input
-                disabled
-                placeholder="Card number"
-                className="rounded-xl border-2 border-border bg-void px-3.5 py-2.5 text-sm text-fg-faint placeholder:text-fg-faint"
-              />
-              <input
-                disabled
-                placeholder="MM/YY · CVC"
-                className="rounded-xl border-2 border-border bg-void px-3.5 py-2.5 text-sm text-fg-faint placeholder:text-fg-faint"
-              />
-            </div>
-          )}
-
-          {method === "usdt" && (
-            <div className="mt-5 flex flex-col gap-4 sm:flex-row sm:items-center">
-              <div className="flex h-24 w-24 shrink-0 items-center justify-center rounded-xl border-2 border-dashed border-yellow-400/30 bg-void">
-                <QrCode className="h-10 w-10 text-fg-faint" />
-              </div>
-              <div className="flex-1">
-                <p className="text-xs font-semibold tracking-wide text-fg-muted uppercase">
-                  Send USDT (TRC20) to
-                </p>
-                <div className="mt-1.5 flex items-center gap-2">
-                  <code className="truncate rounded-lg bg-void px-3 py-2 text-sm text-fg">{DUMMY_ADDRESS}</code>
-                  <button
-                    type="button"
-                    onClick={handleCopy}
-                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border-2 border-border text-fg-muted transition-colors hover:border-yellow-400/50 hover:text-fg"
-                    aria-label="Copy address"
-                  >
-                    {copied ? <Check className="h-4 w-4 text-yellow-400" /> : <Copy className="h-4 w-4" />}
-                  </button>
-                </div>
-                <button
-                  type="button"
-                  className="mt-3 rounded-full bg-yellow-400 px-4 py-2 text-sm font-semibold text-void transition-transform hover:-translate-y-0.5"
-                >
-                  I've sent payment
-                </button>
-              </div>
-            </div>
-          )}
-
-          {method === "payram" && (
-            <div className="mt-5 rounded-xl border border-dashed border-yellow-400/30 bg-void p-5">
-              <p className="text-sm text-fg-muted">
-                A new tab will open to add{" "}
-                <span className="font-semibold text-fg">
-                  {walletPackages.find((p) => p.id === selectedWallet)?.price}
-                </span>{" "}
-                to your wallet — this page will confirm it automatically once it lands.
-              </p>
-              {payramError && <p className="mt-2 text-sm text-yellow-400">{payramError}</p>}
-              {pollingInvoiceId && (
-                <p className="mt-2 flex items-center gap-1.5 text-sm text-fg-muted">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" /> Waiting for payment confirmation...
-                </p>
-              )}
-              <button
-                type="button"
-                onClick={handlePayramContinue}
-                disabled={payramLoading || !!pollingInvoiceId}
-                className="mt-3 flex items-center gap-2 rounded-full bg-yellow-400 px-4 py-2 text-sm font-semibold text-void transition-transform hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {payramLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Wallet className="h-4 w-4" />}
-                {payramLoading ? "Starting payment..." : "Continue to PayRam"}
-              </button>
-            </div>
-          )}
         </div>
       </div>
     </section>

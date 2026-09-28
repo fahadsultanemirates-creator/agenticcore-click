@@ -21,7 +21,7 @@ import { claudeChat, claudeVisionChat } from '../_shared/claude.ts';
 import { fetchAttachments } from '../_shared/attachments.ts';
 import { generateBrandVisual } from '../_shared/images.ts';
 import { generateQrSvg } from '../_shared/qrcode.ts';
-import { screenshotUrl } from '../_shared/htmlPdf.ts';
+
 import { addTaskFile, logEvent, markDelivered, markFailed, markNeedsInfo } from '../_shared/task.ts';
 import { notifyOwner } from '../_shared/telegram.ts';
 import { jsonResponse } from '../_shared/cors.ts';
@@ -34,8 +34,6 @@ import { missingRequired, infoRequest } from '../_shared/requirements.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-
-
 
 // Which URL this product should learn the client's brand from: the explicit
 // field when the form collected one, otherwise a URL mentioned in the brief,
@@ -173,7 +171,6 @@ async function generateStationerySpec(catalogItem: CatalogItem, payload: Record<
     stationery: { businessName, headerLines: headerLines.slice(0, 2), footerLines }
   };
 }
-
 
 // A revision only differs from the original if the generator is told what to
 // change. Notes are appended to the payload by the revise path; without this

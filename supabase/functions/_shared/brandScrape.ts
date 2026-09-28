@@ -102,12 +102,12 @@ export function scrapeHtml(html: string, baseUrl: string): Partial<BrandProfile>
 
   const socials: Record<string, string> = {};
   const socialHosts: [string, RegExp][] = [
-    ['instagram', /https?:\/\/(?:www\.)?instagram\.com\/[A-Za-z0-9_.\-\/]+/i],
-    ['facebook', /https?:\/\/(?:www\.)?facebook\.com\/[A-Za-z0-9_.\-\/]+/i],
-    ['linkedin', /https?:\/\/(?:www\.)?linkedin\.com\/[A-Za-z0-9_.\-\/]+/i],
-    ['x', /https?:\/\/(?:www\.)?(?:twitter|x)\.com\/[A-Za-z0-9_.\-\/]+/i],
-    ['tiktok', /https?:\/\/(?:www\.)?tiktok\.com\/[@A-Za-z0-9_.\-\/]+/i],
-    ['youtube', /https?:\/\/(?:www\.)?youtube\.com\/[A-Za-z0-9_.\-\/@]+/i],
+    ['instagram', /https?:\/\/(?:www\.)?instagram\.com\/[A-Za-z0-9_.\-/]+/i],
+    ['facebook', /https?:\/\/(?:www\.)?facebook\.com\/[A-Za-z0-9_.\-/]+/i],
+    ['linkedin', /https?:\/\/(?:www\.)?linkedin\.com\/[A-Za-z0-9_.\-/]+/i],
+    ['x', /https?:\/\/(?:www\.)?(?:twitter|x)\.com\/[A-Za-z0-9_.\-/]+/i],
+    ['tiktok', /https?:\/\/(?:www\.)?tiktok\.com\/[@A-Za-z0-9_.\-/]+/i],
+    ['youtube', /https?:\/\/(?:www\.)?youtube\.com\/[A-Za-z0-9_.\-/@]+/i],
     ['whatsapp', /https?:\/\/(?:wa\.me|api\.whatsapp\.com)\/[^\s"'<>]+/i]
   ];
   for (const [name, re] of socialHosts) {

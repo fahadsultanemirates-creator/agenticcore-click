@@ -50,6 +50,7 @@ export function Login() {
               <span className="text-xs font-semibold tracking-wide text-fg-muted uppercase">Email</span>
               <input
                 type="email"
+                autoComplete="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@business.com"
@@ -57,9 +58,15 @@ export function Login() {
               />
             </label>
             <label className="flex flex-col gap-1.5">
-              <span className="text-xs font-semibold tracking-wide text-fg-muted uppercase">Password</span>
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="text-xs font-semibold tracking-wide text-fg-muted uppercase">Password</span>
+                <Link to="/reset" className="text-xs font-semibold text-yellow-400 hover:underline">
+                  Forgot?
+                </Link>
+              </div>
               <input
                 type="password"
+                autoComplete="current-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"

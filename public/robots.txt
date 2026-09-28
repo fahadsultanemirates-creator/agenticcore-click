@@ -1,0 +1,10 @@
+User-agent: *
+Allow: /
+
+# The dashboard and everything under it needs a login, so there is nothing
+# there for a crawler to read. Kept out of the index rather than left to
+# return login pages under a hundred URLs.
+Disallow: /dashboard
+Disallow: /reset
+
+Sitemap: https://agenticcore.click/sitemap.xml

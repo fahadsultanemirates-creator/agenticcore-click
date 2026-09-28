@@ -1,3 +1,5 @@
+import { Fragment } from "react";
+import { Link } from "react-router-dom";
 import { services } from "../../data/services";
 import type { Order } from "../../lib/useOrders";
 
@@ -32,6 +34,32 @@ function revisionNote(order: Order): string | null {
   if (order.revisionsAllowed === 0) return "No revisions included";
   const left = Math.max(0, order.revisionsAllowed - order.revisionsUsed);
   return `${left} of ${order.revisionsAllowed} revision${order.revisionsAllowed === 1 ? "" : "s"} left`;
+}
+
+// A stalled order needs to say what it is stalled on. The badge alone left
+// the client with "Needs info" and nowhere to go; Forge is where they answer,
+// so the note points at it.
+function StatusReason({ order }: { order: Order }) {
+  if (!order.statusReason) return null;
+  const failed = order.status === "failed";
+  return (
+    <div
+      className={`rounded-xl border px-3 py-2 text-[12px] leading-relaxed ${
+        failed ? "border-red-400/30 bg-red-400/5 text-fg-muted" : "border-orange-400/30 bg-orange-400/5 text-fg-muted"
+      }`}
+    >
+      <span className="font-semibold text-fg">{failed ? "What went wrong: " : "What's needed: "}</span>
+      {order.statusReason}
+      {!failed && (
+        <>
+          {" "}
+          <Link to="/dashboard/forge" className="font-semibold text-yellow-400 hover:underline">
+            Answer in Forge
+          </Link>
+        </>
+      )}
+    </div>
+  );
 }
 
 type Props = {
@@ -97,6 +125,7 @@ export function PortfolioSection({ orders, loading, failed }: Props) {
                     Requested {order.requestedAt}
                     {note ? ` · ${note}` : ""}
                   </p>
+                  <StatusReason order={order} />
                 </li>
               );
             })}
@@ -119,7 +148,8 @@ export function PortfolioSection({ orders, loading, failed }: Props) {
                     const service = services.find((s) => s.id === order.serviceId);
                     const note = revisionNote(order);
                     return (
-                      <tr key={order.id} className="border-b border-border last:border-0">
+                      <Fragment key={order.id}>
+                      <tr className={order.statusReason ? "" : "border-b border-border last:border-0"}>
                         <td className="px-5 py-3.5 font-mono text-xs whitespace-nowrap text-fg-faint">
                           {order.publicId}
                         </td>
@@ -146,6 +176,14 @@ export function PortfolioSection({ orders, loading, failed }: Props) {
                           </span>
                         </td>
                       </tr>
+                      {order.statusReason && (
+                        <tr className="border-b border-border last:border-0">
+                          <td colSpan={5} className="px-5 pb-3.5">
+                            <StatusReason order={order} />
+                          </td>
+                        </tr>
+                      )}
+                      </Fragment>
                     );
                   })}
                 </tbody>

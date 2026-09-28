@@ -16,8 +16,6 @@ const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-const TASK_TYPES = ['website', 'pdf', 'image', 'video', 'social', 'documents', 'brand-kit'];
-
 const SYSTEM_PROMPT = `You route messages (typed or voice-transcribed, in any language, sometimes with an attached photo/document) to an internal owner-only bot for agenticcore.click. You have the full recent conversation history -- use it. If a prior message of yours asked a follow-up question, the client's next message is very likely answering it; resolve the intent using both messages together rather than re-asking from scratch.
 
 Determine the intent and extract its arguments. Valid intents and their exact argument shapes:

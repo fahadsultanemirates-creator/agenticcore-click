@@ -13,7 +13,7 @@
 // or not the agent.
 
 import { supabaseAdmin } from '../_shared/storage.ts';
-import { logEvent, markNeedsInfo, markFailed } from '../_shared/task.ts';
+import { logEvent, markNeedsInfo } from '../_shared/task.ts';
 import { notifyOwner } from '../_shared/telegram.ts';
 import { jsonResponse } from '../_shared/cors.ts';
 import { verify, SIGNATURE_HEADER, TIMESTAMP_HEADER } from '../_shared/hmac.ts';

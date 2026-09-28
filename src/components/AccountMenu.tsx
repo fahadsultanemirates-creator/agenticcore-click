@@ -1,4 +1,4 @@
-import { LayoutGrid, LogIn, LogOut, ShieldCheck, Sparkles, UserRound, Wallet, type LucideIcon } from "lucide-react";
+import { LayoutGrid, LogIn, LogOut, Sparkles, UserRound, Wallet, type LucideIcon } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
@@ -124,9 +124,6 @@ function SignedInMenu() {
             </MenuLink>
             <MenuLink to="/dashboard#billing" icon={Wallet} onClick={() => setOpen(false)}>
               Wallet &amp; billing
-            </MenuLink>
-            <MenuLink to="/admin" icon={ShieldCheck} onClick={() => setOpen(false)}>
-              Admin
             </MenuLink>
             <button
               type="button"

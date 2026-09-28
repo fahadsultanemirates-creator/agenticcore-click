@@ -1,4 +1,4 @@
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, MailCheck } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Logo } from "../components/Logo";
@@ -12,6 +12,7 @@ export function Signup() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [awaitingConfirmation, setAwaitingConfirmation] = useState(false);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -25,10 +26,17 @@ export function Signup() {
     }
     setError("");
     setSubmitting(true);
-    const { error: signupError } = await signup(name.trim(), email.trim(), password);
+    const { error: signupError, needsConfirmation } = await signup(name.trim(), email.trim(), password);
     setSubmitting(false);
     if (signupError) {
       setError(signupError);
+      return;
+    }
+    // With email confirmation on, there is no session yet. Navigating to the
+    // dashboard would bounce them to /login with no explanation, seconds
+    // after they chose a password.
+    if (needsConfirmation) {
+      setAwaitingConfirmation(true);
       return;
     }
     navigate("/dashboard", { replace: true });
@@ -42,6 +50,20 @@ export function Signup() {
         </Link>
 
         <div className="rounded-2xl border border-border bg-surface p-7">
+          {awaitingConfirmation ? (
+            <>
+              <MailCheck className="h-8 w-8 text-yellow-400" />
+              <h1 className="mt-3 font-display text-2xl font-semibold text-fg">Confirm your email</h1>
+              <p className="mt-1.5 text-sm text-fg-muted">
+                We've sent a link to {email.trim()}. Click it and your dashboard is ready — your
+                account is already created, it just needs confirming.
+              </p>
+              <p className="mt-4 text-sm text-fg-faint">
+                Nothing after a few minutes? Check spam.
+              </p>
+            </>
+          ) : (
+          <>
           <h1 className="font-display text-2xl font-semibold text-fg">Create your account</h1>
           <p className="mt-1.5 text-sm text-fg-muted">
             Get your own dashboard.
@@ -52,6 +74,7 @@ export function Signup() {
               <span className="text-xs font-semibold tracking-wide text-fg-muted uppercase">Name</span>
               <input
                 type="text"
+                autoComplete="name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Your name (optional)"
@@ -62,6 +85,7 @@ export function Signup() {
               <span className="text-xs font-semibold tracking-wide text-fg-muted uppercase">Email</span>
               <input
                 type="email"
+                autoComplete="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@business.com"
@@ -72,6 +96,7 @@ export function Signup() {
               <span className="text-xs font-semibold tracking-wide text-fg-muted uppercase">Password</span>
               <input
                 type="password"
+                autoComplete="new-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
@@ -90,6 +115,8 @@ export function Signup() {
               <ArrowRight className="h-4 w-4" />
             </button>
           </form>
+          </>
+          )}
         </div>
 
         <p className="mt-6 text-center text-sm text-fg-muted">

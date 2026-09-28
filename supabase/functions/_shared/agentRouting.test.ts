@@ -6,7 +6,7 @@
 // rather than trusted to reading.
 
 import assert from 'node:assert/strict';
-import { chooseAgent, type RoutingInputs } from './agentRouting.ts';
+import { chooseAgent, GROKBOT_AGENT, isExternalAgent, EXTERNAL_AGENTS, type RoutingInputs } from './agentRouting.ts';
 
 let passed = 0;
 let failed = 0;
@@ -27,6 +27,7 @@ const base: RoutingInputs = {
   source: 'website',
   assignedAgent: null,
   routedAgent: null,
+  excludedAgents: [],
   builtIn: 'worker-pdf'
 };
 
@@ -133,6 +134,35 @@ test('an exclusion naming a different agent changes nothing', () => {
   const choice = chooseAgent({ ...base, routedAgent: 'worker-grokbot', excludedAgents: ['worker-someone-else'] });
   assert.equal(choice.agent, 'worker-grokbot');
   assert.equal(choice.why, 'sku_route');
+});
+
+// The loop survived three rounds of fixes because of a name, not a rule.
+// Jobs were opened as 'grokbot' while routing compared 'worker-grokbot',
+// so the exclusion never matched -- and the tests could not see it, because
+// they used the same hard-coded string on both sides.
+//
+// These build the exclusion from the SAME constant the code records and
+// /assign stores, so the two can never drift apart again without failing
+// here.
+test('the name a job records is the name routing excludes', () => {
+  const routed = chooseAgent({ ...base, routedAgent: GROKBOT_AGENT, excludedAgents: [GROKBOT_AGENT] });
+  assert.equal(routed.agent, 'worker-pdf', 'an agent that handed the task back must not get it again');
+  assert.equal(routed.why, 'handed_back');
+});
+
+test('the short name is not a valid agent name', () => {
+  // 'grokbot' is what a person types in /assign; it must be translated,
+  // never stored. If this ever passes, the two spellings are live again.
+  assert.equal(isExternalAgent('grokbot'), false);
+  assert.equal(isExternalAgent(GROKBOT_AGENT), true);
+});
+
+test('every known external agent excludes itself', () => {
+  for (const agent of EXTERNAL_AGENTS) {
+    const choice = chooseAgent({ ...base, routedAgent: agent, excludedAgents: [agent] });
+    assert.equal(choice.external, false, `${agent} should not be re-offered a task it handed back`);
+    assert.equal(choice.why, 'handed_back');
+  }
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

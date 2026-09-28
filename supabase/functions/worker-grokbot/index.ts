@@ -10,6 +10,8 @@ import { logEvent, markNeedsInfo } from '../_shared/task.ts';
 import { notifyOwner } from '../_shared/telegram.ts';
 import { jsonResponse } from '../_shared/cors.ts';
 import { requireInternalCaller } from '../_shared/internal.ts';
+import { GROKBOT_AGENT } from '../_shared/agentRouting.ts';
+import { excludeAgent } from '../_shared/grokbot.ts';
 import { resolveSku, specOf } from '../_shared/catalog.ts';
 import { missingRequired, infoRequest } from '../_shared/requirements.ts';
 import { getBrandProfile, extractUrl, normalizeUrl } from '../_shared/brandProfile.ts';
@@ -43,7 +45,7 @@ function brandUrlFor(payload: Record<string, unknown>): string | null {
  * that goes unanswered is not an error state to investigate later, it is
  * simply a decision to stop waiting.
  */
-async function sweepExpired(): Promise<{ unaccepted: number; abandoned: number }> {
+async function sweepExpired(): Promise<{ unaccepted: number; abandoned: number; stuck: number }> {
   const unaccepted = await expiredJobs();
   for (const job of unaccepted) {
     const { data: task } = await supabaseAdmin.from('tasks').select('public_id').eq('id', job.task_id).maybeSingle();
@@ -112,6 +114,11 @@ export async function handleRequest(req: Request): Promise<Response> {
     if (!config) {
       // Configured wrongly is not the client's problem: build it in-house
       // rather than leaving the task in limbo waiting for a secret.
+      //
+      // Excluded as well as unassigned. Without that the product is still
+      // routed here, so the dispatcher hands the task straight back and we
+      // arrive at this same missing secret every two minutes, forever.
+      await excludeAgent(taskId, GROKBOT_AGENT);
       await supabaseAdmin.from('tasks').update({ assigned_agent: null, status: 'queued' }).eq('id', taskId);
       await notifyOwner(`${task.public_id} could not be sent to Grok Bot -- its webhook secrets are missing. Re-queued in-house.`);
       return jsonResponse({ ok: true, requeued: true });
@@ -126,13 +133,13 @@ export async function handleRequest(req: Request): Promise<Response> {
     const missing = missingRequired(specOf(product), payload, profile);
     if (missing.length > 0) {
       const question = infoRequest(product?.name ?? task.type, missing);
-      await logEvent(taskId, 'requirements_missing', 'worker', { sku: product?.sku, missing, agent: 'grokbot' });
+      await logEvent(taskId, 'requirements_missing', 'worker', { sku: product?.sku, missing, agent: GROKBOT_AGENT });
       await markNeedsInfo(taskId, question);
       await notifyOwner(`${task.public_id} is missing ${missing.join(', ')} before Grok Bot can build it.\n\n${question}`);
       return jsonResponse({ ok: true, needsInfo: true });
     }
 
-    const job = await openJob(taskId, 'grokbot');
+    const job = await openJob(taskId, GROKBOT_AGENT);
     await sendNotice(config, job, {
       type: revisionNotes(payload).length > 0 ? 'revision' : 'task',
       sku: product?.sku ?? null,
@@ -147,7 +154,7 @@ export async function handleRequest(req: Request): Promise<Response> {
     });
 
     await logEvent(taskId, 'handed_to_agent', 'worker', {
-      agent: 'grokbot',
+      agent: GROKBOT_AGENT,
       jobId: job.id,
       acceptBy: job.accept_deadline,
       secretsFrom: config.from
@@ -170,6 +177,10 @@ export async function handleRequest(req: Request): Promise<Response> {
     if (open) {
       await fallbackToBuiltIn(open as never, task.public_id as string, `Could not reach Grok Bot: ${reason}`);
     } else {
+      // No job row was ever created, so fallbackToBuiltIn has nothing to
+      // close -- but the exclusion still has to be recorded, or this task
+      // comes back here on the next sweep and fails the same way.
+      await excludeAgent(taskId, GROKBOT_AGENT);
       await supabaseAdmin.from('tasks').update({ assigned_agent: null, status: 'queued' }).eq('id', taskId);
       await notifyOwner(`${task.public_id} could not be handed to Grok Bot (${reason}). Re-queued in-house.`).catch(() => {});
     }

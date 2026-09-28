@@ -28,6 +28,27 @@
 /** The worker that runs inside this repo, and the one that does not. */
 export const GROKBOT_AGENT = 'worker-grokbot';
 
+/**
+ * The only names an external agent may be recorded under.
+ *
+ * This is a type and not a comment because the loop stayed open for three
+ * rounds on exactly this: a job was opened as 'grokbot' while routing
+ * compared against 'worker-grokbot', so a task handed back matched nothing
+ * in the exclusion list and went straight out again. Every fix addressed
+ * the symptom, because a `string` parameter accepts both spellings and
+ * neither the compiler nor a test that uses one name on both sides can see
+ * the difference.
+ *
+ * With a closed type, the wrong spelling does not compile.
+ */
+export type ExternalAgent = typeof GROKBOT_AGENT;
+
+export const EXTERNAL_AGENTS: readonly ExternalAgent[] = [GROKBOT_AGENT];
+
+export function isExternalAgent(name: string): name is ExternalAgent {
+  return (EXTERNAL_AGENTS as readonly string[]).includes(name);
+}
+
 export interface RoutingInputs {
   /** GROKBOT_ENABLED === 'true'. The kill switch. */
   externalEnabled: boolean;

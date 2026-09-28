@@ -20,10 +20,11 @@
 //     worker, and the owner is told.
 
 import { supabaseAdmin, uploadDeliverable } from './storage.ts';
-import { addTaskFile, logEvent, markDelivered } from './task.ts';
+import { addTaskFile, logEvent, markDelivered, markFailed } from './task.ts';
 import { notifyOwner } from './telegram.ts';
 import { sign, SIGNATURE_HEADER, TIMESTAMP_HEADER } from './hmac.ts';
 import { isStatus, movesForward } from './agentJobState.ts';
+import { type ExternalAgent } from './agentRouting.ts';
 import { fileProblem } from './deliverableTypes.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
@@ -139,7 +140,7 @@ export async function jobEvent(jobId: string, eventType: string, detail: Record<
 }
 
 /** A job nobody has accepted yet, with a deadline and its own callback token. */
-export async function openJob(taskId: string, agent: string): Promise<AgentJob> {
+export async function openJob(taskId: string, agent: ExternalAgent): Promise<AgentJob> {
   const token = crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '');
   const deadline = new Date(Date.now() + ACCEPT_WINDOW_MINUTES * 60_000).toISOString();
 
@@ -302,16 +303,35 @@ export async function promoteAndDeliver(job: AgentJob, publicId: string, ownerCh
     ready.push({ name: path.split('/').pop() ?? `deliverable-${ready.length + 1}`, bytes, type });
   }
 
+  // Claim the job BEFORE publishing anything.
+  //
+  // The order used to be publish, mark the task delivered, then close the
+  // job -- which leaves a window where the stuck-submission sweep can take
+  // the same job, re-queue the task in-house, and the client ends up with
+  // the order twice. Closing first makes the claim atomic: whoever wins the
+  // UPDATE owns the delivery, and the loser does nothing.
+  const claimed = await setJobStatus(job.id, 'delivered', { closed_at: new Date().toISOString() });
+  if (!claimed) throw new Error('This job was closed before its files could be published.');
+
   let index = 0;
-  for (const file of ready) {
-    const { url } = await uploadDeliverable(job.task_id, file.name, file.bytes, file.type);
-    index++;
-    await addTaskFile(job.task_id, { url, fileType: file.type, optionIndex: index, version });
+  try {
+    for (const file of ready) {
+      const { url } = await uploadDeliverable(job.task_id, file.name, file.bytes, file.type);
+      index++;
+      await addTaskFile(job.task_id, { url, fileType: file.type, optionIndex: index, version });
+    }
+  } catch (err) {
+    // The job is already closed as delivered, so nothing else will pick
+    // this up. Say so loudly rather than leaving the task in progress with
+    // nobody coming for it.
+    const reason = err instanceof Error ? err.message : String(err);
+    await markFailed(job.task_id, `Publishing the agent's files failed part-way: ${reason}`);
+    await notifyOwner(`${publicId} failed while publishing ${job.agent}'s files.\n\n${reason}`).catch(() => {});
+    throw err;
   }
 
   await logEvent(job.task_id, 'agent_delivered', 'worker', { agent: job.agent, files: index, jobId: job.id });
   await markDelivered(job.task_id);
-  await setJobStatus(job.id, 'delivered', { closed_at: new Date().toISOString() });
   await jobEvent(job.id, 'delivered', { files: index });
 
   await notifyOwner(`${publicId} delivered by ${job.agent} (${index} file${index === 1 ? '' : 's'}).`).catch(() => {});
@@ -391,7 +411,7 @@ export async function sendCancelled(job: AgentJob, publicId: string, reason: str
 }
 
 /** Record that this agent will not be offered this task again. */
-async function excludeAgent(taskId: string, agent: string): Promise<void> {
+export async function excludeAgent(taskId: string, agent: string): Promise<void> {
   const { data } = await supabaseAdmin.from('tasks').select('excluded_agents').eq('id', taskId).maybeSingle();
   const current = (data?.excluded_agents as string[] | null) ?? [];
   if (current.includes(agent)) return;

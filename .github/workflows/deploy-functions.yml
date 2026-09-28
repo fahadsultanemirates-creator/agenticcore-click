@@ -44,6 +44,34 @@ jobs:
         with:
           version: latest
 
+      # Nothing ran before deploying. That made "the compiler will catch
+      # it" an empty claim: the required excludedAgents field was missing
+      # from a test fixture and a sweep returned a key its own type did not
+      # allow, and both shipped. A deploy that cannot fail is not a check.
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # The entrypoints pull in every _shared module they use, so this
+      # covers the whole deployed surface. The *.test.ts files are
+      # deliberately excluded: they run under Node, so Deno is the wrong
+      # compiler to judge them by -- the test step below is their check.
+      - name: Type-check the functions
+        run: deno check supabase/functions/*/index.ts
+
+      - name: Run the tests
+        run: |
+          failed=0
+          for test in supabase/functions/_shared/*.test.ts; do
+            echo "--- $test"
+            node --experimental-strip-types "$test" || failed=1
+          done
+          exit $failed
+
       - name: Deploy all functions
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}

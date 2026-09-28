@@ -65,15 +65,41 @@ sent.
 POST <GROKBOT_WEBHOOK_URL>
 Authorization: Bearer <GROKBOT_WEBHOOK_KEY>
 X-AgenticCore-Timestamp: <unix seconds>
-X-AgenticCore-Signature: <hex hmac-sha256 of "timestamp.body">
+X-AgenticCore-Signature: <hex hmac-sha256 of "timestamp.signedPayload">
 
 {
   "type": "task" | "revision" | "cancelled",
   "job":  { "id": "...", "token": "...", "acceptBy": "<iso8601>" },
   "task": { "reference": "AC-1007-03", "sku": 52, "product": "...", "brief": "...", "note": "..." },
-  "callback": "https://<project>.supabase.co/functions/v1/grokbot-callback"
+  "callback": "https://<project>.supabase.co/functions/v1/grokbot-callback",
+
+  "timestamp": "<unix seconds>",
+  "signature": "<hex hmac-sha256 of timestamp + \".\" + signedPayload>",
+  "signedPayload": "<the JSON string that was signed>"
 }
 ```
+
+### Verifying the notice
+
+The signature is sent **twice**: in the headers, and in the body. The first
+live order reached Grok Bot with no signature headers at all while the same
+request returned 200 — a relay between the two sides strips custom headers,
+which is ordinary behaviour and outside either side's control. A signature a
+middlebox can remove is not a signature.
+
+**Verify against `signedPayload`, not against the raw body.** It is the exact
+string that was signed, carried verbatim:
+
+```
+expected = HMAC_SHA256(GROKBOT_WEBHOOK_KEY, timestamp + "." + signedPayload)
+```
+
+Re-serialising the root fields and signing that would make JSON key order and
+whitespace part of the security contract. `signedPayload` avoids it entirely.
+
+`JSON.parse(signedPayload)` gives the same object as the root fields, which
+remain in place so nothing reading the notice today has to change. Reject a
+notice whose timestamp is more than five minutes old.
 
 ## What Grok Bot sends back
 

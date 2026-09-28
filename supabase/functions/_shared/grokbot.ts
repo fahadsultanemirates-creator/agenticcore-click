@@ -212,15 +212,34 @@ export async function sendNotice(
   job: AgentJob,
   notice: { type: NoticeType; sku: number | null; product: string; brief: string; publicId: string; note?: string }
 ): Promise<void> {
-  const body = JSON.stringify({
+  // The signature travels in the body as well as the headers.
+  //
+  // The first live order arrived at Grok Bot with no signature headers at
+  // all, while the same request returned 200 -- so something between us
+  // strips them, which is ordinary for a webhook relay that forwards only
+  // the payload. A signature that a middlebox can silently remove is not a
+  // signature; it is a header the recipient has to hope survived.
+  //
+  // `signedPayload` is the exact string that was signed, carried verbatim.
+  // The alternative -- asking the recipient to re-serialise the object and
+  // hope their JSON matches ours byte for byte -- makes key order and
+  // whitespace part of the security contract, which is how signature
+  // verification quietly breaks later.
+  //
+  // The original fields stay at the root, so nothing that reads the notice
+  // today has to change.
+  const payload = {
     type: notice.type,
     job: { id: job.id, token: job.token, acceptBy: job.accept_deadline },
     task: { reference: notice.publicId, sku: notice.sku, product: notice.product, brief: notice.brief, note: notice.note },
     callback: `${SUPABASE_URL}/functions/v1/grokbot-callback`
-  });
+  };
 
+  const signedPayload = JSON.stringify(payload);
   const timestamp = String(Math.floor(Date.now() / 1000));
-  const signature = await sign(config.sharedKey, timestamp, body);
+  const signature = await sign(config.sharedKey, timestamp, signedPayload);
+
+  const body = JSON.stringify({ ...payload, timestamp, signature, signedPayload });
 
   // Three attempts with backoff. One dropped connection should not cost a
   // client their order and send the task round the fallback path -- and a

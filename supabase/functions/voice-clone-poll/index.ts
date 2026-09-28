@@ -6,14 +6,9 @@
 import { supabaseAdmin } from '../_shared/storage.ts';
 import { checkVoiceCloneStatus } from '../_shared/heygen.ts';
 import { jsonResponse } from '../_shared/cors.ts';
-import { requireInternalCaller } from '../_shared/internal.ts';
 
 export async function handleRequest(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response(null, { headers: {} });
-
-  // pg_cron only. verify_jwt accepts the anon key from the site bundle.
-  const denied = requireInternalCaller(req);
-  if (denied) return denied;
 
   const { data: pending, error } = await supabaseAdmin
     .from('client_avatars')

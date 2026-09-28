@@ -25,6 +25,8 @@ import { downloadTelegramFile, sendTelegramAudio, sendTelegramPhoto, sendTelegra
 import { paginate, parseBrowseArgs, browseFooter } from '../_shared/catalogBrowse.ts';
 import { clearRoute, externalEnabled, GROKBOT_AGENT, listRoutes, setRoute } from '../_shared/agents.ts';
 import { fallbackToBuiltIn, grokbotSecretStatus } from '../_shared/grokbot.ts';
+import { fileProblem } from '../_shared/deliverableTypes.ts';
+import type { Bytes } from '../_shared/bytes.ts';
 import {
   getVideoDefaults,
   hasDefaultAvatar,
@@ -32,7 +34,7 @@ import {
   setDefaultAvatar,
   setDefaultVoice
 } from '../_shared/videoDefaults.ts';
-import { uploadClientMedia } from '../_shared/storage.ts';
+import { uploadClientMedia, uploadDeliverable } from '../_shared/storage.ts';
 import { detectLanguage, getOwnerLanguage, setOwnerLanguage, sendBotMessage } from '../_shared/botMessage.ts';
 import { converse } from '../_shared/botConversation.ts';
 import { expandSku, getSku, CATALOG } from '../_shared/catalog.ts';
@@ -50,7 +52,7 @@ const OWNER_TELEGRAM_ID = Deno.env.get('OWNER_TELEGRAM_ID') || undefined;
 const NEW_PATTERN = /^\/new(?:@\S+)?\s+(\d{2,3})\s+([\s\S]+)$/i;
 const REVISE_PATTERN = /^\/revise(?:@\S+)?\s+(AC-\d{4}-\d{2,}|AC-CLICK-\d{4})\s+([\s\S]+)$/i;
 const FILES_PATTERN = /^\/files(?:@\S+)?\s+(AC-\d{4}-\d{2,}|AC-CLICK-\d{4})\b/i;
-const DELIVER_PATTERN = /^\/deliver(?:@\S+)?\s+(AC-\d{4}-\d{2,}|AC-CLICK-\d{4})\s+(\S+)$/i;
+const DELIVER_PATTERN = /^\/deliver(?:@\S+)?\s+(AC-\d{4}-\d{2,}|AC-OWNER-\d{4,}|AC-CLICK-\d{4})(?:\s+(\S+))?$/i;
 const QUEUE_PATTERN = /^\/queue(?:@\S+)?$/i;
 const HELP_PATTERN = /^\/(start|help)(?:@\S+)?$/i;
 const AVATARS_PATTERN = /^\/avatars(?:@\S+)?((?:\s+\S+)*)\s*$/i;
@@ -91,7 +93,7 @@ function helpText(): string {
     '/new <product number> <brief> — create an owner task (e.g. /new 72 letterhead for agenticcore.agency)',
     '/revise <task id> <note> — re-queue a delivered task for revision',
     "/files <task id> — list a task's deliverable files",
-    '/deliver <task id> <url> — manually attach a file and mark delivered',
+    '/deliver <task id> [url] — mark delivered; attach the file instead of a url if you have it',
     "/report <url> — owner-only business report (flaws, improvements, marketing plan)",
     "/avatars [gender|name] [page] — browse avatars as previews",
     "/voices [language|gender|name] [page] — browse voices, playable",
@@ -210,7 +212,29 @@ async function handleNewCommand(
   return `${publicId} queued — ${product.name} (product ${sku}). Owner task, runs after any pending client tasks.`;
 }
 
-async function handleDeliverCommand(publicId: string, url: string): Promise<string> {
+/**
+ * Put a finished file on the client's dashboard by hand.
+ *
+ * Two ways in. A URL, as before -- and now the file itself, forwarded
+ * straight into the chat with `/deliver AC-1001-01` as its caption. That
+ * second path exists because the work often arrives as a Telegram
+ * attachment from an agent talked to directly, and "upload it somewhere
+ * first, then paste the link" is a step with nowhere to do it from a phone.
+ *
+ * A forwarded file is copied into the public deliverables bucket rather
+ * than linked from client-media: that bucket holds what clients send US,
+ * is not what the dashboard reads, and a deliverable that lives there would
+ * be one storage-policy change away from disappearing.
+ */
+async function handleDeliverCommand(
+  publicId: string,
+  url: string | undefined,
+  file: { bytes: Bytes; filename: string; mimeType: string } | null
+): Promise<string> {
+  if (!url && !file) {
+    return `Send /deliver ${publicId} with a link, or attach the file and put /deliver ${publicId} in its caption.`;
+  }
+
   const { data: task, error: fetchError } = await supabaseAdmin
     .from('tasks')
     .select('id, version')
@@ -223,9 +247,28 @@ async function handleDeliverCommand(publicId: string, url: string): Promise<stri
   }
   if (!task) return `No task found with id ${publicId}.`;
 
+  // The same allowlist an external agent's uploads go through. A file
+  // arriving by hand is no more trustworthy than one arriving by webhook --
+  // it lands in the same public bucket, on the same domain.
+  let deliveredUrl = url;
+  let fileType = 'manual';
+  if (file) {
+    const problem = fileProblem(file.mimeType, file.bytes.byteLength);
+    if (problem) return `Cannot publish that file: ${problem}.`;
+
+    try {
+      const uploaded = await uploadDeliverable(task.id, file.filename, file.bytes, file.mimeType);
+      deliveredUrl = uploaded.url;
+      fileType = file.mimeType;
+    } catch (err) {
+      console.error('telegram-webhook: /deliver upload failed', err);
+      return `Could not upload that file to ${publicId}.`;
+    }
+  }
+
   const { error: fileError } = await supabaseAdmin
     .from('task_files')
-    .insert({ task_id: task.id, url, file_type: 'manual', option_index: 1, version: task.version });
+    .insert({ task_id: task.id, url: deliveredUrl, file_type: fileType, option_index: 1, version: task.version });
   if (fileError) {
     console.error('telegram-webhook: /deliver file insert failed', fileError);
     return `Could not attach that file to ${publicId}.`;
@@ -236,7 +279,7 @@ async function handleDeliverCommand(publicId: string, url: string): Promise<stri
     task_id: task.id,
     event_type: 'delivered',
     actor: 'owner',
-    detail: { url, manual: true }
+    detail: { url: deliveredUrl, manual: true, uploaded: !!file }
   });
 
   return `${publicId} marked delivered with ${url}.`;
@@ -717,7 +760,12 @@ async function handleStatusCommand(publicId: string): Promise<string> {
   return lines.join('\n');
 }
 
-async function routeMessage(chatId: number, text: string, attachmentUrls: string[] = []): Promise<string> {
+async function routeMessage(
+  chatId: number,
+  text: string,
+  attachmentUrls: string[] = [],
+  incomingFile: { bytes: Bytes; filename: string; mimeType: string } | null = null
+): Promise<string> {
   if (HELP_PATTERN.test(text)) return helpText();
   if (QUEUE_PATTERN.test(text)) return handleQueueCommand();
   if (/^\/products(?:@\S+)?$/i.test(text)) return handleProductsCommand();
@@ -736,7 +784,7 @@ async function routeMessage(chatId: number, text: string, attachmentUrls: string
   if (filesMatch) return handleFilesCommand(filesMatch[1].toUpperCase());
 
   const deliverMatch = text.match(DELIVER_PATTERN);
-  if (deliverMatch) return handleDeliverCommand(deliverMatch[1].toUpperCase(), deliverMatch[2]);
+  if (deliverMatch) return handleDeliverCommand(deliverMatch[1].toUpperCase(), deliverMatch[2], incomingFile);
 
   const addAvatarMatch = text.match(ADDAVATAR_PATTERN);
   if (addAvatarMatch) return handleAddCatalogCommand('avatar', addAvatarMatch[1], addAvatarMatch[2].trim());
@@ -805,7 +853,7 @@ async function routeMessage(chatId: number, text: string, attachmentUrls: string
     }
     case 'deliver': {
       const resolved = await resolveTaskId(parsed.taskId, text);
-      return resolved.publicId ? handleDeliverCommand(resolved.publicId, parsed.url) : resolved.reply!;
+      return resolved.publicId ? handleDeliverCommand(resolved.publicId, parsed.url, incomingFile) : resolved.reply!;
     }
     case 'avatars':
       return handleAvatarsCommand(chatId, parsed.gender);
@@ -861,6 +909,15 @@ export async function handleRequest(req: Request): Promise<Response> {
   let language: 'en' | 'ur';
   const attachmentUrls: string[] = [];
 
+  // The file itself, kept aside from its client-media URL.
+  //
+  // An attachment is normally a reference the client sent -- a logo, a
+  // photo -- and belongs in client-media. But the owner forwarding a
+  // finished file from Grok Bot means the opposite: it is the deliverable,
+  // and it has to go in the public bucket the dashboard reads. Same upload,
+  // two destinations, decided by the caption.
+  let incomingFile: { bytes: Bytes; filename: string; mimeType: string } | null = null;
+
   try {
     if (message?.voice?.file_id) {
       const audioBytes = await downloadTelegramFile(message.voice.file_id);
@@ -871,14 +928,20 @@ export async function handleRequest(req: Request): Promise<Response> {
       // Telegram sends multiple resolutions -- the last is the largest.
       const largest = message.photo[message.photo.length - 1];
       const bytes = await downloadTelegramFile(largest.file_id);
-      const { url } = await uploadClientMedia(`telegram/${chatId}`, `photo-${largest.file_id}.jpg`, bytes, 'image/jpeg');
+      incomingFile = { bytes, filename: `photo-${largest.file_id}.jpg`, mimeType: 'image/jpeg' };
+      const { url } = await uploadClientMedia(`telegram/${chatId}`, incomingFile.filename, bytes, incomingFile.mimeType);
       attachmentUrls.push(url);
       text = typeof message?.caption === 'string' ? message.caption.trim() : '(sent a photo)';
       language = detectLanguage(text);
     } else if (message?.document?.file_id) {
       const doc = message.document;
       const bytes = await downloadTelegramFile(doc.file_id);
-      const { url } = await uploadClientMedia(`telegram/${chatId}`, doc.file_name || `document-${doc.file_id}`, bytes, doc.mime_type || 'application/octet-stream');
+      incomingFile = {
+        bytes,
+        filename: doc.file_name || `document-${doc.file_id}`,
+        mimeType: doc.mime_type || 'application/octet-stream'
+      };
+      const { url } = await uploadClientMedia(`telegram/${chatId}`, incomingFile.filename, bytes, incomingFile.mimeType);
       attachmentUrls.push(url);
       text = typeof message?.caption === 'string' ? message.caption.trim() : `(sent a document: ${doc.file_name || 'file'})`;
       language = detectLanguage(text);
@@ -899,7 +962,7 @@ export async function handleRequest(req: Request): Promise<Response> {
 
   let rawReply: string;
   try {
-    rawReply = await routeMessage(chatId, text, attachmentUrls);
+    rawReply = await routeMessage(chatId, text, attachmentUrls, incomingFile);
   } catch (err) {
     console.error('telegram-webhook: command failed', err);
     rawReply = 'Something went wrong handling that.';

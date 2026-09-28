@@ -160,6 +160,26 @@ export async function handleRequest(req: Request): Promise<Response> {
       secretsFrom: config.from
     });
 
+    // Tell the owner a job has gone out, not only when one goes wrong.
+    //
+    // Fahad has his own direct line to Grok Bot, in its app and on
+    // Telegram, and it is useless if he only finds out an order exists once
+    // it comes back -- or does not. The same details the agent received, so
+    // a nudge over that direct line can be specific rather than "did you
+    // get something?".
+    const brief = String(payload.description ?? payload.brief ?? '');
+    await notifyOwner(
+      [
+        `${task.public_id} → Grok Bot`,
+        `${product?.name ?? task.type}${product ? ` (${product.sku})` : ''}`,
+        '',
+        brief.length > 400 ? `${brief.slice(0, 400)}…` : brief,
+        '',
+        `Accept by ${new Date(job.accept_deadline).toISOString().slice(11, 16)} UTC, or it comes back in-house automatically.`,
+        `/jobs to check · /fallback ${task.public_id} to take it back now.`
+      ].join('\n')
+    ).catch(() => {});
+
     return jsonResponse({ ok: true, jobId: job.id, acceptBy: job.accept_deadline });
   } catch (err) {
     // A webhook that will not accept the notice is our problem, not the

@@ -76,6 +76,66 @@ function apiHosts(): string[] {
 
 const CHAIN_ID = '56';
 
+/**
+ * Plain BNB Smart Chain nodes, for reading the contract.
+ *
+ * decimals() and symbol() are an ordinary eth_call, which every node
+ * serves for free. Going through the block explorer's proxy module meant
+ * the read inherited that API's key handling and its multichain routing,
+ * and the first live check failed there -- the explorer answered, it was
+ * not refusing the key, and what came back still was not hex.
+ *
+ * The explorer is still used for the transfer list, because listing every
+ * token transfer to an address genuinely needs an indexer. Reading a
+ * constant off a contract does not.
+ */
+function rpcHosts(): string[] {
+  const configured = Deno.env.get('BSC_RPC_URL');
+  if (configured) return [configured];
+  return [
+    'https://bsc-dataseed.binance.org',
+    'https://bsc-dataseed1.defibit.io',
+    'https://bsc-rpc.publicnode.com'
+  ];
+}
+
+/** One eth_call against the first node that answers. */
+async function ethCall(to: string, data: string): Promise<string> {
+  let lastProblem = '';
+
+  for (const host of rpcHosts()) {
+    try {
+      const resp = await fetch(host, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'eth_call',
+          params: [{ to, data }, 'latest']
+        }),
+        signal: AbortSignal.timeout(10_000)
+      });
+      if (!resp.ok) {
+        lastProblem = `${host} returned ${resp.status}`;
+        continue;
+      }
+      const body = await resp.json();
+      const result = (body as { result?: unknown })?.result;
+      if (typeof result === 'string' && result.startsWith('0x')) return result;
+
+      // Whatever it is, say what it is. "Could not read decimals()" on its
+      // own cost a round trip because it named the field and not the
+      // answer.
+      lastProblem = `${host} answered ${JSON.stringify(body).slice(0, 200)}`;
+    } catch (err) {
+      lastProblem = `${host} did not answer (${err instanceof Error ? err.message : String(err)})`;
+    }
+  }
+
+  throw new Error(lastProblem || 'No BNB Smart Chain node answered');
+}
+
 export function chainConfigured(): boolean {
   return apiKey().length > 0;
 }
@@ -131,23 +191,18 @@ async function callApi(params: Record<string, string>): Promise<unknown> {
  * the difference between matching every payment and matching none.
  */
 export async function verifyContract(): Promise<{ decimals: number; symbol: string }> {
-  // eth_call selectors: decimals() and symbol(), through the explorer's
-  // proxy so this needs no second credential or RPC host.
-  const [decimalsRes, symbolRes] = await Promise.all([
-    callApi({ module: 'proxy', action: 'eth_call', to: USDT_CONTRACT, data: '0x313ce567', tag: 'latest' }),
-    callApi({ module: 'proxy', action: 'eth_call', to: USDT_CONTRACT, data: '0x95d89b41', tag: 'latest' })
+  // eth_call selectors: decimals() and symbol().
+  const [decimalsHex, symbolHex] = await Promise.all([
+    ethCall(USDT_CONTRACT, '0x313ce567'),
+    ethCall(USDT_CONTRACT, '0x95d89b41')
   ]);
 
-  const decimalsHex = (decimalsRes as { result?: string })?.result;
-  if (typeof decimalsHex !== 'string' || !decimalsHex.startsWith('0x')) {
-    throw new Error('Could not read decimals() from the USDT contract');
-  }
   const decimals = Number(BigInt(decimalsHex));
   if (!Number.isInteger(decimals) || decimals < 0 || decimals > 36) {
     throw new Error(`USDT contract reported an implausible decimals value: ${decimals}`);
   }
 
-  const symbol = decodeStringResult((symbolRes as { result?: string })?.result ?? '');
+  const symbol = decodeStringResult(symbolHex);
   if (!EXPECTED_SYMBOLS.includes(symbol.toUpperCase())) {
     throw new Error(
       `Contract ${USDT_CONTRACT} reports symbol "${symbol}", which is not USDT. Refusing to match payments against it.`

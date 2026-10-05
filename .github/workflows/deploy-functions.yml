@@ -56,6 +56,23 @@ jobs:
         with:
           node-version: '22'
 
+      # config.toml names the functions the CLI deploys. Deleting a
+      # function's directory without deleting its entry here fails the
+      # deploy step -- after the type-check and the whole test suite have
+      # already passed, which reads as "the code is fine but shipping is
+      # broken" and sends you looking in the wrong place. Three seconds
+      # here answers it directly.
+      - name: Check config.toml matches the functions on disk
+        run: |
+          missing=0
+          for fn in $(grep -oP '(?<=^\[functions\.)[^]]+' supabase/config.toml); do
+            if [ ! -d "supabase/functions/$fn" ]; then
+              echo "::error::config.toml declares [functions.$fn] but supabase/functions/$fn does not exist."
+              missing=1
+            fi
+          done
+          exit $missing
+
       # The entrypoints pull in every _shared module they use, so this
       # covers the whole deployed surface. The *.test.ts files are
       # deliberately excluded: they run under Node, so Deno is the wrong

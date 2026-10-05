@@ -46,12 +46,6 @@ verify_jwt = false
 [functions.forge-speak]
 verify_jwt = false
 
-[functions.create-custom-avatar]
-verify_jwt = false
-
-[functions.create-custom-voice]
-verify_jwt = false
-
 # grokbot-callback is called by Grok Bot, which holds no Supabase JWT by
 # design. It authenticates every request itself with a per-job token and an
 # HMAC signature over the body and timestamp -- see _shared/hmac.ts.

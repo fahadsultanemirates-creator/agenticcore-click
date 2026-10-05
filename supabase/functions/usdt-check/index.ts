@@ -169,7 +169,15 @@ export async function handleRequest(req: Request): Promise<Response> {
     }
     if (invoice.status !== 'pending') return jsonResponse({ status: invoice.status });
 
-    const transfers = await recentTransfers();
+    let transfers;
+    try {
+      transfers = await recentTransfers();
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      console.error('usdt-check: could not list transfers', detail);
+      return jsonResponse({ error: 'Could not read the chain right now.', detail }, 503);
+    }
+
     const outcome = await settle(invoice, transfers, decimals, await creditedHashes());
     return jsonResponse(outcome);
   }
@@ -193,7 +201,19 @@ export async function handleRequest(req: Request): Promise<Response> {
   if (!pending || pending.length === 0) return jsonResponse({ ok: true, checked: 0, paid: 0 });
 
   // One call to the explorer for the whole sweep.
-  const transfers = await recentTransfers();
+  //
+  // Wrapped, because an unhandled throw here is a bare 500 with the reason
+  // only in a log this project does not expose -- which is exactly how the
+  // contract read cost two round trips to diagnose.
+  let transfers;
+  try {
+    transfers = await recentTransfers();
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    console.error('usdt-check: could not list transfers', detail);
+    return jsonResponse({ error: 'Could not read the chain right now.', detail }, 503);
+  }
+
   const credited = await creditedHashes();
 
   let paid = 0;

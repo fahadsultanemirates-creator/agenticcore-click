@@ -235,9 +235,10 @@ export const SPECS: Record<number, ProductSpec> = {
   },
 
   // ---- 40s: Video ----------------------------------------------------
-  // HeyGen renders the presenter and Grok renders the motion clip, and
-  // neither needs teaching. The SCRIPT is ours, and it is the part that
-  // decides whether the video is worth the render.
+  // Rendering is somebody else's job -- Grok Bot for the avatar clip, Grok
+  // Imagine for the motion clip -- and neither needs teaching. The SCRIPT
+  // is ours, and it is the part that decides whether the video is worth
+  // the render.
   //
   // The first one proved the point in both directions. It opened with a real
   // hook and quoted the client's actual price -- and then simply stopped,
@@ -250,7 +251,7 @@ export const SPECS: Record<number, ProductSpec> = {
     must: ['topic'],
     nice: ['businessName', 'services', 'packages', 'contact', 'website'],
     rules: [
-      'At most 30 spoken words. The product is sold as fifteen seconds and a longer script simply runs past it.',
+      'At most 30 spoken words. Every clip is fifteen seconds or less, and a longer script simply runs past it.',
       'Name at most three things. A spoken list of four or more is heard as noise, and it is what pushes a clip past its length.',
       'Short sentences. A presenter reading a long comma-stacked sentence rushes it, and rushed speech is where the lip sync visibly drifts.',
       'The hook is the first sentence. Nobody reaches the second sentence of a video that opened slowly.',
@@ -281,28 +282,6 @@ export const SPECS: Record<number, ProductSpec> = {
       'Say what the light and the mood are.',
     ],
   },
-  42: {
-    purpose: 'A presenter explains something properly, and closes by telling the viewer what to do.',
-    wrongWhen:
-      'It is one undifferentiated pitch with no shape, or it runs past the length that was paid for and gets cut.',
-    must: ['topic'],
-    nice: ['businessName', 'services', 'packages', 'contact', 'website'],
-    rules: [
-      'Roughly 150 spoken words per minute of the length ordered, and never more — the render runs past the length paid for otherwise.',
-      'Short sentences throughout. A presenter reading a long comma-stacked sentence rushes it, and rushed speech is where the lip sync visibly drifts.',
-      'Give it a shape: the hook, what it is, why it matters, what to do next.',
-      'End on one specific action, named outright.',
-      'Spoken words only. No stage directions, no scene headings, no music cues.',
-      'Never say a figure that was not supplied.'
-    ],
-    build: [
-      'A hook, one or two sentences.',
-      'What it is.',
-      'Why it matters, with a concrete example or a supplied figure.',
-      'What to do next, named outright.',
-    ],
-  },
-
   // ---- 50s: Social ---------------------------------------------------
   50: {
     purpose: 'Ready-to-post graphics, each readable in a feed at thumbnail size.',

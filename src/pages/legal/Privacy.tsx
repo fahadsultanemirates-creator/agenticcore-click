@@ -40,7 +40,6 @@ export function Privacy() {
             "Netlify — serves the website itself.",
             "Anthropic (Claude) — writing and reasoning.",
             "xAI (Grok) — image generation, speech and some video.",
-            "HeyGen — avatar video, where you order one.",
             "PDFShift — turning documents into PDFs.",
             "PayRam — processing wallet top-ups.",
           ]}

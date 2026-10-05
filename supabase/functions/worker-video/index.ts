@@ -1,29 +1,28 @@
-// Avatar video (short or long) is generated via HeyGen: Grok writes the
-// spoken script, HeyGen renders it against a fixed house avatar/voice.
-// HeyGen rendering takes minutes, so this only *submits* the job and
-// leaves the task in_progress with provider_job_id set -- video-poll
-// (cron) picks up completion and delivers the file.
+// Video is one product shape now: a single clip of 15 seconds or less.
 //
-// No-avatar video (pure b-roll/motion/promo) is generated via xAI's
-// grok-imagine-video: Grok first writes a visual scene prompt (using any
-// attached reference images), then that prompt is submitted the same
-// async way as HeyGen -- video-poll branches on payload.avatarStyle to
-// know which provider a given in_progress video task is waiting on.
-// grok-imagine-video caps a single clip at 15 seconds and nothing stitches
-// clips together, which is exactly why no-avatar is a short-only product:
-// long videos are always avatar-presented (HeyGen), billed in 30-second
-// blocks. A part-avatar "hybrid" video is not offered at all -- blending an
-// avatar segment with generated b-roll is real video editing, not something
-// either provider does for us. Invoked by the dispatcher with { taskId }.
+// HeyGen is gone. It was the only engine that made a presenter speak a
+// script with lip-sync, and removing it removes that from this worker --
+// deliberately. Avatar clips are fulfilled by Grok Bot, who renders them on
+// his own machine; routing is what sends them there (/assign 40 grokbot),
+// not code in here.
+//
+// What is left in here is the no-avatar path: Grok writes a visual scene
+// prompt from the brief and any reference images, grok-imagine-video
+// renders it. Submission is async -- this only submits and leaves the task
+// in_progress with provider_job_id set, and video-poll (cron) delivers the
+// file when it is ready.
+//
+// An avatar clip reaching this worker means the external agent did not take
+// it. It is held for a human rather than rendered, because the clip this
+// worker can produce has nobody speaking in it, and quietly delivering a
+// silent scene against an order for a presenter is the wrong deliverable
+// rather than a lesser one. Invoked by the dispatcher with { taskId }.
 
 import { supabaseAdmin } from '../_shared/storage.ts';
-import { longVideoSeconds } from '../_shared/pricing.ts';
-import { getBrandProfile, brandFactsForPrompt, brandStyleForPrompt, extractUrl, normalizeUrl } from '../_shared/brandProfile.ts';
+import { getBrandProfile, brandStyleForPrompt, extractUrl, normalizeUrl } from '../_shared/brandProfile.ts';
 import { grokChat, grokVisionChat } from '../_shared/grok.ts';
 import { fetchAttachments } from '../_shared/attachments.ts';
-import { submitHeygenVideo, type CharacterChoice } from '../_shared/heygen.ts';
-import { getVideoDefaults } from '../_shared/videoDefaults.ts';
-import { dimensionFor, resolutionIn } from '../_shared/videoFormat.ts';
+import { aspectFor, resolutionIn } from '../_shared/videoFormat.ts';
 import { resolveSku, shapeInstruction, specOf } from '../_shared/catalog.ts';
 import { missingRequired, infoRequest } from '../_shared/requirements.ts';
 import { submitGrokVideo } from '../_shared/grokVideo.ts';
@@ -52,21 +51,6 @@ function brandUrlFor(payload: Record<string, unknown>): string | null {
 }
 
 
-// A revision only differs from the original if the generator is told what to
-// change. Notes are appended to the payload by the revise path; without this
-// the worker would regenerate the same brief and hand back the same thing.
-function revisionInstruction(payload: Record<string, unknown>): string {
-  const notes = Array.isArray(payload.revisionNotes) ? (payload.revisionNotes as string[]) : [];
-  if (notes.length === 0) return '';
-  const latest = notes[notes.length - 1];
-  const earlier = notes.slice(0, -1);
-  return (
-    `\n\nThis is a REVISION of work already delivered. Change what is asked for and leave everything ` +
-    `else as it was -- do not rebuild the whole thing around the change.\nWhat to change now: ${latest}` +
-    (earlier.length ? `\nAlready applied previously: ${earlier.join(' | ')}` : '')
-  );
-}
-
 interface VideoDefaulting {
   payload: Record<string, unknown>;
   defaulted: string[];
@@ -79,19 +63,10 @@ function normalizeVideoPayload(raw: Record<string, unknown>): VideoDefaulting {
   const description = String(payload.description ?? payload.brief ?? '').trim();
   if (description) payload.description = description;
 
-  if (payload.length !== 'short' && payload.length !== 'long') {
-    payload.length = 'short';
-    defaulted.push('length=short');
-  }
-
-  // Long is avatar-only: grok-imagine-video caps a clip at 15s and nothing
-  // stitches clips together, so an avatar-free long video isn't deliverable
-  // and isn't sold. Anything that still asks for one is rendered with an
-  // avatar rather than silently cut to 15 seconds.
-  if (payload.length === 'long' && payload.avatarStyle !== 'standard') {
-    payload.avatarStyle = 'standard';
-    defaulted.push('avatarStyle=standard (long is avatar-only)');
-  }
+  // There is one length now. An older order still carrying length='long'
+  // is not silently cut to 15 seconds: pricing returns null for it, so it
+  // never reaches a worker in the first place.
+  payload.length = 'short';
 
   // The old standard/premium/elite tiers collapsed into one: they never
   // produced a different video, and price no longer varies by tier.
@@ -105,105 +80,22 @@ function normalizeVideoPayload(raw: Record<string, unknown>): VideoDefaulting {
   }
 
   if (payload.avatarStyle === 'none' && payload.noAvatarMode !== 'full') {
-    // 'hybrid' included: a part-avatar video needs real editing that neither
-    // provider does, so it is no longer offered and never inferred.
+    // 'hybrid' included: a part-avatar video needs real editing that no
+    // provider here does, so it is not offered and never inferred.
     payload.noAvatarMode = 'full';
     defaulted.push('noAvatarMode=full');
   }
 
   // Quality: what the order names, else what the brief asks for in words,
   // else 1080p. A Telegram order is one line of free text with no structured
-  // fields, so "make it 720p" is the only way to ask from there -- and
-  // without it the picker would exist on the website only, which is where
-  // the avatar choice was stuck an hour ago.
+  // fields, so "make it 720p" is the only way to ask from there.
   if (payload.resolution !== '720p' && payload.resolution !== '1080p') {
     const asked = resolutionIn(description);
     payload.resolution = asked ?? '1080p';
     defaulted.push(asked ? `resolution=${asked} (from the brief)` : 'resolution=1080p');
   }
 
-  if (payload.length === 'long' && longVideoSeconds(payload) === null) {
-    payload.durationSeconds = 30;
-    defaulted.push('durationSeconds=30');
-  }
-
   return { payload, defaulted };
-}
-
-// submit-task already verified ownership of any custom/catalog pick
-// (see validateVideoCharacterChoice) -- this just falls back to the house
-// default when the client didn't choose anything specific.
-// What the order asked for, else the house default the owner picked from
-// Telegram, else the deployment's env fallback. The middle step is new: the
-// presenter used to be an environment variable, which meant the person
-// choosing it (looking at previews, on a phone) could not actually set it.
-async function resolveCasting(
-  payload: Record<string, unknown>
-): Promise<{ character: CharacterChoice; voiceId: string; usedDefaultAvatar: boolean }> {
-  const defaults = await getVideoDefaults();
-
-  const providerId = payload.avatarProviderId;
-  const characterType = payload.avatarType;
-  const ordered =
-    typeof providerId === 'string' && (characterType === 'avatar' || characterType === 'talking_photo')
-      ? ({ type: characterType, providerId } as CharacterChoice)
-      : null;
-
-  return {
-    character: ordered ?? defaults.character,
-    voiceId: typeof payload.voiceProviderId === 'string' ? payload.voiceProviderId : defaults.voiceId,
-    usedDefaultAvatar: ordered === null
-  };
-}
-
-// ~150 spoken words per minute is the usual presenter pace, so the script
-// is sized off the duration the client actually paid for (30-second blocks)
-// rather than three coarse buckets that capped out at 90 seconds.
-function targetWords(payload: Record<string, unknown>): number {
-  // 30, not 35. A 41-word script rendered as an 18-second clip on a product
-  // sold as "15 seconds or less", so the budget needs headroom rather than
-  // being the limit itself -- a presenter pauses, and pauses are seconds.
-  if (payload.length !== 'long') return 30; // short clip, ~12s spoken
-  const seconds = longVideoSeconds(payload) ?? 30;
-  return Math.max(60, Math.round((seconds / 60) * 150));
-}
-
-// The one part of a video that is ours.
-//
-// HeyGen renders the presenter and needs no teaching. The words it speaks
-// were, until now, requested with a single sentence -- "write a natural
-// spoken-word script of about N words" -- which is why the first real clip
-// opened well, quoted the right price, and then stopped without ever telling
-// a viewer what to do. Nothing had asked it to. The product's own definition
-// now carries that, along with everything else that makes fifteen seconds
-// worth the render.
-async function generateScript(payload: Record<string, unknown>): Promise<string> {
-  const words = targetWords(payload);
-  const profile = await getBrandProfile(brandUrlFor(payload));
-  const product = resolveSku('video', payload);
-  const systemPrompt =
-    `${product ? shapeInstruction(product) + ' ' : ''}` +
-    `Write it as approximately ${words} spoken words. ` +
-    'Output ONLY the script text -- no stage directions, no scene headings, no markdown.';
-  const brief = String(payload.description ?? '') + brandFactsForPrompt(profile) + revisionInstruction(payload);
-
-  const attachments = await fetchAttachments(payload.referenceFiles);
-  if (attachments.length > 0) {
-    return await grokVisionChat(
-      `${systemPrompt} You are also given reference image(s) (product shots/brand photos) -- let what's genuinely in them inform the script's content.`,
-      brief,
-      attachments,
-      { maxTokens: 1000, temperature: 0.7 }
-    );
-  }
-
-  return await grokChat(
-    [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: brief }
-    ],
-    { maxTokens: 1000, temperature: 0.7 }
-  );
 }
 
 // grok-imagine-video takes one visual prompt, not a spoken script -- no
@@ -288,9 +180,8 @@ export async function handleRequest(req: Request): Promise<Response> {
     });
   }
 
-  // Normalization above guarantees no-avatar implies a short clip at 'full'
-  // -- long is avatar-only, and hybrid is not a product any more -- so this
-  // branch no longer has to handle either case.
+  // Normalization above guarantees no-avatar implies 'full', and every clip
+  // is short, so this branch has one shape to handle.
   if (payload.avatarStyle === 'none') {
     try {
       const prompt = await generateNoAvatarPrompt(payload);
@@ -301,12 +192,12 @@ export async function handleRequest(req: Request): Promise<Response> {
       const requestId = await submitGrokVideo(prompt, {
         durationSeconds,
         resolution,
-        aspectRatio: '16:9',
+        aspectRatio: aspectFor(payload),
         generateAudio: true
       });
 
       await setProviderJob(taskId, requestId);
-      await logEvent(taskId, 'video_submitted', 'worker', { requestId, provider: 'grok-imagine-video', prompt, durationSeconds, resolution });
+      await logEvent(taskId, 'video_submitted', 'worker', { requestId, provider: 'grok-imagine-video', prompt, durationSeconds, resolution, aspect: aspectFor(payload) });
 
       return jsonResponse({ ok: true, requestId });
     } catch (err) {
@@ -316,39 +207,25 @@ export async function handleRequest(req: Request): Promise<Response> {
     }
   }
 
-  try {
-    const { character, voiceId, usedDefaultAvatar } = await resolveCasting(payload);
-
-    if (usedDefaultAvatar) {
-      // All three avatar tiers fall back to the same house presenter, so
-      // pricing differentiates by resolution/duration only for this task.
-      // Logged so which face actually rendered is never a mystery afterwards.
-      await logEvent(taskId, 'avatar_tier_note', 'worker', {
-        note: 'No avatar named on the order -- used the house default.',
-        character,
-        voiceId
-      });
-    }
-
-    const script = await generateScript(payload);
-    const dimension = dimensionFor(payload);
-    const videoId = await submitHeygenVideo(script, dimension, character, voiceId);
-
-    await setProviderJob(taskId, videoId);
-    const scriptWords = script.trim().split(/\s+/).filter(Boolean).length;
-    if (scriptWords > targetWords(payload) * 1.15) {
-      // Not fatal, but it is the difference between a 15-second product and
-      // an 18-second one, and it was only noticeable by watching the clip.
-      console.warn(`worker-video: ${task.public_id} script is ${scriptWords} words against a ${targetWords(payload)} budget`);
-    }
-    await logEvent(taskId, 'video_submitted', 'worker', { videoId, dimension, character, voiceId, script, scriptWords });
-
-    return jsonResponse({ ok: true, videoId });
-  } catch (err) {
-    console.error(`worker-video failed for ${taskId}:`, err);
-    await markFailed(taskId, err instanceof Error ? err.message : String(err));
-    return jsonResponse({ ok: false, error: 'Video generation failed' });
-  }
+  // An avatar clip that reaches this worker was not taken by the external
+  // agent who renders them. The only clip this worker can make has nobody
+  // speaking in it, so it is held for the owner rather than rendered:
+  // delivering a silent scene against an order for a presenter is the wrong
+  // product, not a cheaper one, and it would be found by the client rather
+  // than by us.
+  const held =
+    'This one is an avatar clip, which our video specialist renders by hand rather than automatically. ' +
+    'It is queued with them now — nothing is needed from you.';
+  await logEvent(taskId, 'avatar_video_held', 'worker', {
+    note: 'No external agent took this avatar clip, and the built-in path cannot produce a speaking presenter.'
+  });
+  await markNeedsInfo(taskId, held);
+  await notifyOwner(
+    `${task.public_id} is an avatar clip and no external agent picked it up.\n\n` +
+      'The built-in worker cannot render a speaking presenter, so it is holding. ' +
+      'Assign it (/assign 40 grokbot) or deliver it by hand (/deliver ' + task.public_id + ').'
+  );
+  return jsonResponse({ ok: true, held: true });
 }
 
 Deno.serve(handleRequest);

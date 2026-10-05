@@ -1,14 +1,11 @@
-// Cron-invoked (see supabase/migrations for the pg_cron schedule): sweeps
-// in_progress video tasks with a provider job outstanding, and on
-// completion downloads the rendered file into our own storage (both
-// providers' own URLs are time-limited) and delivers it. Avatar videos
-// (worker-video's HeyGen path) and no-avatar videos (its grok-imagine-video
-// path) are both async submit-then-poll, so this sweep handles either --
-// payload.avatarStyle says which provider a given row's provider_job_id
-// belongs to.
+// Delivers videos whose render has finished.
+//
+// grok-imagine-video is async: worker-video submits and stores a
+// provider_job_id, this cron picks the result up. It used to branch on
+// payload.avatarStyle to choose between two providers; HeyGen is gone, so
+// there is one.
 
 import { supabaseAdmin, uploadDeliverable } from '../_shared/storage.ts';
-import { checkHeygenStatus } from '../_shared/heygen.ts';
 import { checkGrokVideoStatus } from '../_shared/grokVideo.ts';
 import { addTaskFile, logEvent, markDelivered, markFailed } from '../_shared/task.ts';
 import { sendTelegramVideo } from '../_shared/telegramApi.ts';
@@ -58,58 +55,35 @@ export async function handleRequest(req: Request): Promise<Response> {
   let failed = 0;
 
   for (const task of pending) {
-    const isNoAvatar = (task.payload as Record<string, unknown> | null)?.avatarStyle === 'none';
-
     try {
-      if (isNoAvatar) {
-        const result = await checkGrokVideoStatus(task.provider_job_id as string);
-        console.log(`video-poll: ${task.public_id} grok status=${result.status}`);
+      // One provider now. The branch that used to pick between this and
+      // HeyGen, on payload.avatarStyle, went with HeyGen itself -- every
+      // in_progress video is a grok-imagine-video render.
+      const result = await checkGrokVideoStatus(task.provider_job_id as string);
+      // Every sweep says where the render actually is. Without this a task
+      // sitting at in_progress for ten minutes could equally be the provider
+      // still working or our own status call failing, with no way to tell
+      // which from outside.
+      console.log(`video-poll: ${task.public_id} grok status=${result.status}`);
 
-        if (result.status === 'done' && result.videoUrl) {
-          const videoResp = await fetch(result.videoUrl);
-          if (!videoResp.ok) throw new Error(`Could not download rendered video (${videoResp.status})`);
-          const bytes = new Uint8Array(await videoResp.arrayBuffer());
-          const { url } = await uploadDeliverable(task.id, 'video.mp4', bytes, 'video/mp4');
+      if (result.status === 'done' && result.videoUrl) {
+        const videoResp = await fetch(result.videoUrl);
+        if (!videoResp.ok) throw new Error(`Could not download rendered video (${videoResp.status})`);
+        const bytes = new Uint8Array(await videoResp.arrayBuffer());
+        const { url } = await uploadDeliverable(task.id, 'video.mp4', bytes, 'video/mp4');
 
-          await addTaskFile(task.id, { url, fileType: 'video/mp4', optionIndex: 1, version: task.version });
-          await logEvent(task.id, 'video_delivered', 'worker', { url });
-          await markDelivered(task.id);
-          await handOver(task.owner_channel_id as string | null, task.public_id as string, url);
-          delivered++;
-        } else if (result.status === 'failed' || result.status === 'expired') {
-          const reason = result.error || `xAI reported the video generation as ${result.status}`;
-          await markFailed(task.id, reason);
-          await notifyOwner(`${task.public_id} failed to render.\n\n${reason}`).catch(() => {});
-          failed++;
-        }
-        // pending -- leave as-is, checked again next sweep.
-      } else {
-        const result = await checkHeygenStatus(task.provider_job_id as string);
-        // Every sweep says where the render actually is. Without this a task
-        // sitting at in_progress for ten minutes could equally be HeyGen
-        // still working or our own status call failing, and there was no way
-        // to tell which from outside.
-        console.log(`video-poll: ${task.public_id} heygen status=${result.status}`);
-
-        if (result.status === 'completed' && result.videoUrl) {
-          const videoResp = await fetch(result.videoUrl);
-          if (!videoResp.ok) throw new Error(`Could not download rendered video (${videoResp.status})`);
-          const bytes = new Uint8Array(await videoResp.arrayBuffer());
-          const { url } = await uploadDeliverable(task.id, 'video.mp4', bytes, 'video/mp4');
-
-          await addTaskFile(task.id, { url, fileType: 'video/mp4', optionIndex: 1, version: task.version });
-          await logEvent(task.id, 'video_delivered', 'worker', { url });
-          await markDelivered(task.id);
-          await handOver(task.owner_channel_id as string | null, task.public_id as string, url);
-          delivered++;
-        } else if (result.status === 'failed') {
-          const reason = result.error || 'HeyGen reported the render as failed';
-          await markFailed(task.id, reason);
-          await notifyOwner(`${task.public_id} failed to render.\n\n${reason}`).catch(() => {});
-          failed++;
-        }
-        // processing/pending -- leave as-is, checked again next sweep.
+        await addTaskFile(task.id, { url, fileType: 'video/mp4', optionIndex: 1, version: task.version });
+        await logEvent(task.id, 'video_delivered', 'worker', { url });
+        await markDelivered(task.id);
+        await handOver(task.owner_channel_id as string | null, task.public_id as string, url);
+        delivered++;
+      } else if (result.status === 'failed' || result.status === 'expired') {
+        const reason = result.error || `xAI reported the video generation as ${result.status}`;
+        await markFailed(task.id, reason);
+        await notifyOwner(`${task.public_id} failed to render.\n\n${reason}`).catch(() => {});
+        failed++;
       }
+      // pending -- leave as-is, checked again next sweep.
     } catch (err) {
       console.error(`video-poll: check failed for ${task.public_id}`, err);
     }

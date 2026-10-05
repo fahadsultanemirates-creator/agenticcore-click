@@ -312,20 +312,6 @@ export const CATALOG: CatalogItem[] = [
     revisions: 0,
     aliases: ['promo clip', 'b-roll', 'motion video', 'no avatar video'],
   },
-  {
-    sku: 42,
-    code: 'VID-LONG-AVATAR',
-    service: 'video',
-    name: 'Long avatar video (30s–10min)',
-    selector: { length: 'long', avatarStyle: 'standard' },
-    renderer: 'video',
-    branding: 'client',
-    output: { options: 1 },
-    urlUse: 'brand',
-    revisions: 0,
-    aliases: ['long video', 'explainer', 'full promo'],
-  },
-
   // ---- 50s: Social --------------------------------------------------
   {
     sku: 50,

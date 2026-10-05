@@ -19,21 +19,12 @@
 // doesn't send a Supabase JWT.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { listAvatars, listVoices } from '../_shared/heygen.ts';
 import { transcribeAudio } from '../_shared/voice.ts';
-import { downloadTelegramFile, sendTelegramAudio, sendTelegramPhoto, sendTelegramText } from '../_shared/telegramApi.ts';
-import { paginate, parseBrowseArgs, browseFooter } from '../_shared/catalogBrowse.ts';
+import { downloadTelegramFile } from '../_shared/telegramApi.ts';
 import { clearRoute, externalEnabled, GROKBOT_AGENT, listRoutes, setRoute } from '../_shared/agents.ts';
 import { fallbackToBuiltIn, grokbotSecretStatus } from '../_shared/grokbot.ts';
 import { fileProblem } from '../_shared/deliverableTypes.ts';
 import type { Bytes } from '../_shared/bytes.ts';
-import {
-  getVideoDefaults,
-  hasDefaultAvatar,
-  hasDefaultVoice,
-  setDefaultAvatar,
-  setDefaultVoice
-} from '../_shared/videoDefaults.ts';
 import { uploadClientMedia, uploadDeliverable } from '../_shared/storage.ts';
 import { detectLanguage, getOwnerLanguage, setOwnerLanguage, sendBotMessage } from '../_shared/botMessage.ts';
 import { converse } from '../_shared/botConversation.ts';
@@ -55,14 +46,7 @@ const FILES_PATTERN = /^\/files(?:@\S+)?\s+(AC-\d{4}-\d{2,}|AC-CLICK-\d{4})\b/i;
 const DELIVER_PATTERN = /^\/deliver(?:@\S+)?\s+(AC-\d{4}-\d{2,}|AC-OWNER-\d{4,}|AC-CLICK-\d{4})(?:\s+(\S+))?$/i;
 const QUEUE_PATTERN = /^\/queue(?:@\S+)?$/i;
 const HELP_PATTERN = /^\/(start|help)(?:@\S+)?$/i;
-const AVATARS_PATTERN = /^\/avatars(?:@\S+)?((?:\s+\S+)*)\s*$/i;
-const VOICES_PATTERN = /^\/voices(?:@\S+)?((?:\s+\S+)*)\s*$/i;
-const ADDAVATAR_PATTERN = /^\/addavatar(?:@\S+)?\s+(\S+)\s+([\s\S]+)$/i;
-const ADDVOICE_PATTERN = /^\/addvoice(?:@\S+)?\s+(\S+)\s+([\s\S]+)$/i;
 const REPORT_PATTERN = /^\/report(?:@\S+)?\s+(\S+)$/i;
-const SETAVATAR_PATTERN = /^\/setavatar(?:@\S+)?\s+(\S+)(?:\s+(photo))?\s*$/i;
-const SETVOICE_PATTERN = /^\/setvoice(?:@\S+)?\s+(\S+)\s*$/i;
-const CASTING_PATTERN = /^\/casting(?:@\S+)?$/i;
 const ASSIGN_PATTERN = /^\/assign(?:@\S+)?\s+(\d{1,3})\s+(\S+)\s*$/i;
 const UNASSIGN_PATTERN = /^\/unassign(?:@\S+)?\s+(\d{1,3})\s*$/i;
 const ROUTES_PATTERN = /^\/routes(?:@\S+)?$/i;
@@ -95,13 +79,6 @@ function helpText(): string {
     "/files <task id> — list a task's deliverable files",
     '/deliver <task id> [url] — mark delivered; attach the file instead of a url if you have it',
     "/report <url> — owner-only business report (flaws, improvements, marketing plan)",
-    "/avatars [gender|name] [page] — browse avatars as previews",
-    "/voices [language|gender|name] [page] — browse voices, playable",
-    '/addavatar <id> <name> — add an avatar to the client-facing picker',
-    '/addvoice <id> <name> — add a voice to the client-facing picker',
-    '/casting — who appears in a video that names nobody',
-    '/setavatar <id> [photo] — set the default avatar',
-    '/setvoice <id> — set the default voice',
     '/assign <sku> grokbot — send a product to Grok Bot instead',
     '/unassign <sku> — bring a product back in-house',
     '/routes — which products go to an external agent',
@@ -323,104 +300,6 @@ async function handleFilesCommand(publicId: string): Promise<string> {
   return `Files for ${publicId}:\n\n${lines.join('\n')}`;
 }
 
-// Browsing a catalog you cannot see is not browsing.
-//
-// This used to print fifteen lines of text with a preview URL on each, out
-// of 1266 avatars -- so choosing one meant opening links one at a time and
-// remembering which id belonged to which face. Nobody picks an avatar that
-// way, and picking the avatar is the whole decision.
-//
-// Now each option arrives as the actual preview, and the caption under it is
-// the exact command that selects it: one tap to copy, one send to add. The
-// id never has to be typed or matched up by hand.
-
-async function handleAvatarsCommand(chatId: number, raw?: string): Promise<string> {
-  const { filter, page } = parseBrowseArgs(raw);
-  try {
-    let avatars = await listAvatars();
-    if (filter) {
-      // Gender OR name, because "female" and "abigail" are both things a
-      // person actually types, and neither should return nothing.
-      const needle = filter.toLowerCase();
-      avatars = avatars.filter(
-        (a) => a.gender?.toLowerCase() === needle || a.name.toLowerCase().includes(needle)
-      );
-    }
-    if (avatars.length === 0) return `No avatars found${filter ? ` matching "${filter}"` : ''}.`;
-
-    const p = paginate(avatars.length, page);
-    for (const avatar of avatars.slice(p.from, p.to)) {
-      // The caption IS the command. Copy one line, send it, done.
-      const caption = `${avatar.name} (${avatar.gender ?? '?'})\n\n/addavatar ${avatar.providerId} ${avatar.name}`;
-      const preview = avatar.previewImageUrl ?? avatar.previewVideoUrl;
-      // A preview that fails to send must still leave something choosable in
-      // the chat -- a silent gap is worse than a plain link, because the
-      // option simply disappears from the page you are picking from.
-      if (preview) {
-        await sendTelegramPhoto(chatId, preview, caption).catch(async (err) => {
-          console.error('telegram-webhook: avatar preview failed', err);
-          await sendTelegramText(chatId, `${caption}\n\nPreview: ${preview}`).catch(() => {});
-        });
-      } else {
-        await sendTelegramText(chatId, `${caption}\n\n(no preview image)`).catch(() => {});
-      }
-    }
-
-    return browseFooter('avatars', filter, p, avatars.length);
-  } catch (err) {
-    console.error('telegram-webhook: /avatars failed', err);
-    return 'Could not load HeyGen avatars right now.';
-  }
-}
-
-async function handleVoicesCommand(chatId: number, raw?: string): Promise<string> {
-  const { filter, page } = parseBrowseArgs(raw);
-  try {
-    let voices = await listVoices();
-    if (filter) {
-      const needle = filter.toLowerCase();
-      voices = voices.filter(
-        (v) =>
-          v.language?.toLowerCase().includes(needle) ||
-          v.gender?.toLowerCase() === needle ||
-          v.name.toLowerCase().includes(needle)
-      );
-    }
-    if (voices.length === 0) return `No voices found${filter ? ` matching "${filter}"` : ''}.`;
-
-    const p = paginate(voices.length, page);
-    for (const voice of voices.slice(p.from, p.to)) {
-      // Choosing a voice means hearing it. A link to an mp3 is not hearing it.
-      const caption = `${voice.name} (${voice.language ?? '?'}, ${voice.gender ?? '?'})\n\n/addvoice ${voice.providerId} ${voice.name}`;
-      const sample = voice.previewAudioUrl;
-      if (sample) {
-        await sendTelegramAudio(chatId, sample, caption, voice.name).catch(async (err) => {
-          console.error('telegram-webhook: voice preview failed', err);
-          await sendTelegramText(chatId, `${caption}\n\nSample: ${sample}`).catch(() => {});
-        });
-      } else {
-        // The name is not nothing -- "Bright & Energetic" is still a choice --
-        // so say the sample is missing rather than dropping the option.
-        await sendTelegramText(chatId, `${caption}\n\n(no sample available for this voice)`).catch(() => {});
-      }
-    }
-
-    // Say how many of these can actually be heard, because "no sample" on
-    // four of five looks like a fault rather than what it is: HeyGen only
-    // publishes samples for some voices, and the listenable ones are sorted
-    // to the front.
-    const listenable = voices.filter((voice) => voice.previewAudioUrl).length;
-    const note = listenable === 0
-      ? '\n\nNone of these have a sample from HeyGen. Pick by description, or say the word and I will record one line in each voice so you can hear them.'
-      : `\n\n${listenable} of these have a sample to play, and they are listed first.`;
-
-    return browseFooter('voices', filter, p, voices.length) + note;
-  } catch (err) {
-    console.error('telegram-webhook: /voices failed', err);
-    return 'Could not load HeyGen voices right now.';
-  }
-}
-
 
 // ---- External agents -------------------------------------------------
 //
@@ -565,70 +444,6 @@ async function handleFallbackCommand(publicId: string): Promise<string> {
   }
   const agents = [...new Set(open.map((job) => job.agent))].join(', ');
   return `${task.public_id} has been taken back from ${agents} and re-queued in-house.`;
-}
-
-async function handleAddCatalogCommand(kind: 'avatar' | 'voice', providerId: string, name: string): Promise<string> {
-  const { error } = await supabaseAdmin.from('catalog_options').insert({ kind, provider_id: providerId, name });
-  if (error) {
-    console.error(`telegram-webhook: /add${kind} failed`, error);
-    return `Could not add that ${kind}.`;
-  }
-
-  // The first one added becomes the house default too. Adding an avatar to
-  // an empty picker and then finding your test video rendered somebody
-  // else's face is a surprise nobody should have to debug; adopting the
-  // first choice is what a person means by it, and the reply says so rather
-  // than doing it silently. Later ones only join the picker -- changing the
-  // default after that is an explicit /setavatar.
-  const alreadySet = kind === 'avatar' ? await hasDefaultAvatar() : await hasDefaultVoice();
-  if (!alreadySet) {
-    if (kind === 'avatar') await setDefaultAvatar(providerId);
-    else await setDefaultVoice(providerId);
-  }
-  const adopted = !alreadySet;
-
-  const note = adopted
-    ? `\n\nThis is now the default ${kind} for videos that don't name one. Change it any time with /set${kind} <id>.`
-    : '';
-  return `Added "${name}" (${providerId}) to the ${kind} picker.${note}`;
-}
-
-// Setting the house presenter from where the previews are. It used to be a
-// Supabase environment variable, which the person choosing it cannot reach
-// from a phone at the moment they are actually looking at the faces.
-async function handleSetAvatarCommand(providerId: string, asPhoto?: string): Promise<string> {
-  try {
-    await setDefaultAvatar(providerId, asPhoto ? 'talking_photo' : 'avatar');
-    return `Videos will now use ${providerId} unless an order names a different avatar.`;
-  } catch (err) {
-    console.error('telegram-webhook: /setavatar failed', err);
-    return 'Could not save that avatar.';
-  }
-}
-
-async function handleSetVoiceCommand(providerId: string): Promise<string> {
-  try {
-    await setDefaultVoice(providerId);
-    return `Videos will now use voice ${providerId} unless an order names a different one.`;
-  } catch (err) {
-    console.error('telegram-webhook: /setvoice failed', err);
-    return 'Could not save that voice.';
-  }
-}
-
-// Answering "who is actually going to be in the video?" without reading logs
-// or guessing which of three fallbacks won.
-async function handleCastingCommand(): Promise<string> {
-  const defaults = await getVideoDefaults();
-  const source = (chosen: boolean) => (chosen ? 'chosen here' : 'deployment fallback');
-  return [
-    'Videos with no avatar or voice named on the order will use:',
-    '',
-    `Avatar: ${defaults.character.providerId} (${defaults.character.type}, ${source(defaults.avatarChosen)})`,
-    `Voice:  ${defaults.voiceId} (${source(defaults.voiceChosen)})`,
-    '',
-    'Change with /setavatar <id> or /setvoice <id>.'
-  ].join('\n');
 }
 
 async function handleReportCommand(chatId: number, url: string): Promise<string> {
@@ -786,25 +601,6 @@ async function routeMessage(
   const deliverMatch = text.match(DELIVER_PATTERN);
   if (deliverMatch) return handleDeliverCommand(deliverMatch[1].toUpperCase(), deliverMatch[2], incomingFile);
 
-  const addAvatarMatch = text.match(ADDAVATAR_PATTERN);
-  if (addAvatarMatch) return handleAddCatalogCommand('avatar', addAvatarMatch[1], addAvatarMatch[2].trim());
-
-  const addVoiceMatch = text.match(ADDVOICE_PATTERN);
-  if (addVoiceMatch) return handleAddCatalogCommand('voice', addVoiceMatch[1], addVoiceMatch[2].trim());
-
-  const avatarsMatch = text.match(AVATARS_PATTERN);
-  if (avatarsMatch) return handleAvatarsCommand(chatId, avatarsMatch[1]);
-
-  const voicesMatch = text.match(VOICES_PATTERN);
-  if (voicesMatch) return handleVoicesCommand(chatId, voicesMatch[1]);
-
-  const setAvatarMatch = text.match(SETAVATAR_PATTERN);
-  if (setAvatarMatch) return handleSetAvatarCommand(setAvatarMatch[1], setAvatarMatch[2]);
-
-  const setVoiceMatch = text.match(SETVOICE_PATTERN);
-  if (setVoiceMatch) return handleSetVoiceCommand(setVoiceMatch[1]);
-
-  if (CASTING_PATTERN.test(text)) return handleCastingCommand();
 
   const assignMatch = text.match(ASSIGN_PATTERN);
   if (assignMatch) return handleAssignCommand(assignMatch[1], assignMatch[2]);
@@ -855,14 +651,6 @@ async function routeMessage(
       const resolved = await resolveTaskId(parsed.taskId, text);
       return resolved.publicId ? handleDeliverCommand(resolved.publicId, parsed.url, incomingFile) : resolved.reply!;
     }
-    case 'avatars':
-      return handleAvatarsCommand(chatId, parsed.gender);
-    case 'voices':
-      return handleVoicesCommand(chatId, parsed.filter);
-    case 'addavatar':
-      return handleAddCatalogCommand('avatar', parsed.id, parsed.name);
-    case 'addvoice':
-      return handleAddCatalogCommand('voice', parsed.id, parsed.name);
     case 'report':
       return handleReportCommand(chatId, parsed.url);
     case 'ask':

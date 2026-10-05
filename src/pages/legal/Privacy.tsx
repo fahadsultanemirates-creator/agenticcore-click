@@ -12,7 +12,7 @@ export function Privacy() {
             "Account details — your email address, and a name if you give one.",
             "Order content — the brief you write, and any files you upload: logos, photos, reference documents, audio.",
             "Deliverables — the work produced for you, stored so your dashboard can serve it.",
-            "Payment records — the amount, time and status of wallet top-ups. Card and crypto details are handled by the payment provider and never reach our systems.",
+            "Payment records — the amount, time and status of wallet top-ups, and the public blockchain transaction that paid each one. Top-ups are made in USDT on BNB Smart Chain, which means we never see a card number or hold any payment credential.",
             "Basic technical data — the requests your browser makes, kept in server logs for security and debugging.",
           ]}
         />
@@ -41,7 +41,6 @@ export function Privacy() {
             "Anthropic (Claude) — writing and reasoning.",
             "xAI (Grok) — image generation, speech and some video.",
             "PDFShift — turning documents into PDFs.",
-            "PayRam — processing wallet top-ups.",
           ]}
         />
         <p>

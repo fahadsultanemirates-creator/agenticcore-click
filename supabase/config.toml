@@ -8,11 +8,13 @@
 # Every current setting is therefore recorded below, whether or not it was
 # set here originally.
 
-# payram-webhook receives relayed calls from .agency, authenticated via
-# X-Internal-Relay-Secret rather than a Supabase JWT -- must not sit
-# behind the platform's default JWT gate, same reasoning as .agency's
-# own payram-webhook/telegram-webhook (see their config.toml).
-[functions.payram-webhook]
+# Called by pg_cron through pg_net with the anon key, and by the billing
+# page with a real session. It resolves and checks the caller itself for
+# the single-invoice path.
+[functions.usdt-check]
+verify_jwt = false
+
+[functions.usdt-invoice]
 verify_jwt = false
 
 # telegram-webhook is authenticated via X-Telegram-Bot-Api-Secret-Token,

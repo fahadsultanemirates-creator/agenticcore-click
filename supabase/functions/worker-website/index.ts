@@ -9,11 +9,12 @@
 
 import { supabaseAdmin } from '../_shared/storage.ts';
 import { getBrandProfile, brandFactsForPrompt, brandStyleForPrompt, extractUrl, normalizeUrl } from '../_shared/brandProfile.ts';
-import { extractCodeBlock } from '../_shared/grok.ts';
 import { claudeChat, claudeVisionChat } from '../_shared/claude.ts';
 import { fetchAttachments } from '../_shared/attachments.ts';
 import { generateBrandVisual, mapWithConcurrency } from '../_shared/images.ts';
 import { buildZip } from '../_shared/zip.ts';
+import { splitPages, type SitePage } from '../_shared/sitePages.ts';
+import { WEBSITE_LARGE_PAGES, WEBSITE_SMALL_PAGES } from '../_shared/pricing.ts';
 import { addTaskFile, logEvent, markDelivered, markFailed } from '../_shared/task.ts';
 import { jsonResponse } from '../_shared/cors.ts';
 import { requireInternalCaller } from '../_shared/internal.ts';
@@ -21,9 +22,11 @@ import { requireInternalCaller } from '../_shared/internal.ts';
 const NETLIFY_AUTH_TOKEN = Deno.env.get('NETLIFY_AUTH_TOKEN')!;
 const NETLIFY_API = 'https://api.netlify.com/api/v1';
 
-// The large tier (4-10 sections) gets more real photography than the small
-// one (2-4 sections) -- both are still a single self-contained HTML page,
-// just with more sections/imagery to fill out.
+// Sites are sold by PAGE COUNT: 1-4 pages small, 5-10 large. They were
+// one index.html with more or fewer sections, which meant a client who
+// asked for five pages got one long scroll -- the right word on the
+// invoice and the wrong thing in the zip. The large tier also gets more
+// real photography than the small one.
 const IMAGE_SLOTS_SMALL = [
   { label: 'hero/banner image for the top of the page', filename: 'hero.png' },
   { label: 'about/ambience image (interior, team, or workspace feel)', filename: 'about.png' },
@@ -93,18 +96,45 @@ async function generateWebsiteImages(
   return slots.map((slot, i) => ({ label: slot.label, url: urls[i] }));
 }
 
+/**
+ * How many pages this order bought.
+ *
+ * The tier is the contract -- it is what was priced and charged -- so the
+ * count is clamped into its range rather than taken from the brief alone.
+ * A client who pays for the small tier and writes "make it 9 pages" gets
+ * four, which is what they bought, instead of the worker quietly
+ * delivering the larger product for the smaller price.
+ */
+function pageCountFor(payload: Record<string, unknown>): { count: number; min: number; max: number } {
+  const large = payload.tier === 'large';
+  const min = large ? WEBSITE_LARGE_PAGES.min : WEBSITE_SMALL_PAGES.min;
+  const max = large ? WEBSITE_LARGE_PAGES.max : WEBSITE_SMALL_PAGES.max;
+  const asked = Number(payload.pageCount ?? payload.pages ?? payload.sections);
+  const count = Number.isFinite(asked) && asked > 0 ? Math.min(max, Math.max(min, Math.round(asked))) : large ? 5 : 3;
+  return { count, min, max };
+}
+
 function buildPrompt(payload: Record<string, unknown>, images: { label: string; url: string }[]): { system: string; user: string } {
+  const { count } = pageCountFor(payload);
   const system = [
-    'You are a senior front-end developer generating a complete, production-quality single-page',
-    'business website as ONE self-contained HTML file (inline <style> and <script>, no external',
-    'dependencies except Google Fonts if you want). Requirements:',
+    `You are a senior front-end developer generating a complete, production-quality business`,
+    `website of EXACTLY ${count} page${count === 1 ? '' : 's'}. Each page is its own self-contained`,
+    'HTML file (inline <style> and <script>, no external dependencies except Google Fonts if you',
+    'want). Requirements:',
+    `- Produce exactly ${count} page${count === 1 ? '' : 's'}. One of them MUST be named index.html and is the home page.`,
+    '- Before each page, on its own line, write: FILE: <filename>.html',
+    '- Then the page itself in a ```html fenced block. One block per page.',
+    '- Every page carries the SAME header and nav, and the nav links to every other page by its ' +
+      'exact filename (href="about.html"), so the site actually navigates. A nav link that goes ' +
+      'nowhere is the one thing a visitor notices immediately.',
+    '- Every page shares the same styling, so they read as one site rather than several.',
     '- Semantic HTML5, fully responsive (mobile-first), modern clean design, thoughtful visual hierarchy and spacing.',
     '- Include every section and contact/social link the brief provides; omit ones left blank.',
     '- No placeholder lorem ipsum -- write real, on-brand copy from the brief.',
     '- Contact details/socials become real clickable links/buttons (mailto:, tel:, wa.me, etc).',
     '- You are given real generated image URLs below -- use each one\'s exact URL in an <img src="..."> ' +
       'in the section it describes. Never invent, alter, or fall back to a placeholder/stock image URL.',
-    '- Respond with ONLY one ```html fenced code block containing the full document.'
+    '- No commentary outside the FILE: lines and the fenced blocks.'
   ].join('\n');
 
   const lines = Object.entries(payload)
@@ -173,8 +203,8 @@ async function ensureNetlifySite(taskId: string, publicId: string, brand: Record
   return { siteId: site.id, url: site.ssl_url || site.url };
 }
 
-async function deployToNetlify(siteId: string, html: string): Promise<void> {
-  const zip = buildZip([{ name: 'index.html', data: new TextEncoder().encode(html) }]);
+async function deployToNetlify(siteId: string, pages: SitePage[]): Promise<void> {
+  const zip = buildZip(pages.map((page) => ({ name: page.name, data: new TextEncoder().encode(page.html) })));
   const resp = await fetch(`${NETLIFY_API}/sites/${siteId}/deploys`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${NETLIFY_AUTH_TOKEN}`, 'Content-Type': 'application/zip' },
@@ -227,14 +257,31 @@ export async function handleRequest(req: Request): Promise<Response> {
           { role: 'system', content: system },
           { role: 'user', content: userWithBrand }
         ], { maxTokens: 16000 });
-    const html = extractCodeBlock(raw, 'html');
+    const pages = splitPages(raw);
+    if (pages.length === 0) {
+      throw new Error('The generator returned no usable HTML');
+    }
+
+    const { count } = pageCountFor(payload);
+    if (pages.length !== count) {
+      // Not fatal -- a site with four good pages instead of five is worth
+      // delivering -- but it is the difference between what was sold and
+      // what arrived, so it is recorded rather than noticed later by a
+      // client counting the nav.
+      console.warn(`worker-website: ${task.public_id} asked for ${count} pages, got ${pages.length}`);
+      await logEvent(taskId, 'website_page_count_mismatch', 'worker', {
+        asked: count,
+        got: pages.length,
+        pages: pages.map((p) => p.name)
+      });
+    }
 
     const { siteId, url } = await ensureNetlifySite(taskId, task.public_id, task.brand ?? {});
-    await deployToNetlify(siteId, html);
+    await deployToNetlify(siteId, pages);
 
     await supabaseAdmin.from('tasks').update({ preview_url: url }).eq('id', taskId);
     await addTaskFile(taskId, { url, fileType: 'website', optionIndex: 1, version: task.version });
-    await logEvent(taskId, 'website_deployed', 'worker', { url });
+    await logEvent(taskId, 'website_deployed', 'worker', { url, pages: pages.map((p) => p.name) });
     await markDelivered(taskId);
 
     return jsonResponse({ ok: true, url });

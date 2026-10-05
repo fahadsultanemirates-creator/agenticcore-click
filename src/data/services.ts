@@ -40,7 +40,7 @@ export const services: ServiceMeta[] = [
     route: "/dashboard/website",
     price: "from $10",
     eta: "~20 min",
-    detail: "2–10 pages, written, designed and deployed live.",
+    detail: "1–10 pages, written, designed and deployed live.",
   },
   {
     id: "pdf",
@@ -68,9 +68,9 @@ export const services: ServiceMeta[] = [
     tagline: "Short avatar clips to full promos.",
     icon: Clapperboard,
     route: "/dashboard/video",
-    price: "from $1",
+    price: "$3",
     eta: "~10 min",
-    detail: "Avatar-presented or pure motion, short or long.",
+    detail: "10–15 seconds, 1080p, with a presenter or without.",
   },
   {
     id: "social",

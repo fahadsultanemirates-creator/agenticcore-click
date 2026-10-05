@@ -16,24 +16,19 @@ import { useReferenceFiles } from "../../lib/useReferenceFiles";
 // somebody speaking, or is it a moving scene — and the resolution, which is
 // the only thing that moves the price.
 type AvatarStyle = "standard" | "none";
-type Resolution = "720p" | "1080p";
 
 const AVATAR_STYLES: { id: AvatarStyle; label: string; blurb: string }[] = [
   { id: "standard", label: "With a presenter", blurb: "Someone speaks your script to camera." },
   { id: "none", label: "No presenter", blurb: "A moving scene — product, place, atmosphere." },
 ];
 
-// Mirrors SHORT_VIDEO_720P_USD / SHORT_VIDEO_1080P_USD in
-// supabase/functions/_shared/pricing.ts, which is what actually charges.
-const PRICES: Record<Resolution, number> = { "720p": 1, "1080p": 1.5 };
-
-function formatUsd(amount: number): string {
-  return `$${amount % 1 === 0 ? amount.toFixed(0) : amount.toFixed(2)}`;
-}
+// Mirrors VIDEO_USD in supabase/functions/_shared/pricing.ts, which is
+// what actually charges. One price now: resolution was never a real
+// difference to sell, and an avatar costs the same as a moving scene.
+const PRICE_USD = 3;
 
 export function VideoPage() {
   const [avatarStyle, setAvatarStyle] = useState<AvatarStyle>("standard");
-  const [resolution, setResolution] = useState<Resolution>("1080p");
   const [description, setDescription] = useState("");
   const [websiteUrl, setWebsiteUrl] = useState("");
   const [descError, setDescError] = useState(false);
@@ -43,7 +38,7 @@ export function VideoPage() {
   const [publicId, setPublicId] = useState("");
   const references = useReferenceFiles();
 
-  const price = formatUsd(PRICES[resolution]);
+  const price = `$${PRICE_USD}`;
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -59,7 +54,9 @@ export function VideoPage() {
       // both read it, and every clip is short now.
       length: "short",
       avatarStyle,
-      resolution,
+      // Every clip is 1080p; the field stays because the worker and the
+      // catalog selector both still read it.
+      resolution: "1080p",
       noAvatarMode: avatarStyle === "none" ? "full" : undefined,
       description: description.trim(),
       websiteUrl: websiteUrl.trim() || undefined,
@@ -83,7 +80,7 @@ export function VideoPage() {
           eta="~10 min"
           price={price}
           title="What should the video show?"
-          subtitle="Up to 15 seconds. Pick a style and a quality — the price updates as you go."
+          subtitle="One clip, 10–15 seconds, 1080p. $3 whether someone speaks or not."
         />
 
         {submitted && (
@@ -113,24 +110,6 @@ export function VideoPage() {
                   <p className="mt-1 text-sm text-fg-muted">{style.blurb}</p>
                 </button>
               ))}
-            </div>
-
-            <div>
-              <span className="text-xs font-semibold tracking-wide text-fg-muted uppercase">Quality</span>
-              <div className="mt-2 flex gap-2">
-                {(["720p", "1080p"] as Resolution[]).map((r) => (
-                  <button
-                    key={r}
-                    type="button"
-                    onClick={() => setResolution(r)}
-                    className={`rounded-full border-2 px-4 py-1.5 text-sm font-medium transition-colors ${
-                      resolution === r ? "border-yellow-400 bg-yellow-400 text-void" : "border-border text-fg-muted hover:border-yellow-400/50"
-                    }`}
-                  >
-                    {r} — {formatUsd(PRICES[r])}
-                  </button>
-                ))}
-              </div>
             </div>
 
             <p className="text-xs text-fg-faint">Charged from your wallet balance once you submit.</p>

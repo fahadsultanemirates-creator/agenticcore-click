@@ -18,13 +18,13 @@ const PAGE_SECTIONS = [
 const TIERS = [
   {
     id: "small",
-    label: "2–4 pages",
+    label: "1–4 pages",
     price: "$10",
     blurb: "A focused site — home, about, services/contact.",
   },
   {
     id: "large",
-    label: "4–10 pages",
+    label: "5–10 pages",
     price: "$20",
     blurb: "Room for a full sitemap — galleries, multiple services, blog.",
   },

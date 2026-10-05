@@ -61,7 +61,6 @@ alter table public.usdt_invoices enable row level security;
 -- status and the credit are all decided server-side.
 revoke insert, update, delete, truncate on public.usdt_invoices from anon, authenticated;
 
-drop policy if exists "Users read their own usdt invoices" on public.usdt_invoices;
 create policy "Users read their own usdt invoices" on public.usdt_invoices
   for select using (auth.uid() = user_id);
 
@@ -83,7 +82,7 @@ create or replace function public.credit_usdt_invoice(
 language plpgsql
 security definer
 set search_path = public
-as $$
+as $fn$
 declare
   v_invoice public.usdt_invoices%rowtype;
 begin
@@ -108,7 +107,7 @@ exception
     -- the duplicate-credit case the unique constraint exists to stop, so
     -- it is reported rather than swallowed.
     return false;
-end $$;
+end $fn$;
 
 -- Only the service role calls this. PUBLIC gets EXECUTE on a new function
 -- by default and both client roles inherit it from there, so revoking from
@@ -122,7 +121,7 @@ create or replace function public.expire_usdt_invoices() returns integer
 language sql
 security definer
 set search_path = public
-as $$
+as $fn$
   with expired as (
     update public.usdt_invoices
        set status = 'expired'
@@ -131,7 +130,7 @@ as $$
     returning 1
   )
   select count(*)::integer from expired;
-$$;
+$fn$;
 
 revoke all on function public.expire_usdt_invoices() from public, anon, authenticated;
 
@@ -150,12 +149,12 @@ revoke all on function public.expire_usdt_invoices() from public, anon, authenti
 create extension if not exists pg_cron;
 create extension if not exists pg_net;
 
-do $$
+do $guard$
 begin
   if exists (select 1 from cron.job where jobname = 'usdt-payment-sweep') then
     perform cron.unschedule('usdt-payment-sweep');
   end if;
-end $$;
+end $guard$;
 
 select cron.schedule(
   'usdt-payment-sweep',

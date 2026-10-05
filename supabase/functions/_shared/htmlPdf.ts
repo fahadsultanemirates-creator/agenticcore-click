@@ -1,8 +1,7 @@
 import type { Bytes } from './bytes.ts';
 // Wraps PDFShift (Chromium-based rendering, confirmed via its own docs):
-// real browser text layout, so Arabic/Urdu shapes correctly (pdf-lib's
-// built-in fonts can't do that at all) and normal CSS gives real design
-// control -- brand colors, big mobile-friendly type, one section per page.
+// real browser text layout, and normal CSS gives real design control --
+// brand colors, big mobile-friendly type, one section per page.
 
 const PDFSHIFT_API_KEY = Deno.env.get('PDFSHIFT_API_KEY')!;
 const PDFSHIFT_API = 'https://api.pdfshift.io/v3';

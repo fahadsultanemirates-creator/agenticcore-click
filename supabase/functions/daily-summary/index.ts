@@ -5,7 +5,7 @@
 // the same text+voice pipeline every other reply uses.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { sendBotMessage, getOwnerLanguage } from '../_shared/botMessage.ts';
+import { sendBotMessage } from '../_shared/botMessage.ts';
 import { jsonResponse } from '../_shared/cors.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
@@ -41,9 +41,7 @@ export async function handleRequest(req: Request): Promise<Response> {
     failedCount ? `- Tasks failed: ${failedCount} (${(failed ?? []).map((t: any) => t.public_id).join(', ')})` : '- Tasks failed: 0',
     `- Wallet top-ups: ${topupCount}${topupCount ? ` totaling $${topupTotal.toFixed(2)}` : ''}`
   ];
-
-  const language = await getOwnerLanguage();
-  await sendBotMessage(Number(OWNER_TELEGRAM_ID), lines.join('\n'), language);
+  await sendBotMessage(Number(OWNER_TELEGRAM_ID), lines.join('\n'));
 
   return jsonResponse({ ok: true, deliveredCount, failedCount, topupCount });
 }

@@ -69,7 +69,7 @@ The number also fixes the deliverable's shape and whose branding it carries, so 
 PRODUCT CATALOG:
 ${catalogMenu(false)}
 
-Payload fields you still gather per product: website (businessName, description, category, colors, pageCount as a number, sections, contactDetails, businessEmail, instagram, facebook, telegram, whatsapp); pdf/documents (description, language "en"|"ur"|"both" for documents); image (description); video (description, plus avatarStyle "standard" for a presenter or "none" for a scene with nobody speaking); social (description, platforms as an array); brand-kit (description). Every product also accepts websiteUrl (the client's existing site, used to match their branding) and referenceFiles.
+Payload fields you still gather per product: website (businessName, description, category, colors, pageCount as a number, sections, contactDetails, businessEmail, instagram, facebook, telegram, whatsapp); pdf/documents (description); image (description); video (description, plus avatarStyle "standard" for a presenter or "none" for a scene with nobody speaking); social (description, platforms as an array); brand-kit (description). Every product also accepts websiteUrl (the client's existing site, used to match their branding) and referenceFiles.
 
 Pricing: website 10 = $10 (1-4 pages), 11 = $20 (5-10 pages). pdf = $3. image = $1. social = $2. documents = $5. brand-kit = $5. Video = $3, whatever is in it.
 

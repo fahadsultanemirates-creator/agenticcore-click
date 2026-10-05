@@ -7,10 +7,8 @@
 // never ahead), request a revision, pull a delivered task's files, or ask
 // for an owner-only business report on any URL.
 //
-// Every reply -- whatever triggered it, typed slash command, free-form
-// text, or a voice note -- goes out as both a short plain-language text
-// message and a short spoken voice note, in whichever of English/Urdu the
-// owner last used (see _shared/botMessage.ts). Slash commands are matched
+// Voice notes are listened to and transcribed; replies are always text,
+// always English (see _shared/botMessage.ts). Slash commands are matched
 // first for speed/determinism; anything else (free text, or any voice
 // transcript, which never contains a literal "/") falls back to Claude-based
 // intent classification (_shared/botConversation.ts, shapes: _shared/intent.ts).
@@ -26,7 +24,7 @@ import { fallbackToBuiltIn, grokbotSecretStatus } from '../_shared/grokbot.ts';
 import { fileProblem } from '../_shared/deliverableTypes.ts';
 import type { Bytes } from '../_shared/bytes.ts';
 import { uploadClientMedia, uploadDeliverable } from '../_shared/storage.ts';
-import { detectLanguage, getOwnerLanguage, setOwnerLanguage, sendBotMessage } from '../_shared/botMessage.ts';
+import { sendBotMessage } from '../_shared/botMessage.ts';
 import { converse } from '../_shared/botConversation.ts';
 import { expandSku, getSku, CATALOG } from '../_shared/catalog.ts';
 import { applyRevision, findTaskReference, allocateOwnerTask } from '../_shared/orders.ts';
@@ -86,7 +84,7 @@ function helpText(): string {
     '/fallback <task id> — take a job back from an external agent',
     '',
     'Send /products for the numbered list.',
-    'You can also just type or speak what you want in plain English or Urdu.'
+    'You can also just type or speak what you want, in plain English.'
   ].join('\n');
 }
 
@@ -689,12 +687,11 @@ export async function handleRequest(req: Request): Promise<Response> {
     // Purely an owner control channel -- not a public assistant (that's
     // Forge, on the dashboard). Reply once so a stray sender isn't left
     // wondering, but do nothing else.
-    await sendBotMessage(chatId, 'This bot is for internal use only.', 'en').catch(() => {});
+    await sendBotMessage(chatId, 'This bot is for internal use only.').catch(() => {});
     return new Response('ok');
   }
 
   let text: string;
-  let language: 'en' | 'ur';
   const attachmentUrls: string[] = [];
 
   // The file itself, kept aside from its client-media URL.
@@ -711,7 +708,6 @@ export async function handleRequest(req: Request): Promise<Response> {
       const audioBytes = await downloadTelegramFile(message.voice.file_id);
       const transcription = await transcribeAudio(audioBytes, 'voice.oga');
       text = transcription.text.trim();
-      language = detectLanguage(text);
     } else if (Array.isArray(message?.photo) && message.photo.length > 0) {
       // Telegram sends multiple resolutions -- the last is the largest.
       const largest = message.photo[message.photo.length - 1];
@@ -720,7 +716,6 @@ export async function handleRequest(req: Request): Promise<Response> {
       const { url } = await uploadClientMedia(`telegram/${chatId}`, incomingFile.filename, bytes, incomingFile.mimeType);
       attachmentUrls.push(url);
       text = typeof message?.caption === 'string' ? message.caption.trim() : '(sent a photo)';
-      language = detectLanguage(text);
     } else if (message?.document?.file_id) {
       const doc = message.document;
       const bytes = await downloadTelegramFile(doc.file_id);
@@ -732,21 +727,17 @@ export async function handleRequest(req: Request): Promise<Response> {
       const { url } = await uploadClientMedia(`telegram/${chatId}`, incomingFile.filename, bytes, incomingFile.mimeType);
       attachmentUrls.push(url);
       text = typeof message?.caption === 'string' ? message.caption.trim() : `(sent a document: ${doc.file_name || 'file'})`;
-      language = detectLanguage(text);
     } else if (typeof message?.text === 'string' && message.text.trim()) {
       text = message.text.trim();
-      language = detectLanguage(text);
     } else {
       // Not text, voice, photo, or document (sticker, etc.) -- nothing to act on.
       return new Response('ok');
     }
   } catch (err) {
     console.error('telegram-webhook: could not read incoming message', err);
-    await sendBotMessage(chatId, 'Could not understand that message. Please try again or type instead.', await getOwnerLanguage()).catch(() => {});
+    await sendBotMessage(chatId, 'Could not understand that message. Please try again or type instead.').catch(() => {});
     return new Response('ok');
   }
-
-  await setOwnerLanguage(language);
 
   let rawReply: string;
   try {
@@ -756,7 +747,7 @@ export async function handleRequest(req: Request): Promise<Response> {
     rawReply = 'Something went wrong handling that.';
   }
 
-  await sendBotMessage(chatId, rawReply, language).catch((err) => console.error('telegram-webhook: sendBotMessage failed', err));
+  await sendBotMessage(chatId, rawReply).catch((err) => console.error('telegram-webhook: sendBotMessage failed', err));
 
   return new Response('ok');
 }

@@ -1,9 +1,8 @@
 // Renders documents as real HTML/CSS, converted to PDF via PDFShift's
 // Chromium rendering (see htmlPdf.ts) -- replaces an earlier pdf-lib
-// version. pdf-lib's built-in fonts have zero Arabic-script shaping
-// support (Urdu would render as disconnected, wrongly-shaped letters);
-// a real browser lays out RTL/Urdu text correctly because it's just
-// normal text layout, the same way any webpage does.
+// version. pdf-lib's built-in fonts gave us no control over type at all;
+// a real browser lays text out the way any webpage does, so the deck can
+// use real webfonts and real CSS.
 //
 // Every PDF this produces (documents, brand-kit, reports, social copy
 // packs) uses the agenticcore.click brand look -- the exact color tokens
@@ -28,9 +27,6 @@ import type { Bytes } from './bytes.ts';
 export interface DocSection {
   heading: string;
   body: string;
-  // Defaults to the doc-level language -- lets one document mix English
-  // and Urdu sections (the "both languages" legal-agreement case).
-  language?: 'en' | 'ur';
   // A real generated image banner shown above the heading on this slide.
   imageUrl?: string;
 }
@@ -39,7 +35,6 @@ export interface DocSpec {
   title: string;
   subtitle?: string;
   sections: DocSection[];
-  language?: 'en' | 'ur';
   // Accepted for backward compatibility with older callers -- every spec
   // renders with the one .click brand look regardless of this value.
   theme?: 'document' | 'deck';
@@ -100,7 +95,7 @@ const PAGE_HEIGHT = 932;
 
 const FONT_LINK =
   '<link rel="preconnect" href="https://fonts.googleapis.com">' +
-  '<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700;9..144,900&family=Inter:wght@400;500;600;700&family=Noto+Nastaliq+Urdu:wght@500;700&display=swap" rel="stylesheet">';
+  '<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700;9..144,900&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">';
 
 function escapeHtml(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -145,14 +140,14 @@ function clientCssVars(brand: DocSpec['brand']): string {
 // slab of color.
 const DOT_PATTERN = `background-image: radial-gradient(var(--fg) 0.6px, transparent 0.6px); background-size: 16px 16px;`;
 
-function footer(index: number, total: number, brandLabel: string, rtl: boolean, houseBrand: boolean): string {
+function footer(index: number, total: number, brandLabel: string, houseBrand: boolean): string {
   // Our wordmark belongs only on our own documents. On a client's brochure or
   // contract the page simply carries their title and the page number.
   const wordmark = houseBrand
     ? `<span class="wordmark">agenticcore<span class="wordmark-accent">.click</span></span>`
     : `<span class="wordmark"></span>`;
   return `
-    <div class="footer" style="flex-direction:${rtl ? 'row-reverse' : 'row'};">
+    <div class="footer">
       ${wordmark}
       <span class="page-index">${brandLabel} · ${String(index).padStart(2, '0')} / ${String(total).padStart(2, '0')}</span>
     </div>`;
@@ -170,38 +165,33 @@ function slideFontSize(section: DocSection): { body: number; heading: number } {
   return { body: 12, heading: 20 };
 }
 
-function renderSection(section: DocSection, docLanguage: 'en' | 'ur', index: number, total: number, brandLabel: string, houseBrand: boolean): string {
-  const lang = section.language ?? docLanguage;
-  const rtl = lang === 'ur';
-  const fontFamily = rtl ? "'Noto Nastaliq Urdu', serif" : "'Inter', sans-serif";
+function renderSection(section: DocSection, index: number, total: number, brandLabel: string, houseBrand: boolean): string {
   const size = slideFontSize(section);
   return `
-    <section class="page slide" dir="${rtl ? 'rtl' : 'ltr'}" style="font-family:${fontFamily}; text-align:${rtl ? 'right' : 'left'}; --body-size:${size.body}px; --heading-size:${size.heading}px;">
+    <section class="page slide" style="font-family:'Inter', sans-serif; --body-size:${size.body}px; --heading-size:${size.heading}px;">
       <div class="tint"></div>
       <div class="slide-body">
         ${section.imageUrl ? `<img class="slide-image" src="${escapeHtml(section.imageUrl)}" alt="" />` : ''}
         <div class="slide-text">
-          <div class="badge" style="${rtl ? 'margin-left:auto;' : ''}">${String(index).padStart(2, '0')}</div>
-          <div class="rule" style="${rtl ? 'margin-left:auto;' : ''}"></div>
+          <div class="badge">${String(index).padStart(2, '0')}</div>
+          <div class="rule"></div>
           <h2>${escapeHtml(section.heading)}</h2>
           <div class="body">${bodyToHtml(section.body)}</div>
         </div>
       </div>
-      ${footer(index, total, brandLabel, rtl, houseBrand)}
+      ${footer(index, total, brandLabel, houseBrand)}
     </section>`;
 }
 
 export async function renderDocumentPdf(spec: DocSpec): Promise<Bytes> {
-  const language = spec.language ?? 'en';
-  const rtl = language === 'ur';
-  const titleFont = rtl ? "'Noto Nastaliq Urdu', serif" : "'Fraunces', serif";
+  const titleFont = "'Fraunces', serif";
   const total = spec.sections.length + 1;
   const brandLabel = escapeHtml(spec.title.length > 28 ? spec.title.slice(0, 28) + '…' : spec.title);
   const hasHero = Boolean(spec.coverImageUrl);
   const houseBrand = (spec.branding ?? 'agenticcore') === 'agenticcore';
 
   const html = `<!doctype html>
-<html lang="${language}">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 ${FONT_LINK}
@@ -254,7 +244,7 @@ ${FONT_LINK}
   .cover .cover-blob {
     position: absolute; width: 280px; height: 280px; border-radius: 50%;
     background: var(--yellow-400); opacity: 0.14; filter: blur(55px);
-    bottom: -90px; ${rtl ? 'left' : 'right'}: -90px;
+    bottom: -90px; right: -90px;
   }
 
   /* Section slides -- the image is a flex-grow sibling of the text block,
@@ -290,7 +280,7 @@ ${FONT_LINK}
 </style>
 </head>
 <body>
-  <section class="page cover" dir="${rtl ? 'rtl' : 'ltr'}" style="font-family:${titleFont};">
+  <section class="page cover" style="font-family:${titleFont};">
     ${hasHero ? `<img class="cover-hero" src="${escapeHtml(spec.coverImageUrl!)}" alt="" /><div class="cover-scrim"></div>` : '<div class="cover-blob"></div>'}
     <div class="cover-content">
       ${!houseBrand && spec.brand?.logoDataUri ? `<img class="cover-logo" src="${spec.brand.logoDataUri}" alt="">` : ''}
@@ -301,9 +291,9 @@ ${FONT_LINK}
       <h1>${escapeHtml(spec.title)}</h1>
       ${spec.subtitle ? `<p class="subtitle" style="font-family:'Inter',sans-serif;">${escapeHtml(spec.subtitle)}</p>` : ''}
     </div>
-    ${footer(1, total, brandLabel, rtl, houseBrand)}
+    ${footer(1, total, brandLabel, houseBrand)}
   </section>
-  ${spec.sections.map((s, i) => renderSection(s, language, i + 2, total, brandLabel, houseBrand)).join('')}
+  ${spec.sections.map((s, i) => renderSection(s, i + 2, total, brandLabel, houseBrand)).join('')}
 </body>
 </html>`;
 
@@ -320,14 +310,13 @@ export async function renderBrandKitAsset(spec: DocSpec): Promise<Bytes> {
   if (spec.stationery) return renderStationery(spec);
 
   const section = spec.sections[0];
-  const rtl = (section.language ?? spec.language) === 'ur';
-  const fontFamily = rtl ? "'Noto Nastaliq Urdu', serif" : "'Inter', sans-serif";
+  const fontFamily = "'Inter', sans-serif";
   const titleColor = spec.brand?.primaryColor ?? '#14161b';
   const ruleColor = spec.brand?.accentColor ?? '#c7cad1';
   const logo = spec.brand?.logoDataUri;
 
   const html = `<!doctype html>
-<html lang="${spec.language ?? 'en'}">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 ${FONT_LINK}
@@ -338,24 +327,23 @@ ${FONT_LINK}
     width: ${ASSET_PAGE_WIDTH}px; min-height: ${ASSET_PAGE_HEIGHT}px;
     padding: 64px 72px; display: flex; flex-direction: column;
   }
-  .logo { max-height: 48px; max-width: 220px; margin: 0 0 20px; ${rtl ? 'align-self: flex-end;' : ''} }
+  .logo { max-height: 48px; max-width: 220px; margin: 0 0 20px; }
   h1 {
     font-family: ${fontFamily}; font-weight: 700; font-size: 22px;
-    margin: 0 0 14px; color: ${titleColor}; text-align: ${rtl ? 'right' : 'left'};
+    margin: 0 0 14px; color: ${titleColor};
   }
   .rule {
     width: 56px; height: 3px; background: ${ruleColor}; border-radius: 2px;
-    margin: 0 0 28px; ${rtl ? 'margin-left: auto;' : ''}
+    margin: 0 0 28px;
   }
   .body {
     font-family: ${fontFamily}; font-size: 14px; line-height: 1.7; color: #2b2d33;
-    text-align: ${rtl ? 'right' : 'left'};
   }
   .body p { margin: 0 0 14px; }
 </style>
 </head>
 <body>
-  <section class="page" dir="${rtl ? 'rtl' : 'ltr'}">
+  <section class="page">
     ${logo ? `<img class="logo" src="${logo}" alt="">` : ''}
     <h1>${escapeHtml(spec.title)}</h1>
     <div class="rule"></div>
@@ -371,8 +359,7 @@ ${FONT_LINK}
 // between. The middle is empty on purpose -- it is where the client's own
 // letter goes, and it is the reason the product exists.
 async function renderStationery(spec: DocSpec): Promise<Bytes> {
-  const rtl = spec.language === 'ur';
-  const fontFamily = rtl ? "'Noto Nastaliq Urdu', serif" : "'Inter', sans-serif";
+  const fontFamily = "'Inter', sans-serif";
   const nameColor = spec.brand?.primaryColor ?? '#14161b';
   const ruleColor = spec.brand?.accentColor ?? '#c7cad1';
   const logo = spec.brand?.logoDataUri;
@@ -385,7 +372,7 @@ async function renderStationery(spec: DocSpec): Promise<Bytes> {
   const footer = spec.stationery!.footerLines.filter((line) => line.trim() !== '');
 
   const html = `<!doctype html>
-<html lang="${spec.language ?? 'en'}">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 ${FONT_LINK}
@@ -395,9 +382,8 @@ ${FONT_LINK}
   .page {
     width: ${ASSET_PAGE_WIDTH}px; height: ${ASSET_PAGE_HEIGHT}px;
     padding: 56px 72px 44px; display: flex; flex-direction: column;
-    text-align: ${rtl ? 'right' : 'left'};
   }
-  .head { display: flex; align-items: center; gap: 18px; ${rtl ? 'flex-direction: row-reverse;' : ''} }
+  .head { display: flex; align-items: center; gap: 18px; }
   /* Roomy enough that a wide wordmark stays readable at print size -- 56px
      tall reduced anything but a tight square icon to a smudge. */
   .logo { max-height: 76px; max-width: 280px; object-fit: contain; }
@@ -414,7 +400,7 @@ ${FONT_LINK}
 </style>
 </head>
 <body>
-  <section class="page" dir="${rtl ? 'rtl' : 'ltr'}">
+  <section class="page">
     <header>
       <div class="head">
         ${logo ? `<img class="logo" src="${logo}" alt="">` : ''}

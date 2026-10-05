@@ -1,6 +1,6 @@
 import { Check, Sparkles } from "lucide-react";
 import { Link } from "react-router-dom";
-import { flagshipPackage, walletPackages } from "../../data/packages";
+import { firstOrderDiscountLine, flagshipPackage, walletPackages } from "../../data/packages";
 import { Reveal } from "../Reveal";
 
 export function PackagesSection() {
@@ -56,23 +56,35 @@ export function PackagesSection() {
             <div className="flex h-full flex-col rounded-2xl border border-border bg-surface p-5">
               <p className="font-display text-2xl font-semibold text-fg">{pkg.price}</p>
               <p className="mt-1 text-sm text-fg-muted">to your wallet</p>
-              <ul className="mt-3 flex flex-col gap-1.5">
-                <li className="text-sm text-fg-muted">
-                  <span className="font-semibold text-yellow-400">{pkg.firstTimeDiscount}% off</span> first order
-                </li>
-                <li className="text-sm text-fg-muted">
-                  <span className="font-semibold text-yellow-400">{pkg.routineDiscount}% off</span> every order after
-                </li>
-              </ul>
+              <p className="mt-3 text-sm text-fg-muted">
+                {pkg.routineDiscount > 0 ? (
+                  <>
+                    <span className="font-semibold text-yellow-400">{pkg.routineDiscount}% off</span>{" "}
+                    every order, always
+                  </>
+                ) : (
+                  "No standing discount at this tier."
+                )}
+              </p>
               {pkg.note && <p className="mt-3 text-xs text-fg-faint">{pkg.note}</p>}
             </div>
           </Reveal>
         ))}
       </div>
 
-      <p className="mt-6 text-center text-sm text-fg-faint">
-        All prices and discounts shown are placeholders while we finish building.
-      </p>
+      {/* The first-order discount, stated once and in full. On the cards it
+          sat as a second bullet beside the routine discount, which made two
+          different offers look like one stacked one, and nowhere did it say
+          the thing that matters most: it covers the $20 Full Business Setup
+          too. */}
+      <div className="mt-6 rounded-2xl border border-dashed border-yellow-400/40 bg-yellow-400/5 p-5">
+        <p className="text-sm text-fg">
+          <span className="font-semibold text-yellow-400">Your first order is discounted too.</span>{" "}
+          After your first top-up, your first order takes {firstOrderDiscountLine()} off. It applies
+          to every service — the $20 Full Business Setup included — and it applies once. The tier
+          discount above is the standing one, on every order after that.
+        </p>
+      </div>
     </section>
   );
 }

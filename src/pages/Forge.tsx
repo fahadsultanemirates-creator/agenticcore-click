@@ -1,5 +1,5 @@
 import { ArrowLeft, Loader2, Mic, Paperclip, Send, Sparkles, Square, Volume2, X } from "lucide-react";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { Link } from "react-router-dom";
 import { AccountMenu } from "../components/AccountMenu";
 import {
@@ -67,6 +67,7 @@ export function Forge() {
   const chunksRef = useRef<Blob[]>([]);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     (async () => {
@@ -151,6 +152,25 @@ export function Forge() {
     e.preventDefault();
     doSend(input);
   };
+
+  // A textarea does not submit on Enter the way an input does, so the
+  // behaviour has to be put back by hand -- otherwise the send button is the
+  // only way out and every chat message costs a trip to the mouse.
+  const handleComposerKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      if (!sending && !transcribing) doSend(input);
+    }
+  };
+
+  // Grow with the text up to the CSS max-height, then scroll. Reset to auto
+  // first or the box can only ever get taller, never shorter.
+  useEffect(() => {
+    const el = composerRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [input]);
 
   const toggleRecording = async () => {
     if (recording) {
@@ -255,7 +275,7 @@ export function Forge() {
         <AccountMenu />
       </header>
 
-      <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col overflow-hidden px-4 sm:px-6">
+      <div className="mx-auto flex w-full max-w-4xl flex-1 flex-col overflow-hidden px-4 sm:px-6">
         <div ref={scrollRef} className="flex-1 overflow-y-auto py-8">
           <div className="flex flex-col gap-5">
             {loadingHistory && <p className="text-center text-sm text-fg-faint">Loading...</p>}
@@ -403,51 +423,68 @@ export function Forge() {
             </div>
           )}
 
-          <form onSubmit={handleSubmitForm} className="flex items-center gap-1.5 rounded-full border-2 border-yellow-400/30 bg-surface py-1.5 pr-1.5 pl-4">
-            <input
+          {/* A single-line pill, in a window given over entirely to this one
+              chat. Describing a business is not a one-line job, and typing a
+              paragraph through a slot that scrolls sideways means you cannot
+              read back what you just wrote before sending it. Now a textarea
+              that starts three lines tall and grows to ten, with the controls
+              on their own row rather than crowding the text. */}
+          <form
+            onSubmit={handleSubmitForm}
+            className="flex flex-col gap-2 rounded-2xl border-2 border-yellow-400/30 bg-surface p-2.5 transition-colors focus-within:border-yellow-400/60"
+          >
+            <textarea
+              ref={composerRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder={transcribing ? "Transcribing..." : "Tell Forge what you need..."}
+              onKeyDown={handleComposerKeyDown}
+              rows={3}
+              placeholder={transcribing ? "Transcribing..." : "Tell Forge what you need — the more detail, the better the brief."}
               disabled={sending || transcribing}
-              className="flex-1 bg-transparent text-sm text-fg placeholder:text-fg-faint focus:outline-none"
+              className="max-h-60 w-full resize-none bg-transparent px-2 py-1.5 text-sm leading-relaxed text-fg placeholder:text-fg-faint focus:outline-none"
             />
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              className="hidden"
-              onChange={(e) => {
-                handleFilePick(e.target.files);
-                e.target.value = "";
-              }}
-            />
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              aria-label="Attach a file"
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg"
-            >
-              <Paperclip className="h-4 w-4" />
-            </button>
-            <button
-              type="button"
-              onClick={toggleRecording}
-              aria-label={recording ? "Stop recording" : "Record a voice message"}
-              className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-colors ${
-                recording ? "bg-yellow-400 text-void" : "text-fg-muted hover:bg-surface-2 hover:text-fg"
-              }`}
-            >
-              {recording ? <Square className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
-            </button>
-            <button
-              type="submit"
-              disabled={sending || transcribing || (!input.trim() && stagedFiles.every((f) => !f.url))}
-              aria-label="Send"
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-yellow-400 text-void transition-transform hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <Send className="h-4 w-4" />
-            </button>
+            <div className="flex items-center justify-end gap-1.5">
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                className="hidden"
+                onChange={(e) => {
+                  handleFilePick(e.target.files);
+                  e.target.value = "";
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                aria-label="Attach a file"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-fg-muted transition-colors hover:bg-surface-2 hover:text-fg"
+              >
+                <Paperclip className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={toggleRecording}
+                aria-label={recording ? "Stop recording" : "Record a voice message"}
+                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-colors ${
+                  recording ? "bg-yellow-400 text-void" : "text-fg-muted hover:bg-surface-2 hover:text-fg"
+                }`}
+              >
+                {recording ? <Square className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+              </button>
+              <button
+                type="submit"
+                disabled={sending || transcribing || (!input.trim() && stagedFiles.every((f) => !f.url))}
+                aria-label="Send"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-yellow-400 text-void transition-transform hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Send className="h-4 w-4" />
+              </button>
+            </div>
           </form>
+          <p className="mt-2 text-center text-[11px] text-fg-faint">
+            Enter to send · Shift + Enter for a new line
+          </p>
         </div>
       </div>
     </div>

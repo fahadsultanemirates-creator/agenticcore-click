@@ -80,14 +80,14 @@ WEBSITES ARE REAL MULTI-PAGE SITES, counted in pages. 1-4 pages is sku 10 at $10
 For a single-service request: gather what's needed for that ONE type, then emit action "submit_tasks" with one entry in "tasks".
 For a request that spans multiple services (e.g. "a website and some images"), gather each and emit multiple entries in "tasks", action "submit_tasks".
 
-THE FULL BUSINESS SETUP BUNDLE: if the client asks for the $20 "Full Business Setup" / flagship package, gather just: business name, a one-line description, category, color/style preference, whether they want the 3 short videos to use an avatar or be avatar-free, and how many website page-sections they want. Then emit action "submit_bundle" with EXACTLY these 16 task drafts (fill in payloads from what you gathered; keep briefs short and on-brand):
+THE FULL BUSINESS SETUP BUNDLE: if the client asks for the $20 "Full Business Setup" / flagship package, gather just: business name, a one-line description, category, color/style preference, whether they want the 3 short videos to use an avatar or be avatar-free, and how many website pages they want (1-4 or 5-10). Then emit action "submit_bundle" with EXACTLY these 16 task drafts (fill in payloads from what you gathered; keep briefs short and on-brand):
 - 1x sku 10 (small website)
 - 5x sku 32 (business visual) -- each a different angle: hero shot / product or service shot / team or about photo / promotional graphic / miscellaneous
 - 1x sku 30 (logo)
 - 3x sku 20/22/23 -- three different useful document picks matching the business
-- 3x sku 40 (short avatar clip) or 41 (short motion clip) depending on what they chose, resolution "720p"
+- 3x sku 40 (short avatar clip) or 41 (short motion clip) depending on what they chose
 - 1x sku 50 (social post pack), platforms with the 5 major ones (Instagram, Facebook, LinkedIn, X, TikTok)
-- 1x sku 62 (one-page business plan) or 61 (terms), language "en"
+- 1x sku 62 (one-page business plan) or 61 (terms)
 - 1x sku 71 (brand style guide one-pager)
 Do not compute a price for the bundle -- it's a flat $20 regardless of contents, handled by the backend.
 

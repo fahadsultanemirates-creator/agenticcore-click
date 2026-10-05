@@ -191,32 +191,85 @@ export function signinCodeMessage(code: string, opts: { firstTime: boolean }): s
 
 // ---------------------------------------------------------------------------
 // Conversation state
+//
+// One jsonb column per chat holding everything the bot is in the middle
+// of: the signup it is collecting, the order awaiting a yes, and enough
+// recent turns for the classifier to resolve "yes, that one". Read and
+// written whole, because the three are small and a partial write is how
+// confirming an order wipes the signup half-finished underneath it.
 
-export async function loadSignupState(chatId: number): Promise<SignupState> {
+/** A quoted order waiting for the client to confirm it. */
+export interface PendingOrder {
+  sku: number;
+  brief: string;
+  details: Record<string, unknown>;
+  productName: string;
+  /** What it was quoted at. Re-computed before charging -- see tgClient. */
+  quotedUsd: number;
+  quotedAt: string;
+}
+
+export interface ChatTurn {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+export interface ChatState {
+  signup?: SignupState;
+  pendingOrder?: PendingOrder | null;
+  history?: ChatTurn[];
+}
+
+/** How much conversation the classifier gets. Enough to resolve a
+    follow-up, short enough that a month-old chat is not re-sent every
+    turn at full price. */
+export const HISTORY_TURNS = 12;
+
+export async function loadChatState(chatId: number): Promise<ChatState> {
   const { data, error } = await supabaseAdmin
     .from('tg_sessions')
     .select('state')
     .eq('chat_id', chatId)
-    .maybeSingle<{ state: { signup?: SignupState } }>();
+    .maybeSingle<{ state: ChatState }>();
   if (error) {
-    console.error(`loadSignupState(${chatId}) failed:`, error);
-    return { step: 'idle' };
+    console.error(`loadChatState(${chatId}) failed:`, error);
+    return {};
   }
-  const signup = data?.state?.signup;
-  return signup && typeof signup.step === 'string' ? signup : { step: 'idle' };
+  return data?.state ?? {};
 }
 
-export async function saveSignupState(chatId: number, tgUserId: number, state: SignupState): Promise<void> {
+export async function saveChatState(chatId: number, tgUserId: number, state: ChatState): Promise<void> {
+  const trimmed: ChatState = {
+    ...state,
+    history: (state.history ?? []).slice(-HISTORY_TURNS)
+  };
   const { error } = await supabaseAdmin.from('tg_sessions').upsert(
     {
       chat_id: chatId,
       tg_user_id: tgUserId,
-      state: { signup: state },
+      state: trimmed,
       updated_at: new Date().toISOString()
     },
     { onConflict: 'chat_id' }
   );
-  if (error) console.error(`saveSignupState(${chatId}) failed:`, error);
+  if (error) console.error(`saveChatState(${chatId}) failed:`, error);
+}
+
+export async function loadSignupState(chatId: number): Promise<SignupState> {
+  const signup = (await loadChatState(chatId)).signup;
+  return signup && typeof signup.step === 'string' ? signup : { step: 'idle' };
+}
+
+/**
+ * Writes the signup half without touching the rest.
+ *
+ * Read-modify-write rather than a bare upsert of { signup }: the column
+ * holds the pending order and the history too, and replacing it outright
+ * would drop an order a client had already been quoted.
+ */
+export async function saveSignupState(chatId: number, tgUserId: number, signup: SignupState): Promise<void> {
+  const state = await loadChatState(chatId);
+  await saveChatState(chatId, tgUserId, { ...state, signup });
 }
 
 // ---------------------------------------------------------------------------

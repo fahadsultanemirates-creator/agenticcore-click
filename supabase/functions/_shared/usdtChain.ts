@@ -56,13 +56,22 @@ function apiKey(): string {
 }
 
 /**
- * Etherscan's multichain endpoint with chainid=56, which is where BscScan
- * now lives. Overridable without a deploy because this is the part most
- * likely to move: an API host is somebody else's decision, unlike the
- * address above, which is ours.
+ * Where to ask. Tried in order until one gives a usable answer.
+ *
+ * Etherscan folded BscScan into a multichain V2 endpoint, but a key issued
+ * by bscscan.com before that is not necessarily accepted there -- and an
+ * unaccepted key does not come back as an auth error, it comes back as
+ * {"result":"Invalid API Key"} in the same shape as a real answer. That is
+ * what the first live check hit.
+ *
+ * Rather than make somebody guess which host their key belongs to, both
+ * are tried and the one that works is logged. BSCSCAN_API_URL still pins
+ * it to a single host when you want that.
  */
-function apiUrl(): string {
-  return Deno.env.get('BSCSCAN_API_URL') ?? 'https://api.etherscan.io/v2/api';
+function apiHosts(): string[] {
+  const configured = Deno.env.get('BSCSCAN_API_URL');
+  if (configured) return [configured];
+  return ['https://api.etherscan.io/v2/api', 'https://api.bscscan.com/api'];
 }
 
 const CHAIN_ID = '56';
@@ -71,18 +80,47 @@ export function chainConfigured(): boolean {
   return apiKey().length > 0;
 }
 
-async function callApi(params: Record<string, string>): Promise<unknown> {
-  const url = new URL(apiUrl());
-  url.searchParams.set('chainid', CHAIN_ID);
-  url.searchParams.set('apikey', apiKey());
-  for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
+/** A reply that is the explorer refusing us rather than answering. */
+export function refusalReason(data: unknown): string | null {
+  const result = (data as { result?: unknown })?.result;
+  const message = (data as { message?: unknown })?.message;
+  const text = `${typeof result === 'string' ? result : ''} ${typeof message === 'string' ? message : ''}`;
+  if (/invalid api key|missing\/invalid api key|rate limit|max .* rate/i.test(text)) return text.trim();
+  return null;
+}
 
-  // Ten seconds. A block explorer that accepts the connection and then goes
-  // quiet would otherwise hold a worker open until the platform kills the
-  // whole invocation.
-  const resp = await fetch(url, { signal: AbortSignal.timeout(10_000) });
-  if (!resp.ok) throw new Error(`Block explorer returned ${resp.status}`);
-  return await resp.json();
+async function callApi(params: Record<string, string>): Promise<unknown> {
+  let lastProblem = '';
+
+  for (const host of apiHosts()) {
+    const url = new URL(host);
+    url.searchParams.set('chainid', CHAIN_ID);
+    url.searchParams.set('apikey', apiKey());
+    for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
+
+    try {
+      // Ten seconds. An explorer that accepts the connection and then goes
+      // quiet would otherwise hold a worker open until the platform kills
+      // the whole invocation.
+      const resp = await fetch(url, { signal: AbortSignal.timeout(10_000) });
+      if (!resp.ok) {
+        lastProblem = `${host} returned ${resp.status}`;
+        continue;
+      }
+      const data = await resp.json();
+      const refused = refusalReason(data);
+      if (refused) {
+        // Never the URL: it carries the API key in a query parameter.
+        lastProblem = `${host} refused the key (${refused})`;
+        continue;
+      }
+      return data;
+    } catch (err) {
+      lastProblem = `${host} did not answer (${err instanceof Error ? err.message : String(err)})`;
+    }
+  }
+
+  throw new Error(lastProblem || 'No block explorer host answered');
 }
 
 /**

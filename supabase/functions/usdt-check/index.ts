@@ -136,8 +136,17 @@ export async function handleRequest(req: Request): Promise<Response> {
   try {
     ({ decimals } = await verifyContract());
   } catch (err) {
-    console.error('usdt-check: contract verification failed', err);
-    return jsonResponse({ error: 'Could not verify the payment token.' }, 503);
+    // The reason goes in the response, not only the log.
+    //
+    // "Could not verify the payment token" on its own sent us hunting
+    // through log tables that this project does not expose, for a fault
+    // that names itself in one line. Nothing here is sensitive: it
+    // describes a public contract and a public API, and callApi is
+    // careful never to put the request URL in an error, because the key
+    // rides in its query string.
+    const detail = err instanceof Error ? err.message : String(err);
+    console.error('usdt-check: contract verification failed', detail);
+    return jsonResponse({ error: 'Could not verify the payment token.', detail }, 503);
   }
 
   // ---- one invoice, for the client watching the page ------------------

@@ -5,7 +5,7 @@
 // are easy to get subtly wrong and both decide whether money is credited.
 
 import assert from 'node:assert/strict';
-import { decodeStringResult, toTransfer } from './usdtChain.ts';
+import { decodeStringResult, refusalReason, toTransfer } from './usdtChain.ts';
 
 let passed = 0;
 let failed = 0;
@@ -96,6 +96,23 @@ test('the value is carried as a string, never as a number', () => {
   const t = toTransfer(ROW);
   assert.equal(typeof t?.valueRaw, 'string');
   assert.equal(t?.valueRaw, '20000007000000000000');
+});
+
+// An explorer refusing the key answers with HTTP 200 and a body shaped
+// exactly like a real reply. Reading that as an answer is what produced
+// "Could not read decimals()" on the first live check, which pointed at
+// the contract when the fault was the key.
+test('a refusal is recognised rather than read as an answer', () => {
+  assert.ok(refusalReason({ status: '0', message: 'NOTOK', result: 'Invalid API Key' }));
+  assert.ok(refusalReason({ result: 'Missing/Invalid API Key' }));
+  assert.ok(refusalReason({ message: 'Max rate limit reached' }));
+});
+
+test('a real answer is not mistaken for a refusal', () => {
+  assert.equal(refusalReason({ jsonrpc: '2.0', id: 1, result: '0x12' }), null);
+  assert.equal(refusalReason({ status: '1', message: 'OK', result: [] }), null);
+  assert.equal(refusalReason({ message: 'No transactions found', result: [] }), null);
+  assert.equal(refusalReason({}), null);
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

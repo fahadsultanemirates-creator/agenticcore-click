@@ -12,7 +12,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { jsonResponse, CORS_HEADERS } from '../_shared/cors.ts';
 import { allocateNonce, invoiceAmount, MAX_NONCE } from '../_shared/usdtAmount.ts';
-import { chainConfigured, RECEIVING_ADDRESS, USDT_CONTRACT, verifyContract } from '../_shared/usdtChain.ts';
+import { chainConfigured, currentBlock, RECEIVING_ADDRESS, USDT_CONTRACT, verifyContract } from '../_shared/usdtChain.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!;
@@ -90,6 +90,19 @@ export async function handleRequest(req: Request): Promise<Response> {
     );
   }
 
+  // The chain height now, so a payment mined before this invoice existed
+  // can never settle it. Amounts are reused once an invoice closes, and
+  // without this bound a slow payment for an expired invoice credits
+  // whoever holds that amount next.
+  let fromBlock: string;
+  try {
+    fromBlock = (await currentBlock()).toString();
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    console.error('usdt-invoice: could not read the chain height', detail);
+    return jsonResponse({ error: 'Could not reach the chain right now. Please try again shortly.', detail }, 503);
+  }
+
   const expiresAt = new Date(Date.now() + INVOICE_MINUTES * 60_000).toISOString();
 
   // Nonce allocation reads the open invoices and then writes, so two
@@ -120,7 +133,15 @@ export async function handleRequest(req: Request): Promise<Response> {
 
     const { data: invoice, error: insertError } = await supabaseAdmin
       .from('usdt_invoices')
-      .insert({ user_id: caller.id, base_usd: baseUsd, tier, amount, nonce, expires_at: expiresAt })
+      .insert({
+        user_id: caller.id,
+        base_usd: baseUsd,
+        tier,
+        amount,
+        nonce,
+        expires_at: expiresAt,
+        from_block: fromBlock
+      })
       .select('id, amount, expires_at')
       .single();
 

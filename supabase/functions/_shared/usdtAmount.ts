@@ -115,9 +115,13 @@ export function allocateNonce(takenNonces: Iterable<number>): number {
 /** A BEP-20 Transfer, as the chain reports it. */
 export interface Transfer {
   txHash: string;
+  /** Who sent it. Read from the log, never asked for -- see matchPayment. */
+  from: string;
   to: string;
   valueRaw: string;
   confirmations: number;
+  /** The block it was mined in, which is what bounds it to one invoice. */
+  blockNumber: bigint;
 }
 
 export interface MatchOptions {
@@ -131,12 +135,32 @@ export interface MatchOptions {
   minConfirmations: number;
   /** Transaction hashes already credited, so nothing is credited twice. */
   alreadyCredited: Iterable<string>;
+  /**
+   * The chain height when this invoice was opened. A transfer mined before
+   * it cannot have been meant for it.
+   *
+   * Without this the scheme has a real hole, and not the obvious one. Two
+   * OPEN invoices can never share an amount -- a partial unique index in
+   * Postgres sees to that. But a closed invoice frees its amount, and
+   * nonces are handed out smallest-first, so the amount comes round again:
+   *
+   *   1. Alice is quoted 10.000001 and does not pay. It expires.
+   *   2. Bob asks for $10 and is quoted 10.000001, now free.
+   *   3. Alice's payment finally lands.
+   *   4. Without this bound, Alice's money credits Bob.
+   *
+   * The tx_hash guard does not help: that stops the same transaction being
+   * credited twice, not a different one landing on the wrong invoice.
+   *
+   * Null means no bound, for invoices opened before this existed.
+   */
+  minBlock?: bigint | null;
 }
 
 export type MatchResult =
-  | { status: 'paid'; txHash: string }
+  | { status: 'paid'; txHash: string; from: string }
   | { status: 'confirming'; txHash: string; confirmations: number }
-  | { status: 'wrong_amount'; txHash: string; received: string }
+  | { status: 'wrong_amount'; txHash: string; received: string; from: string }
   | { status: 'none' };
 
 /** Addresses are compared case-insensitively: EIP-55 is a checksum, not an identity. */
@@ -157,7 +181,10 @@ export function matchPayment(transfers: Transfer[], opts: MatchOptions): MatchRe
   const expectedUnits = toUnits(opts.expected, opts.decimals);
 
   const mine = transfers.filter(
-    (t) => sameAddress(t.to, opts.receivingAddress) && !credited.has(t.txHash.toLowerCase())
+    (t) =>
+      sameAddress(t.to, opts.receivingAddress) &&
+      !credited.has(t.txHash.toLowerCase()) &&
+      (opts.minBlock == null || t.blockNumber >= opts.minBlock)
   );
 
   const exact = mine.filter((t) => {
@@ -171,7 +198,7 @@ export function matchPayment(transfers: Transfer[], opts: MatchOptions): MatchRe
   });
 
   const confirmed = exact.find((t) => t.confirmations >= opts.minConfirmations);
-  if (confirmed) return { status: 'paid', txHash: confirmed.txHash };
+  if (confirmed) return { status: 'paid', txHash: confirmed.txHash, from: confirmed.from };
 
   if (exact.length > 0) {
     // The furthest along, so the caller reports progress rather than
@@ -188,7 +215,12 @@ export function matchPayment(transfers: Transfer[], opts: MatchOptions): MatchRe
     }
   });
   if (wrong) {
-    return { status: 'wrong_amount', txHash: wrong.txHash, received: fromUnits(BigInt(wrong.valueRaw), opts.decimals) };
+    return {
+      status: 'wrong_amount',
+      txHash: wrong.txHash,
+      received: fromUnits(BigInt(wrong.valueRaw), opts.decimals),
+      from: wrong.from
+    };
   }
 
   return { status: 'none' };

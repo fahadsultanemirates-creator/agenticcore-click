@@ -136,9 +136,11 @@ await test('a freed nonce is reused rather than skipped', () => {
 function transfer(over: Partial<Transfer> = {}): Transfer {
   return {
     txHash: '0xaaa',
+    from: '0x1111111111111111111111111111111111111111',
     to: ADDR,
     valueRaw: toUnits('20.000007', 18).toString(),
     confirmations: 20,
+    blockNumber: 1000n,
     ...over
   };
 }
@@ -152,7 +154,11 @@ const base = {
 };
 
 await test('an exact, confirmed payment is paid', () => {
-  assert.deepEqual(matchPayment([transfer()], base), { status: 'paid', txHash: '0xaaa' });
+  assert.deepEqual(matchPayment([transfer()], base), {
+    status: 'paid',
+    txHash: '0xaaa',
+    from: '0x1111111111111111111111111111111111111111'
+  });
 });
 
 await test('nothing at all is none', () => {
@@ -180,7 +186,8 @@ await test('underpayment is reported, never credited', () => {
   assert.deepEqual(matchPayment([short], base), {
     status: 'wrong_amount',
     txHash: '0xaaa',
-    received: '19.99'
+    received: '19.99',
+    from: '0x1111111111111111111111111111111111111111'
   });
 });
 
@@ -222,7 +229,8 @@ await test('a confirmed exact payment wins over an unconfirmed one', () => {
     [transfer({ txHash: '0xslow', confirmations: 1 }), transfer({ txHash: '0xdone', confirmations: 30 })],
     base
   );
-  assert.deepEqual(result, { status: 'paid', txHash: '0xdone' });
+  assert.equal(result.status, 'paid');
+  assert.equal(result.status === 'paid' && result.txHash, '0xdone');
 });
 
 await test('an exact match wins over a wrong-amount transfer', () => {
@@ -230,7 +238,8 @@ await test('an exact match wins over a wrong-amount transfer', () => {
     [transfer({ txHash: '0xwrong', valueRaw: toUnits('5', 18).toString() }), transfer({ txHash: '0xright' })],
     base
   );
-  assert.deepEqual(result, { status: 'paid', txHash: '0xright' });
+  assert.equal(result.status, 'paid');
+  assert.equal(result.status === 'paid' && result.txHash, '0xright');
 });
 
 // A value the chain reports in a shape we cannot parse must never be read
@@ -278,6 +287,41 @@ await test('every price the catalog can charge produces a valid amount', async (
     // And the surcharge must stay under a cent, or clients notice.
     assert.ok(Number(amount) - (price as number) < 0.01, `${amount} is more than a cent over ${price}`);
   }
+});
+
+// The hole that is not the obvious one. Two OPEN invoices can never share
+// an amount -- Postgres enforces that. But a closed invoice frees its
+// amount, nonces are reissued smallest-first, and a slow payment for the
+// old invoice then lands while the new one is open.
+await test('a transfer mined before the invoice existed cannot settle it', () => {
+  const alicePaidLate = transfer({ blockNumber: 900n });
+  assert.deepEqual(matchPayment([alicePaidLate], { ...base, minBlock: 1000n }), { status: 'none' });
+});
+
+await test('a transfer mined at or after the invoice settles it', () => {
+  assert.equal(matchPayment([transfer({ blockNumber: 1000n })], { ...base, minBlock: 1000n }).status, 'paid');
+  assert.equal(matchPayment([transfer({ blockNumber: 1001n })], { ...base, minBlock: 1000n }).status, 'paid');
+});
+
+// Invoices opened before the bound existed have no from_block, and must
+// keep working rather than silently never matching.
+await test('no bound means no bound, not nothing matches', () => {
+  assert.equal(matchPayment([transfer({ blockNumber: 1n })], { ...base, minBlock: null }).status, 'paid');
+  assert.equal(matchPayment([transfer({ blockNumber: 1n })], base).status, 'paid');
+});
+
+// The bound applies before the wrong-amount report too, or an old payment
+// would raise a false alarm against a stranger's invoice.
+await test('an out-of-window transfer is not even reported as wrong', () => {
+  const old = transfer({ blockNumber: 900n, valueRaw: toUnits('19.99', 18).toString() });
+  assert.deepEqual(matchPayment([old], { ...base, minBlock: 1000n }), { status: 'none' });
+});
+
+// Who paid comes off the log, so support can answer "where did my money
+// go" without anyone having been asked to paste an address.
+await test('the paying address is carried through', () => {
+  const result = matchPayment([transfer({ from: '0xDEAD' })], base);
+  assert.equal(result.status === 'paid' && result.from, '0xDEAD');
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

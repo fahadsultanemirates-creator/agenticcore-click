@@ -168,3 +168,29 @@ select cron.schedule(
   where exists (select 1 from public.usdt_invoices where status = 'pending');
   $sql$
 );
+
+-- A payment can only settle an invoice that already existed.
+--
+-- Two OPEN invoices can never share an amount -- the partial unique index
+-- above sees to that. But a closed invoice frees its amount, and nonces
+-- are reissued smallest-first, so the amount comes round again:
+--
+--   1. Alice is quoted 10.000001 and does not pay. It expires.
+--   2. Bob asks for $10 and is quoted 10.000001, now free.
+--   3. Alice's payment finally lands.
+--   4. Without this bound, Alice's money credits Bob.
+--
+-- tx_hash does not help: it stops the same transaction being credited
+-- twice, not a different one landing on the wrong invoice. The lookback
+-- window is 75 minutes and invoices expire at 60, so the overlap is real
+-- rather than theoretical.
+alter table public.usdt_invoices add column if not exists from_block bigint;
+
+-- Who paid, read off the Transfer log rather than asked for. Audit only.
+alter table public.usdt_invoices add column if not exists paid_from text;
+
+comment on column public.usdt_invoices.from_block is
+  'Chain height when this invoice was opened. A transfer mined before it cannot settle it. Null on rows created before this existed.';
+
+comment on column public.usdt_invoices.paid_from is
+  'The address that paid, read from the Transfer log rather than asked for. Audit only; nothing depends on it.';

@@ -33,6 +33,8 @@ interface InvoiceRow {
   amount: string;
   base_usd: number;
   status: string;
+  /** Chain height when the invoice was opened; null for older rows. */
+  from_block: string | null;
 }
 
 async function resolveCaller(authHeader: string): Promise<{ id: string } | null> {
@@ -62,7 +64,8 @@ async function settle(
     decimals,
     receivingAddress: RECEIVING_ADDRESS,
     minConfirmations: MIN_CONFIRMATIONS,
-    alreadyCredited: creditedHashes
+    alreadyCredited: creditedHashes,
+    minBlock: invoice.from_block == null ? null : BigInt(invoice.from_block)
   });
 
   if (result.status === 'paid') {
@@ -82,8 +85,18 @@ async function settle(
       return { status: 'paid', txHash: result.txHash };
     }
 
+    // Who paid, for support. Separate from the credit on purpose: it is
+    // an audit note, so a failure here must not undo money that is
+    // already correctly credited.
+    await supabaseAdmin
+      .from('usdt_invoices')
+      .update({ paid_from: result.from })
+      .eq('id', invoice.id)
+      .then(({ error }) => error && console.error('usdt-check: could not record the payer', error));
+
     await notifyOwner(
-      `Wallet top-up confirmed — $${invoice.base_usd} credited.\n\nPaid ${invoice.amount} USDT, tx ${result.txHash}`
+      `Wallet top-up confirmed — $${invoice.base_usd} credited.\n\n` +
+        `Paid ${invoice.amount} USDT from ${result.from}, tx ${result.txHash}`
     ).catch(() => {});
     return { status: 'paid', txHash: result.txHash };
   }
@@ -95,7 +108,8 @@ async function settle(
     console.warn(`usdt-check: ${invoice.amount} expected, ${result.received} arrived (tx ${result.txHash})`);
     await notifyOwner(
       `A USDT payment arrived for the wrong amount and has NOT been credited.\n\n` +
-        `Expected ${invoice.amount}, received ${result.received}.\nTransaction: ${result.txHash}`
+        `Expected ${invoice.amount}, received ${result.received}.\n` +
+        `From ${result.from}\nTransaction: ${result.txHash}`
     ).catch(() => {});
     return { status: 'wrong_amount', received: result.received };
   }
@@ -158,7 +172,7 @@ export async function handleRequest(req: Request): Promise<Response> {
 
     const { data: invoice } = await supabaseAdmin
       .from('usdt_invoices')
-      .select('id, user_id, amount, base_usd, status')
+      .select('id, user_id, amount, base_usd, status, from_block')
       .eq('id', invoiceId)
       .maybeSingle<InvoiceRow>();
 
@@ -194,7 +208,7 @@ export async function handleRequest(req: Request): Promise<Response> {
   // schedule already keeps near zero when nothing is pending.
   const { data: pending } = await supabaseAdmin
     .from('usdt_invoices')
-    .select('id, user_id, amount, base_usd, status')
+    .select('id, user_id, amount, base_usd, status, from_block')
     .eq('status', 'pending')
     .limit(50);
 

@@ -239,6 +239,13 @@ function topicAddress(topic: string): string {
   return '0x' + topic.replace(/^0x/, '').slice(-40);
 }
 
+/** The current chain height, recorded on an invoice when it is opened. */
+export async function currentBlock(): Promise<bigint> {
+  const headHex = await rpc('eth_blockNumber', []);
+  if (typeof headHex !== 'string') throw new Error(`eth_blockNumber returned ${JSON.stringify(headHex)}`);
+  return BigInt(headHex);
+}
+
 /** The recent USDT transfers into our receiving address. */
 export async function recentTransfers(): Promise<Transfer[]> {
   const headHex = await rpc('eth_blockNumber', []);
@@ -291,5 +298,12 @@ export function toLogTransfer(log: Record<string, unknown>, head: bigint): Trans
     return null;
   }
 
-  return { txHash, to: topicAddress(topics[2]), valueRaw, confirmations };
+  return {
+    txHash,
+    from: topicAddress(topics[1]),
+    to: topicAddress(topics[2]),
+    valueRaw,
+    confirmations,
+    blockNumber: BigInt(blockHex)
+  };
 }

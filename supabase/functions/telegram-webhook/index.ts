@@ -1,4 +1,19 @@
-// AgenticCore Click — Telegram owner channel. Unlike .agency's bot, this
+// AgenticCore Click — the Telegram bot. Two audiences through one chat.
+//
+// The OWNER gets the control channel this file has always been: watch the
+// queue, inject a dogfood task, request a revision, pull a delivered
+// task's files, route a product to an external agent.
+//
+// Everyone ELSE is a client, and used to get "this bot is for internal
+// use only". They can now open a real account here -- an email address is
+// all it takes -- and get a one-time code to set a password on the
+// website. That side lives in _shared/tgClient.ts; this file only decides
+// which of the two a message is.
+//
+// Which one you are is decided by Telegram's verified user id against
+// OWNER_TELEGRAM_ID, never by anything in the message.
+//
+// Unlike .agency's bot, the owner side
 // is NOT a public conversational assistant and there is NO manual
 // approve/reject gate before generation: website-sourced tasks are
 // already wallet-funded at creation time (see submit-task) and queue
@@ -30,6 +45,8 @@ import { expandSku, getSku, CATALOG } from '../_shared/catalog.ts';
 import { applyRevision, findTaskReference, allocateOwnerTask } from '../_shared/orders.ts';
 import { resolveOwnerTaskReference, getPlatformSnapshot, getTaskStatus } from '../_shared/accounts.ts';
 import { describeCandidates } from '../_shared/orderMatch.ts';
+import { claimUpdate } from '../_shared/tgAccounts.ts';
+import { routeClientMessage } from '../_shared/tgClient.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -682,12 +699,39 @@ export async function handleRequest(req: Request): Promise<Response> {
 
   if (!chatId) return new Response('ok');
 
+  // Telegram redelivers an update it believes failed, and this handler can
+  // take long enough -- a transcription, a model call -- for that to happen
+  // while the first copy is still running. Without this, one "yes, create
+  // my account" is two accounts.
+  const updateId = update?.update_id;
+  if (typeof updateId === 'number' && !(await claimUpdate(updateId))) {
+    return new Response('ok');
+  }
+
   const fromId = message?.from?.id;
   if (!isOwner(fromId)) {
-    // Purely an owner control channel -- not a public assistant (that's
-    // Forge, on the dashboard). Reply once so a stray sender isn't left
-    // wondering, but do nothing else.
-    await sendBotMessage(chatId, 'This bot is for internal use only.').catch(() => {});
+    // A client. Text only -- the account flow asks for an email address,
+    // and there is nothing useful to do with a photo until ordering from
+    // the chat exists.
+    const clientText = typeof message?.text === 'string' ? message.text.trim() : '';
+    if (!clientText || typeof fromId !== 'number') return new Response('ok');
+
+    let reply: string;
+    try {
+      reply = await routeClientMessage({
+        chatId,
+        tgUserId: fromId,
+        username: typeof message?.from?.username === 'string' ? message.from.username : undefined,
+        text: clientText
+      });
+    } catch (err) {
+      console.error('telegram-webhook: client message failed', err);
+      reply = 'Something went wrong on our side. Please try again in a moment.';
+    }
+
+    await sendBotMessage(chatId, reply).catch((err) =>
+      console.error('telegram-webhook: client reply failed', err)
+    );
     return new Response('ok');
   }
 

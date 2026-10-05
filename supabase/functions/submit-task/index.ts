@@ -82,6 +82,23 @@ export async function handleRequest(req: Request): Promise<Response> {
     return jsonResponse({ error: 'Could not price this request — check the selected options.' }, 400);
   }
 
+  // A Telegram-created account with no password after 30 days cannot
+  // place new orders. Nothing is hidden and nothing is deleted -- they
+  // keep every deliverable and every dollar -- but taking money for new
+  // work from an account whose owner has no way back into it if they
+  // lose their Telegram is not something to do quietly.
+  const { data: paused } = await supabaseAdmin.rpc('telegram_account_paused', { p_user_id: caller.id });
+  if (paused === true) {
+    return jsonResponse(
+      {
+        error:
+          'Your account is paused until you set a password. Send /login to the Telegram bot for a code, ' +
+          'then set one at https://agenticcore.click/claim.'
+      },
+      403
+    );
+  }
+
   const { data: debited, error: debitError } = await supabaseAdmin.rpc('deduct_wallet_balance', {
     p_user_id: caller.id,
     p_amount: priceUsd

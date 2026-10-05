@@ -88,6 +88,21 @@ export async function handleRequest(req: Request): Promise<Response> {
     totalUsd = sum;
   }
 
+  // Same gate as submit-task: an account paused for having no password
+  // cannot buy anything new. Checked here too, not only there, because
+  // Forge is a second front door to the same till.
+  const { data: paused } = await supabaseAdmin.rpc('telegram_account_paused', { p_user_id: caller.id });
+  if (paused === true) {
+    return jsonResponse(
+      {
+        error:
+          'Your account is paused until you set a password. Send /login to the Telegram bot for a code, ' +
+          'then set one at https://agenticcore.click/claim.'
+      },
+      403
+    );
+  }
+
   const { data: debited, error: debitError } = await supabaseAdmin.rpc('deduct_wallet_balance', {
     p_user_id: caller.id,
     p_amount: totalUsd

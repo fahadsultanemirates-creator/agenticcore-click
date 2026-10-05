@@ -24,6 +24,18 @@ verify_jwt = false
 [functions.send-email]
 verify_jwt = false
 
+# Called by pg_cron through pg_net. Takes no input -- it only ever acts on
+# accounts that are already past their deadline.
+[functions.telegram-sweep]
+verify_jwt = false
+
+# The caller has no session yet; obtaining one is the entire point. The
+# code is the credential, checked as a hash against a single-use row, and
+# every failure returns the same message so the endpoint cannot be used to
+# ask which addresses have accounts.
+[functions.telegram-claim]
+verify_jwt = false
+
 # telegram-webhook is authenticated via X-Telegram-Bot-Api-Secret-Token,
 # not a Supabase JWT -- Telegram never sends one.
 [functions.telegram-webhook]

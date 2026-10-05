@@ -44,40 +44,12 @@ const EXPECTED_SYMBOLS = ['USDT', 'BSC-USD', 'BSC-USDT'];
  */
 export const MIN_CONFIRMATIONS = 15;
 
-// Read when used, not when imported.
-//
-// At module scope these ran the moment anything imported this file, which
-// made the whole module unloadable outside Deno -- so the decoders below,
-// which are pure and are the part most worth testing, could not be tested
-// at all. It also meant a missing key failed at import time, taking the
-// function down before it could say what was wrong.
-function apiKey(): string {
-  return Deno.env.get('BSCSCAN_API_KEY') ?? '';
-}
-
 /**
- * Where to ask. Tried in order until one gives a usable answer.
+ * Plain BNB Smart Chain nodes. Everything on-chain goes through these.
  *
- * Etherscan folded BscScan into a multichain V2 endpoint, but a key issued
- * by bscscan.com before that is not necessarily accepted there -- and an
- * unaccepted key does not come back as an auth error, it comes back as
- * {"result":"Invalid API Key"} in the same shape as a real answer. That is
- * what the first live check hit.
- *
- * Rather than make somebody guess which host their key belongs to, both
- * are tried and the one that works is logged. BSCSCAN_API_URL still pins
- * it to a single host when you want that.
- */
-function apiHosts(): string[] {
-  const configured = Deno.env.get('BSCSCAN_API_URL');
-  if (configured) return [configured];
-  return ['https://api.etherscan.io/v2/api', 'https://api.bscscan.com/api'];
-}
-
-const CHAIN_ID = '56';
-
-/**
- * Plain BNB Smart Chain nodes, for reading the contract.
+ * Read when used rather than at module scope: an env read at import time
+ * makes the whole module unloadable outside Deno, so the pure decoders
+ * below -- the part most worth testing -- could not be tested at all.
  *
  * decimals() and symbol() are an ordinary eth_call, which every node
  * serves for free. Going through the block explorer's proxy module meant
@@ -101,7 +73,7 @@ function rpcHosts(): string[] {
 
 /** One eth_call against the first node that answers. */
 async function ethCall(to: string, data: string): Promise<string> {
-  let lastProblem = '';
+  const problems: string[] = [];
 
   for (const host of rpcHosts()) {
     try {
@@ -117,7 +89,7 @@ async function ethCall(to: string, data: string): Promise<string> {
         signal: AbortSignal.timeout(10_000)
       });
       if (!resp.ok) {
-        lastProblem = `${host} returned ${resp.status}`;
+        problems.push(`${host} returned ${resp.status}`);
         continue;
       }
       const body = await resp.json();
@@ -127,79 +99,60 @@ async function ethCall(to: string, data: string): Promise<string> {
       // Whatever it is, say what it is. "Could not read decimals()" on its
       // own cost a round trip because it named the field and not the
       // answer.
-      lastProblem = `${host} answered ${JSON.stringify(body).slice(0, 200)}`;
+      problems.push(`${host} answered ${JSON.stringify(body).slice(0, 160)}`);
     } catch (err) {
-      lastProblem = `${host} did not answer (${err instanceof Error ? err.message : String(err)})`;
+      problems.push(`${host} did not answer (${err instanceof Error ? err.message : String(err)})`);
     }
   }
 
-  throw new Error(lastProblem || 'No BNB Smart Chain node answered');
+  // Every host, not just the last. Keeping only the most recent failure
+  // hid the real reason behind whichever host happened to be tried last,
+  // which is how a dead fallback masked the live one.
+  throw new Error(problems.join(' | ') || 'No BNB Smart Chain node answered');
 }
 
-export function chainConfigured(): boolean {
-  return apiKey().length > 0;
+/** One JSON-RPC call against the first node that answers. */
+async function rpc(method: string, params: unknown[]): Promise<unknown> {
+  const problems: string[] = [];
+
+  for (const host of rpcHosts()) {
+    try {
+      const resp = await fetch(host, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+        signal: AbortSignal.timeout(10_000)
+      });
+      if (!resp.ok) {
+        problems.push(`${host} returned ${resp.status}`);
+        continue;
+      }
+      const body = await resp.json() as { result?: unknown; error?: unknown };
+      if (body?.error) {
+        problems.push(`${host}: ${JSON.stringify(body.error).slice(0, 160)}`);
+        continue;
+      }
+      if (body?.result !== undefined) return body.result;
+      problems.push(`${host} answered ${JSON.stringify(body).slice(0, 160)}`);
+    } catch (err) {
+      problems.push(`${host} did not answer (${err instanceof Error ? err.message : String(err)})`);
+    }
+  }
+
+  throw new Error(problems.join(' | ') || `No node answered ${method}`);
 }
 
 /**
- * A reply that is the explorer declining rather than answering.
+ * Nothing left to configure.
  *
- * This used to match a handful of known phrases, which meant anything it
- * had not been taught -- the live failure was a bare `{"status":"0",
- * "message":"NOTOK"}` -- read as a successful answer, so the next host was
- * never tried and the real reason was discarded.
- *
- * Inverted now: status "0" IS the explorer saying no, with exactly one
- * exception. An address with no transfers yet also answers status "0", and
- * that is a true and useful answer, not a failure -- treating it as one
- * would make a quiet day look like an outage and send every sweep round
- * all three hosts.
+ * This checked for a block explorer API key. There is no explorer any
+ * more: the contract read and the transfer list are both plain RPC calls
+ * against public nodes. Kept as a function because the callers read better
+ * for asking, and because BSC_RPC_URL may one day point somewhere that
+ * does need a credential.
  */
-export function refusalReason(data: unknown): string | null {
-  const row = data as { status?: unknown; message?: unknown; result?: unknown };
-  const message = typeof row?.message === 'string' ? row.message : '';
-  const result = typeof row?.result === 'string' ? row.result : '';
-
-  if (/no transactions found/i.test(`${message} ${result}`)) return null;
-  if (row?.status !== '0') return null;
-
-  // result carries the reason ("Invalid API Key", "Invalid address
-  // format"); message is usually just "NOTOK". Both, because which one is
-  // useful varies and guessing wrong costs a round trip -- twice, now.
-  return [message, result].filter(Boolean).join(' — ') || 'declined without a reason';
-}
-
-async function callApi(params: Record<string, string>): Promise<unknown> {
-  let lastProblem = '';
-
-  for (const host of apiHosts()) {
-    const url = new URL(host);
-    url.searchParams.set('chainid', CHAIN_ID);
-    url.searchParams.set('apikey', apiKey());
-    for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
-
-    try {
-      // Ten seconds. An explorer that accepts the connection and then goes
-      // quiet would otherwise hold a worker open until the platform kills
-      // the whole invocation.
-      const resp = await fetch(url, { signal: AbortSignal.timeout(10_000) });
-      if (!resp.ok) {
-        lastProblem = `${host} returned ${resp.status}`;
-        continue;
-      }
-      const data = await resp.json();
-      const refused = refusalReason(data);
-      if (refused) {
-        // Never the URL: it carries the API key in a query parameter.
-        lastProblem = `${host} refused the key (${refused})`;
-        continue;
-      }
-      return data;
-    } catch (err) {
-      lastProblem = `${host} did not answer (${err instanceof Error ? err.message : String(err)})`;
-    }
-  }
-
-  throw new Error(lastProblem || 'No block explorer host answered');
+export function chainConfigured(): boolean {
+  return rpcHosts().length > 0;
 }
 
 /**
@@ -250,50 +203,93 @@ export function decodeStringResult(hex: string): string {
   return new TextDecoder().decode(out).replace(/\0+$/, '');
 }
 
-/** Parses one explorer row into the shape the matcher wants. */
-export function toTransfer(row: Record<string, unknown>): Transfer | null {
-  const txHash = typeof row.hash === 'string' ? row.hash : null;
-  const to = typeof row.to === 'string' ? row.to : null;
-  const valueRaw = typeof row.value === 'string' ? row.value : null;
-  if (!txHash || !to || !valueRaw) return null;
+/**
+ * Transfer events are logs, and logs are a standard RPC read.
+ *
+ * This went through a block explorer first, on the reasoning that listing
+ * every transfer to an address needs an indexer. It does -- for all time.
+ * It does not for the last hour, which is all this ever needs: an invoice
+ * expires in sixty minutes, so a payment older than that belongs to no
+ * open invoice and reading further back only costs time.
+ *
+ * Narrowing the question that way removes the explorer, its API key, and
+ * everything that went with it -- a v2 proxy module that would not serve
+ * eth_call, a BscScan host that now answers HTML, and a key whose refusal
+ * arrived as HTTP 200.
+ */
 
-  // Absent or unparseable confirmations read as zero rather than as "plenty".
-  // Defaulting the other way would credit a transfer that is one block deep.
-  const confirmations = Number(row.confirmations);
-  return {
-    txHash,
-    to,
-    valueRaw,
-    confirmations: Number.isFinite(confirmations) && confirmations > 0 ? Math.floor(confirmations) : 0
-  };
+/** keccak256("Transfer(address,address,uint256)"). */
+const TRANSFER_TOPIC = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
+
+/**
+ * How far back to look: ~75 minutes at BNB's three-second blocks.
+ *
+ * Comfortably past the sixty-minute invoice window, and small enough that
+ * public nodes -- which cap eth_getLogs ranges -- will serve it.
+ */
+const LOOKBACK_BLOCKS = 1500;
+
+/** An address as a 32-byte log topic. */
+function addressTopic(address: string): string {
+  return '0x' + address.toLowerCase().replace(/^0x/, '').padStart(64, '0');
 }
 
-/** The most recent USDT transfers into our receiving address. */
-export async function recentTransfers(limit = 100): Promise<Transfer[]> {
-  const data = await callApi({
-    module: 'account',
-    action: 'tokentx',
-    contractaddress: USDT_CONTRACT,
-    address: RECEIVING_ADDRESS,
-    page: '1',
-    offset: String(limit),
-    sort: 'desc'
-  });
+/** A 32-byte topic back to an address. */
+function topicAddress(topic: string): string {
+  return '0x' + topic.replace(/^0x/, '').slice(-40);
+}
 
-  const result = (data as { status?: string; message?: string; result?: unknown })?.result;
+/** The recent USDT transfers into our receiving address. */
+export async function recentTransfers(): Promise<Transfer[]> {
+  const headHex = await rpc('eth_blockNumber', []);
+  if (typeof headHex !== 'string') throw new Error(`eth_blockNumber returned ${JSON.stringify(headHex)}`);
+  const head = BigInt(headHex);
+  const from = head > BigInt(LOOKBACK_BLOCKS) ? head - BigInt(LOOKBACK_BLOCKS) : 0n;
 
-  // "No transactions found" comes back as status "0" with a string result,
-  // which is a legitimate empty answer rather than a failure. Treating it
-  // as an error would make a quiet day look like an outage.
-  if (!Array.isArray(result)) {
-    const message = (data as { message?: string })?.message ?? '';
-    if (/no transactions found/i.test(`${message} ${typeof result === 'string' ? result : ''}`)) return [];
-    // The whole body. Reporting the `message` field alone gave "NOTOK",
-    // which names that something went wrong and nothing about what.
-    throw new Error(`Block explorer did not return a transfer list: ${JSON.stringify(data).slice(0, 300)}`);
+  const logs = await rpc('eth_getLogs', [
+    {
+      address: USDT_CONTRACT,
+      fromBlock: '0x' + from.toString(16),
+      toBlock: 'latest',
+      // [event, from (any), to (us)]. Filtering on the recipient at the
+      // node means it returns our transfers rather than every USDT
+      // movement on the chain.
+      topics: [TRANSFER_TOPIC, null, addressTopic(RECEIVING_ADDRESS)]
+    }
+  ]);
+
+  if (!Array.isArray(logs)) throw new Error(`eth_getLogs returned ${JSON.stringify(logs).slice(0, 200)}`);
+
+  return logs
+    .map((raw) => toLogTransfer(raw as Record<string, unknown>, head))
+    .filter((t): t is Transfer => t !== null);
+}
+
+/**
+ * One log row into the shape the matcher wants.
+ *
+ * Exported for its own tests: confirmations are derived here, and a
+ * transfer credited one block deep is the difference between a payment and
+ * a reorg.
+ */
+export function toLogTransfer(log: Record<string, unknown>, head: bigint): Transfer | null {
+  const txHash = typeof log.transactionHash === 'string' ? log.transactionHash : null;
+  const data = typeof log.data === 'string' ? log.data : null;
+  const topics = Array.isArray(log.topics) ? (log.topics as string[]) : null;
+  const blockHex = typeof log.blockNumber === 'string' ? log.blockNumber : null;
+  if (!txHash || !data || !topics || topics.length < 3 || !blockHex) return null;
+
+  let valueRaw: string;
+  let confirmations: number;
+  try {
+    valueRaw = BigInt(data).toString();
+    const block = BigInt(blockHex);
+    // A pending log, or a head that has not caught up, counts as zero
+    // rather than as plenty.
+    confirmations = head >= block ? Number(head - block) + 1 : 0;
+  } catch {
+    return null;
   }
 
-  return result
-    .map((row) => toTransfer(row as Record<string, unknown>))
-    .filter((t): t is Transfer => t !== null);
+  return { txHash, to: topicAddress(topics[2]), valueRaw, confirmations };
 }

@@ -1,4 +1,5 @@
 import { ArrowRight, MousePointerClick, Sparkles } from "lucide-react";
+import { TelegramIcon } from "../icons/TelegramIcon";
 import { Link } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { services } from "../../data/services";
@@ -41,6 +42,22 @@ export function Hero() {
             hand back the real thing, not a template.
           </p>
 
+          {/* Forge, named and explained above the fold. The floating button
+              was the only thing pointing at it, and a circle in the corner
+              does not tell anyone that they can simply describe the job and
+              have it ordered for them. */}
+          <p className="mx-auto mt-5 max-w-xl text-base text-fg-muted">
+            Or skip the forms —{" "}
+            <Link
+              to={user ? "/dashboard/forge" : "/signup"}
+              className="font-semibold text-yellow-400 underline decoration-yellow-400/40 underline-offset-4 transition-colors hover:decoration-yellow-400"
+            >
+              talk to Forge
+            </Link>
+            , our assistant. Describe what you want in your own words and it
+            places the order for you.
+          </p>
+
           <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
             <Link
               to={user ? "/dashboard" : "/signup"}
@@ -58,13 +75,48 @@ export function Hero() {
           </div>
 
           <p className="mt-4 text-xs text-fg-faint">
-            $20 is our Full Business Setup package — every other service keeps its own price, from $8.
+            $20 is our Full Business Setup package — every other service keeps its own price, from $1.
           </p>
         </div>
 
         <BrowserPreview />
+        <TelegramCallout />
       </div>
     </section>
+  );
+}
+
+// The whole service also runs inside Telegram, and nothing on the page said
+// so. Placed directly under the preview, where someone who has just looked at
+// the dashboard learns they never have to open it.
+function TelegramCallout() {
+  return (
+    <div className="animate-fade-up mx-auto mt-8 max-w-3xl" style={{ animationDelay: "250ms" }}>
+      <a
+        href="https://t.me/AgenticcoreClickManagerbot"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="flex flex-col items-center gap-4 rounded-2xl border border-border bg-surface px-6 py-5 text-center transition-colors hover:border-yellow-400/50 active:border-yellow-400 sm:flex-row sm:text-left"
+      >
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-yellow-400 text-void">
+          <TelegramIcon className="h-6 w-6" />
+        </span>
+        <span className="flex-1">
+          <span className="block font-display text-base font-semibold text-fg">
+            Prefer Telegram? The whole thing works there too.
+          </span>
+          <span className="mt-1 block text-sm text-fg-muted">
+            Create your project in a chat, get the finished files sent straight
+            back to you, and open an account from Telegram without ever touching
+            the website.
+          </span>
+        </span>
+        <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-yellow-400 px-4 py-2 text-sm font-semibold text-void transition-transform hover:-translate-y-0.5 active:translate-y-0">
+          Open the bot
+          <ArrowRight className="h-3.5 w-3.5" />
+        </span>
+      </a>
+    </div>
   );
 }
 

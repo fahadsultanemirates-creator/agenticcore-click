@@ -1,8 +1,12 @@
 import type { Bytes } from './bytes.ts';
-// Low-level Telegram Bot API calls -- sending/receiving both text and
-// voice notes. Voice notes: Telegram accepts mp3/ogg-opus/m4a on the way
-// out (sendVoice) and stores incoming ones as .oga (ogg/opus) on the way
-// in, downloadable via getFile.
+// Low-level Telegram Bot API calls.
+//
+// Voice goes one way only: in. Telegram stores an incoming voice note as
+// .oga (ogg/opus), downloadable via getFile, and the bot transcribes it.
+// There is deliberately no sendVoice wrapper here -- the bot replies in
+// text, always. The wrapper existed, had no callers left once spoken
+// replies were dropped, and an unused send function is how the rule gets
+// broken again by someone who finds it and assumes it is there to be used.
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN')!;
 const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}`;
@@ -18,17 +22,6 @@ export async function sendTelegramText(chatId: number, text: string): Promise<vo
   });
   if (!resp.ok) {
     console.error(`Telegram sendMessage failed (${resp.status}):`, await resp.text().catch(() => ''));
-  }
-}
-
-export async function sendTelegramVoice(chatId: number, mp3Bytes: Bytes): Promise<void> {
-  const form = new FormData();
-  form.set('chat_id', String(chatId));
-  form.set('voice', new Blob([mp3Bytes], { type: 'audio/mpeg' }), 'reply.mp3');
-
-  const resp = await fetch(`${TELEGRAM_API}/sendVoice`, { method: 'POST', body: form });
-  if (!resp.ok) {
-    console.error(`Telegram sendVoice failed (${resp.status}):`, await resp.text().catch(() => ''));
   }
 }
 

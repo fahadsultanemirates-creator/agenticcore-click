@@ -8,6 +8,8 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { calculatePriceUsd, REAL_TASK_TYPES, FULL_BUSINESS_SETUP_USD } from '../_shared/pricing.ts';
 import { jsonResponse, CORS_HEADERS } from '../_shared/cors.ts';
 import { allocateClientOrder } from '../_shared/orders.ts';
+import { getSku } from '../_shared/catalog.ts';
+import { queueEmailForUser } from '../_shared/email.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!;
@@ -153,6 +155,19 @@ export async function handleRequest(req: Request): Promise<Response> {
       actor: 'client',
       detail: { price_usd: isBundle ? null : calculatePriceUsd(t.type, t.payload), type: t.type, subtype: t.subtype, bundle: isBundle, conversationId }
     });
+
+    // One receipt per order, because each one has its own reference and
+    // its own revisions. A bundle is the exception: it is one purchase
+    // that happens to expand into eight tasks, and eight emails for one
+    // $20 payment is how a welcome becomes a spam report. It gets a single
+    // receipt below instead.
+    if (!isBundle) {
+      await queueEmailForUser(caller.id, 'order_placed', {
+        publicId: task.public_id,
+        productName: getSku(identity.sku)?.name ?? t.type,
+        priceUsd: calculatePriceUsd(t.type, t.payload) ?? 0
+      });
+    }
   }
 
   if (insertFailed) {
@@ -172,6 +187,15 @@ export async function handleRequest(req: Request): Promise<Response> {
       conversation_id: conversationId,
       role: 'assistant',
       content: `Queued: ${publicIds.join(', ')} -- $${totalUsd.toFixed(2)} charged from the wallet. The team will notify you as each one is ready.`
+    });
+  }
+
+  // The bundle's one receipt, now that every task in it is in.
+  if (isBundle && publicIds.length > 0) {
+    await queueEmailForUser(caller.id, 'order_placed', {
+      publicId: publicIds[0],
+      productName: 'Full Business Setup',
+      priceUsd: totalUsd
     });
   }
 

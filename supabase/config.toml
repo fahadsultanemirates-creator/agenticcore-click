@@ -17,6 +17,13 @@ verify_jwt = false
 [functions.usdt-invoice]
 verify_jwt = false
 
+# Called by pg_cron through pg_net with the anon key, and nudged by the
+# workers that queue mail. It takes no input at all -- it only ever drains
+# rows that something already wrote to email_outbox -- so there is nothing
+# an untrusted caller could make it send.
+[functions.send-email]
+verify_jwt = false
+
 # telegram-webhook is authenticated via X-Telegram-Bot-Api-Secret-Token,
 # not a Supabase JWT -- Telegram never sends one.
 [functions.telegram-webhook]

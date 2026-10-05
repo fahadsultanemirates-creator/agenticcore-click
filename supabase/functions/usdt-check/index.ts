@@ -20,6 +20,7 @@ import {
   verifyContract
 } from '../_shared/usdtChain.ts';
 import { notifyOwner } from '../_shared/telegram.ts';
+import { queueEmailForUser } from '../_shared/email.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!;
@@ -98,6 +99,22 @@ async function settle(
       `Wallet top-up confirmed — $${invoice.base_usd} credited.\n\n` +
         `Paid ${invoice.amount} USDT from ${result.from}, tx ${result.txHash}`
     ).catch(() => {});
+
+    // The client's own receipt. Read the balance back rather than adding
+    // base_usd to what we last saw: an order placed between the credit and
+    // this read would make a computed figure wrong, and a wrong balance in
+    // writing is a support ticket.
+    const { data: wallet } = await supabaseAdmin
+      .from('wallets')
+      .select('balance_usd')
+      .eq('user_id', invoice.user_id)
+      .maybeSingle<{ balance_usd: number }>();
+
+    await queueEmailForUser(invoice.user_id, 'topup', {
+      amountUsd: Number(invoice.base_usd),
+      balanceUsd: Number(wallet?.balance_usd ?? invoice.base_usd)
+    });
+
     return { status: 'paid', txHash: result.txHash };
   }
 

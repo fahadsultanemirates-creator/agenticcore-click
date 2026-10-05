@@ -6,6 +6,8 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { calculatePriceUsd, REAL_TASK_TYPES } from '../_shared/pricing.ts';
 import { allocateClientOrder } from '../_shared/orders.ts';
+import { getSku } from '../_shared/catalog.ts';
+import { queueEmailForUser } from '../_shared/email.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!;
@@ -133,6 +135,14 @@ export async function handleRequest(req: Request): Promise<Response> {
     event_type: 'created',
     actor: 'client',
     detail: { price_usd: priceUsd, type, subtype, sku: identity.sku, revisions_allowed: identity.revisionsAllowed }
+  });
+
+  // A receipt. Queued, not sent -- the order is already paid for and
+  // created, and nothing about it should depend on a mail API answering.
+  await queueEmailForUser(caller.id, 'order_placed', {
+    publicId: identity.publicId,
+    productName: getSku(identity.sku)?.name ?? type,
+    priceUsd
   });
 
   // Fire-and-forget -- nudges the dispatcher so this task doesn't wait for

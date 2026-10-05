@@ -1,4 +1,6 @@
 import { supabaseAdmin } from './storage.ts';
+import { getSku } from './catalog.ts';
+import { queueEmailForUser } from './email.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -46,6 +48,35 @@ async function setStatus(taskId: string, status: string): Promise<void> {
 export async function markDelivered(taskId: string): Promise<void> {
   await setStatus(taskId, 'delivered');
   await logEvent(taskId, 'delivered', 'worker');
+  await emailTheClient(taskId);
+}
+
+// "Your thing is ready" -- the one email a client actually waits for.
+//
+// Here rather than in each worker because every worker ends here, and a
+// notification wired into seven call sites is a notification missing from
+// the eighth. Owner and dogfood tasks have no user_id and get nothing; the
+// owner already hears about those in Telegram.
+//
+// Nothing in here can fail the delivery: the task is already marked
+// delivered and the files are already uploaded by the time this runs.
+async function emailTheClient(taskId: string): Promise<void> {
+  const { data: task, error } = await supabaseAdmin
+    .from('tasks')
+    .select('user_id, public_id, sku, type')
+    .eq('id', taskId)
+    .maybeSingle<{ user_id: string | null; public_id: string; sku: number | null; type: string }>();
+
+  if (error) {
+    console.error(`markDelivered: could not read ${taskId} to notify`, error);
+    return;
+  }
+  if (!task?.user_id) return;
+
+  await queueEmailForUser(task.user_id, 'order_delivered', {
+    publicId: task.public_id,
+    productName: (task.sku == null ? null : getSku(task.sku)?.name) ?? task.type
+  });
 }
 
 export async function markFailed(taskId: string, reason: string): Promise<void> {

@@ -69,9 +69,11 @@ The number also fixes the deliverable's shape and whose branding it carries, so 
 PRODUCT CATALOG:
 ${catalogMenu(false)}
 
-Payload fields you still gather per product: website (businessName, description, category, colors, sections, contactDetails, businessEmail, instagram, facebook, telegram, whatsapp); pdf/documents (description, language "en"|"ur"|"both" for documents); image (description); video (description, plus resolution "720p"|"1080p" for a short clip, or durationSeconds as a multiple of 30 up to 600 for a long one); social (description, platforms as an array); brand-kit (description). Every product also accepts websiteUrl (the client's existing site, used to match their branding) and referenceFiles.
+Payload fields you still gather per product: website (businessName, description, category, colors, sections, contactDetails, businessEmail, instagram, facebook, telegram, whatsapp); pdf/documents (description, language "en"|"ur"|"both" for documents); image (description); video (description, plus resolution "720p"|"1080p", and avatarStyle "standard" for a presenter or "none" for a scene with nobody speaking); social (description, platforms as an array); brand-kit (description). Every product also accepts websiteUrl (the client's existing site, used to match their branding) and referenceFiles.
 
-Pricing: website 10 = $10, 11 = $20. pdf = $3. image = $1. social = $2. documents = $5. brand-kit = $5. Short video 720p = $1, 1080p = $1.50. Long video = $3 per 30 seconds, up to 10 minutes ($60).
+Pricing: website 10 = $10, 11 = $20. pdf = $3. image = $1. social = $2. documents = $5. brand-kit = $5. Video 720p = $1, 1080p = $1.50.
+
+VIDEO IS ONE CLIP OF FIFTEEN SECONDS OR LESS. There is no longer-video product and no per-minute price. If a client asks for a two-minute explainer, say plainly that videos are up to fifteen seconds rather than quoting anything -- a longer one cannot be priced, so promising it means they confirm an order that is then refused.
 
 For a single-service request: gather what's needed for that ONE type, then emit action "submit_tasks" with one entry in "tasks".
 For a request that spans multiple services (e.g. "a website and some images"), gather each and emit multiple entries in "tasks", action "submit_tasks".

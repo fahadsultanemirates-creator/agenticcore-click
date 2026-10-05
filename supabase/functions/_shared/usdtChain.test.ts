@@ -104,15 +104,32 @@ test('the value is carried as a string, never as a number', () => {
 // the contract when the fault was the key.
 test('a refusal is recognised rather than read as an answer', () => {
   assert.ok(refusalReason({ status: '0', message: 'NOTOK', result: 'Invalid API Key' }));
-  assert.ok(refusalReason({ result: 'Missing/Invalid API Key' }));
-  assert.ok(refusalReason({ message: 'Max rate limit reached' }));
+  assert.ok(refusalReason({ status: '0', message: 'NOTOK', result: 'Max rate limit reached' }));
+  // The live failure: status 0, NOTOK, and nothing else to go on. Matching
+  // known phrases missed this, so the next host was never tried.
+  assert.ok(refusalReason({ status: '0', message: 'NOTOK' }));
+  assert.ok(refusalReason({ status: '0', message: 'NOTOK', result: '' }));
+});
+
+// The reason is what the caller needs, and it lives in `result`, not in
+// `message`. Reporting `message` alone gave "NOTOK" twice running.
+test('the refusal carries the reason, not just NOTOK', () => {
+  const reason = refusalReason({ status: '0', message: 'NOTOK', result: 'Invalid API Key' });
+  assert.match(reason ?? '', /Invalid API Key/);
 });
 
 test('a real answer is not mistaken for a refusal', () => {
   assert.equal(refusalReason({ jsonrpc: '2.0', id: 1, result: '0x12' }), null);
   assert.equal(refusalReason({ status: '1', message: 'OK', result: [] }), null);
-  assert.equal(refusalReason({ message: 'No transactions found', result: [] }), null);
   assert.equal(refusalReason({}), null);
+});
+
+// An address with no transfers yet answers status "0" as well. That is a
+// true answer; calling it a refusal would send every quiet sweep round
+// all three hosts and report an outage.
+test('an empty address is an answer, not a refusal', () => {
+  assert.equal(refusalReason({ status: '0', message: 'No transactions found', result: [] }), null);
+  assert.equal(refusalReason({ status: '0', message: 'NOTOK', result: 'No transactions found' }), null);
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

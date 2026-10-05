@@ -140,13 +140,32 @@ export function chainConfigured(): boolean {
   return apiKey().length > 0;
 }
 
-/** A reply that is the explorer refusing us rather than answering. */
+/**
+ * A reply that is the explorer declining rather than answering.
+ *
+ * This used to match a handful of known phrases, which meant anything it
+ * had not been taught -- the live failure was a bare `{"status":"0",
+ * "message":"NOTOK"}` -- read as a successful answer, so the next host was
+ * never tried and the real reason was discarded.
+ *
+ * Inverted now: status "0" IS the explorer saying no, with exactly one
+ * exception. An address with no transfers yet also answers status "0", and
+ * that is a true and useful answer, not a failure -- treating it as one
+ * would make a quiet day look like an outage and send every sweep round
+ * all three hosts.
+ */
 export function refusalReason(data: unknown): string | null {
-  const result = (data as { result?: unknown })?.result;
-  const message = (data as { message?: unknown })?.message;
-  const text = `${typeof result === 'string' ? result : ''} ${typeof message === 'string' ? message : ''}`;
-  if (/invalid api key|missing\/invalid api key|rate limit|max .* rate/i.test(text)) return text.trim();
-  return null;
+  const row = data as { status?: unknown; message?: unknown; result?: unknown };
+  const message = typeof row?.message === 'string' ? row.message : '';
+  const result = typeof row?.result === 'string' ? row.result : '';
+
+  if (/no transactions found/i.test(`${message} ${result}`)) return null;
+  if (row?.status !== '0') return null;
+
+  // result carries the reason ("Invalid API Key", "Invalid address
+  // format"); message is usually just "NOTOK". Both, because which one is
+  // useful varies and guessing wrong costs a round trip -- twice, now.
+  return [message, result].filter(Boolean).join(' — ') || 'declined without a reason';
 }
 
 async function callApi(params: Record<string, string>): Promise<unknown> {
@@ -264,12 +283,14 @@ export async function recentTransfers(limit = 100): Promise<Transfer[]> {
   const result = (data as { status?: string; message?: string; result?: unknown })?.result;
 
   // "No transactions found" comes back as status "0" with a string result,
-  // which is a legitimate empty answer rather than a failure. Treating it as
-  // an error would make a quiet day look like an outage.
+  // which is a legitimate empty answer rather than a failure. Treating it
+  // as an error would make a quiet day look like an outage.
   if (!Array.isArray(result)) {
     const message = (data as { message?: string })?.message ?? '';
-    if (/no transactions found/i.test(message)) return [];
-    throw new Error(`Block explorer did not return a transfer list: ${message || JSON.stringify(data).slice(0, 200)}`);
+    if (/no transactions found/i.test(`${message} ${typeof result === 'string' ? result : ''}`)) return [];
+    // The whole body. Reporting the `message` field alone gave "NOTOK",
+    // which names that something went wrong and nothing about what.
+    throw new Error(`Block explorer did not return a transfer list: ${JSON.stringify(data).slice(0, 300)}`);
   }
 
   return result

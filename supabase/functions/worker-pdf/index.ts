@@ -204,21 +204,11 @@ function describeBrief(type: string, payload: Record<string, unknown>): string {
   return `Brand kit item: ${payload.item ?? 'Brand kit item'}\nBrief: ${description}`;
 }
 
-// language: 'en' (default), 'ur', or 'both' -- for 'both', Claude produces
-// the same content twice, English sections first then Urdu, each section
-// tagged with which language it's in so renderDocumentPdf can switch font
-// and RTL direction per section within one document.
+// English only. This used to take a language, and for "both" it produced
+// every section twice with a per-section tag so the renderer could switch
+// font and direction mid-document. One language everywhere now, so there
+// is nothing to choose and nothing to tag.
 async function generateDocSpec(catalogItem: CatalogItem, type: string, payload: Record<string, unknown>): Promise<DocSpec> {
-  const language = (payload.language as string) === 'ur' || (payload.language as string) === 'both' ? (payload.language as 'ur' | 'both') : 'en';
-
-  const languageInstruction =
-    language === 'ur'
-      ? 'Write the entire document in Urdu.'
-      : language === 'both'
-        ? 'Produce the complete document TWICE: first every section in English, then every section again in Urdu ' +
-          '(same content, properly translated) -- tag each section with its language.'
-        : 'Write the entire document in English.';
-
   const systemPrompt =
     `${shapeInstruction(catalogItem)} ` +
     'You are a professional business copywriter and document designer. Given a brief, produce the ' +
@@ -229,9 +219,9 @@ async function generateDocSpec(catalogItem: CatalogItem, type: string, payload: 
     'exceed 200. A section that runs longer is the wrong shape -- split the idea into two sections, each ' +
     'self-contained under its own heading, rather than writing one long one. Do not end a section mid-thought ' +
     'expecting it to continue into the next; a reader turning the page starts a new topic. ' +
-    `${languageInstruction} ` +
+    'Write the entire document in English. ' +
     'Respond with ONLY a JSON object of the exact shape ' +
-    '{"title": string, "subtitle": string | null, "sections": [{"heading": string, "body": string, "language": "en"|"ur"}]} ' +
+    '{"title": string, "subtitle": string | null, "sections": [{"heading": string, "body": string}]} ' +
     '-- no markdown fences, no commentary.';
   const profile = catalogItem.urlUse === 'brand' ? await getBrandProfile(brandUrlFor(payload)) : null;
   const userBrief = describeBrief(type, payload) + brandFactsForPrompt(profile) + revisionInstruction(payload);
@@ -257,7 +247,6 @@ async function generateDocSpec(catalogItem: CatalogItem, type: string, payload: 
   if (!parsed?.title || !Array.isArray(parsed?.sections)) {
     throw new Error('Claude returned an unexpected document shape');
   }
-  parsed.language = language === 'both' ? 'en' : language;
   // brandAssets, not brandColors: the deck had no logo at all, because only
   // the single-page renderers were ever given one.
   parsed.brand = brandAssets(profile, payload);
@@ -270,14 +259,10 @@ async function generateDocSpec(catalogItem: CatalogItem, type: string, payload: 
   // abstraction is what made the last brochure's images look bought-in.
   parsed.imageStyle = brandStyleForPrompt(profile);
 
-  // The prompt asks for the cap; this enforces it. Bilingual documents carry
-  // each section twice, so the ceiling doubles for them.
+  // The prompt asks for the cap; this enforces it.
   const cap = catalogItem.output.maxPages;
-  if (cap !== undefined) {
-    const limit = language === 'both' ? cap * 2 : cap;
-    if (parsed.sections.length > limit) {
-      parsed.sections = parsed.sections.slice(0, limit);
-    }
+  if (cap !== undefined && parsed.sections.length > cap) {
+    parsed.sections = parsed.sections.slice(0, cap);
   }
   return parsed as DocSpec;
 }

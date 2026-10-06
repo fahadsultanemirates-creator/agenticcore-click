@@ -156,7 +156,12 @@ export async function superviseTask(task: SupervisedTask): Promise<Routing> {
   // Owner-only products (the business report) are not purchasable. A client
   // task that resolves to one means routing went wrong upstream, and the
   // safe answer is to stop rather than to build it and bill for it.
-  if (item.ownerOnly && task.source === 'website') {
+  //
+  // "not owner", not "is website": this read `source === 'website'` while
+  // those were the only two values, and a third ('telegram') would have
+  // walked straight through it -- a client ordering an owner-only product
+  // from the chat and being billed for it.
+  if (item.ownerOnly && task.source !== 'owner') {
     return {
       agent: null,
       item,

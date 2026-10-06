@@ -1,0 +1,7 @@
+{
+  "imports": {
+    "https://esm.sh/@supabase/supabase-js@2": "./node_modules/@supabase/supabase-js/dist/index.d.mts",
+    "https://esm.sh/@anthropic-ai/sdk@0.125.0": "./node_modules/@anthropic-ai/sdk/index.d.mts",
+    "https://esm.sh/qrcode-generator@1.4.4": "./node_modules/qrcode-generator/qrcode.d.ts"
+  }
+}

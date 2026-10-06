@@ -1,12 +1,9 @@
 import type { Bytes } from './bytes.ts';
 // Grok's real STT/TTS APIs (api.x.ai/v1/stt, /v1/tts) -- confirmed via
-// xAI's own docs, not guessed. STT's `language` field only documents 24
-// explicit codes (no 'ur'), but omitting it just disables number/currency
-// formatting -- it still transcribes whatever is spoken. TTS supports
-// `language: 'auto'` for automatic detection from the input text, which is
-// the safe default for Urdu since it isn't one of TTS's explicit codes
-// either; if Grok's Urdu output proves weak in practice, swap in a
-// dedicated provider here without touching any caller.
+// xAI's own docs, not guessed. STT's `language` field is left unset: that
+// only disables number/currency formatting, and it still transcribes
+// whatever is spoken -- which is what we want, because a caller may speak
+// anything even though everything we send back is English.
 
 const XAI_API_KEY = Deno.env.get('XAI_API_KEY')!;
 const XAI_BASE_URL = 'https://api.x.ai/v1';

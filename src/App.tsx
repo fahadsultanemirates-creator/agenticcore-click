@@ -26,6 +26,7 @@ const PdfDocumentsPage = lazy(() =>
 const SocialMediaPage = lazy(() => import("./pages/services/SocialMediaPage").then((m) => ({ default: m.SocialMediaPage })));
 const VideoPage = lazy(() => import("./pages/services/VideoPage").then((m) => ({ default: m.VideoPage })));
 const ResetPassword = lazy(() => import("./pages/ResetPassword").then((m) => ({ default: m.ResetPassword })));
+const ClaimAccount = lazy(() => import("./pages/ClaimAccount").then((m) => ({ default: m.ClaimAccount })));
 const Terms = lazy(() => import("./pages/legal/Terms").then((m) => ({ default: m.Terms })));
 const Privacy = lazy(() => import("./pages/legal/Privacy").then((m) => ({ default: m.Privacy })));
 const Refunds = lazy(() => import("./pages/legal/Refunds").then((m) => ({ default: m.Refunds })));
@@ -48,6 +49,9 @@ export default function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
         <Route path="/reset" element={<ResetPassword />} />
+        {/* Where a Telegram-created account gets its password. Public by
+            necessity: the whole point is that the client has no session. */}
+        <Route path="/claim" element={<ClaimAccount />} />
         <Route path="/terms" element={<Terms />} />
         <Route path="/privacy" element={<Privacy />} />
         <Route path="/refunds" element={<Refunds />} />

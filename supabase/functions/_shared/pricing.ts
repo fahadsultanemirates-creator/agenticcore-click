@@ -10,9 +10,12 @@
 // logic instead of a second copy that could drift.
 export function calculatePriceUsd(type: string, payload: Record<string, unknown>): number | null {
   switch (type) {
+    // Counted in PAGES now, not sections, and the ranges no longer
+    // overlap: 1-4 is small, 5-10 is large, so a page count never fits
+    // both and nobody has to adjudicate a 4.
     case 'website':
-      if (payload.tier === 'small') return 10;
-      if (payload.tier === 'large') return 20;
+      if (payload.tier === 'small') return WEBSITE_SMALL_USD;
+      if (payload.tier === 'large') return WEBSITE_LARGE_USD;
       return null;
 
     case 'pdf':
@@ -30,25 +33,49 @@ export function calculatePriceUsd(type: string, payload: Record<string, unknown>
     case 'image':
       return 1;
 
-    // Every video is now a single clip of 15 seconds or less, so the only
-    // thing that moves the price is resolution. The long tier is gone: it
-    // was billed in 30-second blocks against HeyGen's rate, and HeyGen is
-    // no longer a dependency.
+    // One price, whatever is in the clip.
+    //
+    // It used to vary by resolution, which was never a real difference to
+    // sell: every clip is 1080p now, and an avatar costs us the same as a
+    // moving scene. A video is a video.
     case 'video':
-      if (payload.resolution === '720p') return SHORT_VIDEO_720P_USD;
-      if (payload.resolution === '1080p') return SHORT_VIDEO_1080P_USD;
-      return null;
+      return VIDEO_USD;
 
     default:
       return null;
   }
 }
 
-export const SHORT_VIDEO_720P_USD = 1;
-export const SHORT_VIDEO_1080P_USD = 1.5;
+/** One clip, one price, avatar or not. */
+export const VIDEO_USD = 3;
 
-/** The hard cap on a clip, and the only length we sell. */
+/** Every clip is 1080p. There is no cheaper tier to choose any more. */
+export const VIDEO_RESOLUTION = '1080p' as const;
+
+/** The length we sell: 10 to 15 seconds. */
+export const MIN_VIDEO_SECONDS = 10;
 export const MAX_VIDEO_SECONDS = 15;
+
+/** Pages, not sections, and the two ranges do not overlap. */
+export const WEBSITE_SMALL_USD = 10;
+export const WEBSITE_LARGE_USD = 20;
+export const WEBSITE_SMALL_PAGES = { min: 1, max: 4 } as const;
+export const WEBSITE_LARGE_PAGES = { min: 5, max: 10 } as const;
+
+/**
+ * Which tier a page count falls into.
+ *
+ * One place, because "5 pages" arrives from the website form, from Forge,
+ * and from a line of Telegram text, and three readings of the same number
+ * is how a client is quoted one price and charged another. Null above the
+ * ceiling: ten pages is the product, not a starting point.
+ */
+export function websiteTierForPages(pages: number): 'small' | 'large' | null {
+  if (!Number.isFinite(pages) || pages < WEBSITE_SMALL_PAGES.min) return null;
+  if (pages <= WEBSITE_SMALL_PAGES.max) return 'small';
+  if (pages <= WEBSITE_LARGE_PAGES.max) return 'large';
+  return null;
+}
 
 export const REAL_TASK_TYPES = new Set(['website', 'pdf', 'image', 'video', 'social', 'documents', 'brand-kit']);
 

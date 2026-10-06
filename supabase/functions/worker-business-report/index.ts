@@ -9,7 +9,7 @@ import { claudeVisionChat } from '../_shared/claude.ts';
 import { screenshotUrl } from '../_shared/htmlPdf.ts';
 import { generateBrandVisual, mapWithConcurrency } from '../_shared/images.ts';
 import { renderDocumentPdf, type DocSection } from '../_shared/pdf.ts';
-import { sendBotMessage, getOwnerLanguage } from '../_shared/botMessage.ts';
+import { sendBotMessage } from '../_shared/botMessage.ts';
 import { sendTelegramDocument } from '../_shared/telegramApi.ts';
 import { addTaskFile, logEvent, markDelivered, markFailed } from '../_shared/task.ts';
 import { jsonResponse } from '../_shared/cors.ts';
@@ -184,7 +184,6 @@ export async function handleRequest(req: Request): Promise<Response> {
       title: 'Business Report',
       subtitle: url,
       theme: 'deck',
-      language: 'en',
       coverImageUrl: visuals.cover,
       sections
     });
@@ -193,11 +192,9 @@ export async function handleRequest(req: Request): Promise<Response> {
     await addTaskFile(taskId, { url: fileUrl, fileType: 'application/pdf', optionIndex: 1, version: task.version });
     await logEvent(taskId, 'business_report_generated', 'worker', { url: fileUrl, targetUrl: url });
     await markDelivered(taskId);
-
-    const language = await getOwnerLanguage();
     if (task.owner_channel_id) {
       const chatId = Number(task.owner_channel_id);
-      await sendBotMessage(chatId, `${task.public_id} business report for ${url} is ready.`, language).catch((err) =>
+      await sendBotMessage(chatId, `${task.public_id} business report for ${url} is ready.`).catch((err) =>
         console.error('worker-business-report: notify failed', err)
       );
       // The actual PDF, not just a link -- Telegram fetches the public

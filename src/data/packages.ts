@@ -36,17 +36,32 @@ export const walletPackages: WalletPackage[] = [
   },
 ];
 
+// The two discounts are not the same offer, and a card that lists them as
+// two bullets reads as though they stack. The routine discount is a
+// property of the tier -- it is on every order you place, forever, so it
+// belongs on the card. The first-order discount happens once, applies to
+// every service including the $20 Full Business Setup, and needs a
+// sentence rather than a bullet. It lives below the cards instead.
+//
+// Built from walletPackages so the numbers in the prose cannot drift from
+// the numbers on the cards.
+export function firstOrderDiscountLine(): string {
+  return walletPackages
+    .map((pkg) => `${pkg.firstTimeDiscount}% on ${pkg.price}`)
+    .join(", ");
+}
+
 export const flagshipPackage = {
   id: "full-business-setup",
   name: "Full Business Setup",
   price: "$20",
   tagline: "Get your business ready before your lunch or coffee gets finished.",
   contents: [
-    "1 website (your choice of 2–4 or 4–10 pages)",
+    "1 website (your choice of 1–4 or 5–10 pages)",
     "15 images of your choice for the business",
     "5 logo options to pick from",
     "3 picks from the PDF & Documents section",
-    "3 short videos (15 sec max, avatar or avatar-free)",
+    "3 short videos (10–15 sec, avatar or avatar-free)",
     "Social kit: 5 designs across each of 5 platforms",
     "1 pick from Business Documents",
     "1 pick from Brand & Marketing Kit",

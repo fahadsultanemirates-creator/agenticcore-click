@@ -47,6 +47,54 @@ body {
   outline-offset: 2px;
 }
 
+/* Pressed feedback, everywhere, in one place.
+ *
+ * Nearly every control on the site had a :hover state and no :active one.
+ * Hover does not exist on a touchscreen, so on a phone -- which is most of
+ * the traffic -- tapping any button did nothing visible until the page
+ * changed. Taps got repeated because nothing acknowledged the first one.
+ *
+ * Doing this as a base rule rather than a Tailwind class on each button is
+ * deliberate: there are several hundred controls across the dashboard, the
+ * intake forms and the landing page, and a per-button class is a rule that
+ * holds only until the next button is written. This one covers anything
+ * added later for free.
+ *
+ * Tailwind v4 animates `scale` as its own CSS property rather than through
+ * the `transform` shorthand, so this composes with the hover:-translate-y
+ * lifts already on the primary buttons instead of cancelling them. Any
+ * element that wants a different press still wins: an `active:` utility is
+ * a class plus a pseudo-class, which outranks this element selector.
+ */
+button:not(:disabled):not([aria-disabled="true"]):active,
+summary:active,
+label[class*="cursor-pointer"]:active,
+[role="button"]:not([aria-disabled="true"]):active,
+a[class*="rounded-"]:active {
+  scale: 0.97;
+  opacity: 0.9;
+}
+
+/* iOS paints its own grey flash over anything tappable, on top of the above.
+ * Two different press effects at once reads as a rendering glitch. */
+button,
+summary,
+label,
+[role="button"],
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button:not(:disabled):active,
+  summary:active,
+  label[class*="cursor-pointer"]:active,
+  [role="button"]:active,
+  a[class*="rounded-"]:active {
+    scale: 1;
+  }
+}
+
 .bg-noise {
   background-image: radial-gradient(var(--color-fg) 0.6px, transparent 0.6px);
   background-size: 16px 16px;

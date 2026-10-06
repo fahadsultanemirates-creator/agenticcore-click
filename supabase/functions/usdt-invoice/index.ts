@@ -8,37 +8,20 @@
 // Replaces payram-create-payment: PayRam charged about $15 of gas on every
 // incoming transfer, against a flagship package of $20, and three test
 // payments never arrived at all.
+//
+// The work itself lives in _shared/usdtInvoice.ts, because the Telegram
+// bot opens invoices too and a client who signed up in the chat has no
+// website password yet -- "go to the dashboard" is a dead end for exactly
+// the people most likely to be ordering from a chat. This file is the
+// authenticated HTTP door onto it.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { jsonResponse, CORS_HEADERS } from '../_shared/cors.ts';
-import { allocateNonce, invoiceAmount, MAX_NONCE } from '../_shared/usdtAmount.ts';
-import { chainConfigured, currentBlock, RECEIVING_ADDRESS, USDT_CONTRACT, verifyContract } from '../_shared/usdtChain.ts';
+import { chainConfigured } from '../_shared/usdtChain.ts';
+import { createUsdtInvoice, WALLET_TIERS } from '../_shared/usdtInvoice.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!;
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-
-const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-
-// Mirrors src/data/packages.ts, kept in sync by hand since the frontend is
-// a static SPA with no shared build step with these functions. The dollars
-// credited, not a credit system with a bonus.
-const WALLET_TIERS: Record<string, number> = {
-  'wallet-10': 10,
-  'wallet-30': 30,
-  'wallet-100': 100,
-  'wallet-200': 200
-};
-
-/**
- * How long an invoice stays payable.
- *
- * Long enough to open a wallet, find the address and send; short enough
- * that an abandoned invoice gives its amount back rather than holding a
- * nonce forever. An expired invoice is not a lost payment -- money that
- * arrives late still appears in the sweep and is reported.
- */
-const INVOICE_MINUTES = 60;
 
 async function resolveCaller(authHeader: string): Promise<{ id: string } | null> {
   const callerClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
@@ -74,103 +57,11 @@ export async function handleRequest(req: Request): Promise<Response> {
   const baseUsd = WALLET_TIERS[tier];
   if (!baseUsd) return jsonResponse({ error: 'Unknown wallet package.' }, 400);
 
-  // Before anything is quoted, confirm the contract we will watch really is
-  // USDT. Watching a lookalike would credit somebody who paid in a
-  // worthless token -- the one failure in this scheme that is not
-  // fail-safe. Cheap, and it fails the request rather than the payment.
-  let decimals: number;
-  try {
-    ({ decimals } = await verifyContract());
-  } catch (err) {
-    const detail = err instanceof Error ? err.message : String(err);
-    console.error('usdt-invoice: contract verification failed', detail);
-    return jsonResponse(
-      { error: 'Could not verify the payment token right now. Please try again shortly.', detail },
-      503
-    );
+  const result = await createUsdtInvoice(caller.id, tier);
+  if (!result.ok) {
+    return jsonResponse(result.detail ? { error: result.error, detail: result.detail } : { error: result.error }, result.status);
   }
-
-  // The chain height now, so a payment mined before this invoice existed
-  // can never settle it. Amounts are reused once an invoice closes, and
-  // without this bound a slow payment for an expired invoice credits
-  // whoever holds that amount next.
-  let fromBlock: string;
-  try {
-    fromBlock = (await currentBlock()).toString();
-  } catch (err) {
-    const detail = err instanceof Error ? err.message : String(err);
-    console.error('usdt-invoice: could not read the chain height', detail);
-    return jsonResponse({ error: 'Could not reach the chain right now. Please try again shortly.', detail }, 503);
-  }
-
-  const expiresAt = new Date(Date.now() + INVOICE_MINUTES * 60_000).toISOString();
-
-  // Nonce allocation reads the open invoices and then writes, so two
-  // requests can read the same gap. The partial unique index on (amount)
-  // where status = 'pending' is what actually prevents a collision; this
-  // loop is how the loser of that race recovers.
-  for (let attempt = 1; attempt <= 5; attempt++) {
-    const { data: open, error: readError } = await supabaseAdmin
-      .from('usdt_invoices')
-      .select('nonce')
-      .eq('status', 'pending')
-      .eq('base_usd', baseUsd);
-
-    if (readError) {
-      console.error('usdt-invoice: could not read open invoices', readError);
-      return jsonResponse({ error: 'Could not open an invoice. Please try again.' }, 500);
-    }
-
-    let nonce: number;
-    try {
-      nonce = allocateNonce((open ?? []).map((row) => row.nonce as number));
-    } catch {
-      console.error(`usdt-invoice: all ${MAX_NONCE} nonces are in use at $${baseUsd}`);
-      return jsonResponse({ error: 'Too many payments in progress. Please try again in a few minutes.' }, 503);
-    }
-
-    const amount = invoiceAmount(baseUsd, nonce);
-
-    const { data: invoice, error: insertError } = await supabaseAdmin
-      .from('usdt_invoices')
-      .insert({
-        user_id: caller.id,
-        base_usd: baseUsd,
-        tier,
-        amount,
-        nonce,
-        expires_at: expiresAt,
-        from_block: fromBlock
-      })
-      .select('id, amount, expires_at')
-      .single();
-
-    if (!insertError && invoice) {
-      return jsonResponse({
-        invoiceId: invoice.id,
-        // Everything the client needs to pay, and nothing they have to
-        // work out: the exact amount matters more than the address, since
-        // a near-miss on the amount is what cannot be attributed.
-        amount: invoice.amount,
-        address: RECEIVING_ADDRESS,
-        contract: USDT_CONTRACT,
-        network: 'BNB Smart Chain (BEP-20)',
-        decimals,
-        creditUsd: baseUsd,
-        expiresAt: invoice.expires_at
-      });
-    }
-
-    // 23505 is unique_violation: somebody took this amount between the read
-    // and the write. Try the next free nonce.
-    if ((insertError as { code?: string } | null)?.code !== '23505') {
-      console.error('usdt-invoice: insert failed', insertError);
-      return jsonResponse({ error: 'Could not open an invoice. Please try again.' }, 500);
-    }
-  }
-
-  console.error('usdt-invoice: lost the nonce race five times running');
-  return jsonResponse({ error: 'Could not open an invoice. Please try again.' }, 503);
+  return jsonResponse(result.invoice);
 }
 
 Deno.serve(handleRequest);

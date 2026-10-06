@@ -4,12 +4,11 @@
 // task. Every service page's "Generate"/"Submit" button calls this.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { calculatePriceUsd, REAL_TASK_TYPES } from '../_shared/pricing.ts';
-import { allocateClientOrder } from '../_shared/orders.ts';
+import { REAL_TASK_TYPES } from '../_shared/pricing.ts';
+import { placeOrder } from '../_shared/placeOrder.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!;
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -19,8 +18,6 @@ const CORS_HEADERS = {
 };
 
 const TASK_TYPES = REAL_TASK_TYPES;
-
-const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -75,80 +72,24 @@ export async function handleRequest(req: Request): Promise<Response> {
     return jsonResponse({ error: 'Missing payload' }, 400);
   }
 
-  const priceUsd = calculatePriceUsd(type, payload);
-  if (priceUsd === null) {
-    return jsonResponse({ error: 'Could not price this request — check the selected options.' }, 400);
+  // One implementation of "take an order", shared with Forge and the
+  // Telegram bot (_shared/placeOrder.ts). This used to be written out
+  // here in full, and the copies drifted: the paused-account check landed
+  // in two of the three only because all three were edited in one sitting.
+  const result = await placeOrder({ userId: caller.id, type, payload, subtype, source: 'website' });
+
+  if (!result.ok) {
+    // The status matters to the dashboard: 402 puts up the top-up prompt,
+    // 403 the set-a-password one, 400 sends them back to the form.
+    const status =
+      result.reason === 'insufficient_funds' ? 402 : result.reason === 'paused' ? 403 : result.reason === 'failed' ? 500 : 400;
+    return jsonResponse({ error: result.message }, status);
   }
-
-  const { data: debited, error: debitError } = await supabaseAdmin.rpc('deduct_wallet_balance', {
-    p_user_id: caller.id,
-    p_amount: priceUsd
-  });
-
-  if (debitError) {
-    console.error('submit-task: wallet debit errored', debitError);
-    return jsonResponse({ error: 'Could not process wallet payment. Please try again.' }, 500);
-  }
-  if (!debited) {
-    return jsonResponse({ error: `Insufficient wallet balance. This request costs $${priceUsd}.` }, 402);
-  }
-
-  // The order's own identity: which account, which of their orders, which
-  // product, and how many revisions it comes with. Recorded on the row so a
-  // later "revise my letterhead" can be answered from data rather than memory.
-  const identity = await allocateClientOrder(caller.id, type, payload);
-  if (!identity) {
-    await supabaseAdmin.rpc('refund_wallet_balance', { p_user_id: caller.id, p_amount: priceUsd });
-    return jsonResponse({ error: 'Could not identify the product for this request. Your wallet was not charged.' }, 400);
-  }
-
-  const { data: task, error: insertError } = await supabaseAdmin
-    .from('tasks')
-    .insert({
-      public_id: identity.publicId,
-      source: 'website',
-      type,
-      subtype,
-      status: 'queued',
-      wallet_confirmed: true,
-      user_id: caller.id,
-      account_no: identity.accountNo,
-      order_no: identity.orderNo,
-      sku: identity.sku,
-      revisions_allowed: identity.revisionsAllowed,
-      payload
-    })
-    .select('id, public_id')
-    .single();
-
-  if (insertError || !task) {
-    console.error('submit-task: task insert failed', insertError);
-    // Refund -- the debit already happened but the task never got created.
-    await supabaseAdmin.rpc('refund_wallet_balance', { p_user_id: caller.id, p_amount: priceUsd });
-    return jsonResponse({ error: 'Could not create the task. Your wallet was not charged.' }, 500);
-  }
-
-  await supabaseAdmin.from('task_events').insert({
-    task_id: task.id,
-    event_type: 'created',
-    actor: 'client',
-    detail: { price_usd: priceUsd, type, subtype, sku: identity.sku, revisions_allowed: identity.revisionsAllowed }
-  });
-
-  // Fire-and-forget -- nudges the dispatcher so this task doesn't wait for
-  // the cron safety net. Never awaited: a dispatch hiccup here is not a
-  // reason to fail a request that already succeeded and was charged.
-  fetch(`${SUPABASE_URL}/functions/v1/dispatcher`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, 'Content-Type': 'application/json' }
-  }).catch((err) => console.error('submit-task: dispatch trigger failed', err));
 
   return jsonResponse({
-    taskId: task.id,
-    publicId: task.public_id,
-    priceUsd,
-    sku: identity.sku,
-    revisionsAllowed: identity.revisionsAllowed
+    taskId: result.taskId,
+    publicId: result.publicId,
+    priceUsd: result.priceUsd
   });
 }
 

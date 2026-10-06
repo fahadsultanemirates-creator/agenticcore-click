@@ -5,7 +5,7 @@
 // the same text+voice pipeline every other reply uses.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { sendBotMessage, getOwnerLanguage } from '../_shared/botMessage.ts';
+import { sendBotMessage } from '../_shared/botMessage.ts';
 import { jsonResponse } from '../_shared/cors.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
@@ -23,13 +23,22 @@ export async function handleRequest(req: Request): Promise<Response> {
   const [{ data: delivered }, { data: failed }, { data: topups }] = await Promise.all([
     supabaseAdmin.from('tasks').select('public_id, type, source').eq('status', 'delivered').gte('updated_at', since),
     supabaseAdmin.from('tasks').select('public_id, type, source').eq('status', 'failed').gte('updated_at', since),
-    supabaseAdmin.from('wallet_topups').select('amount_usd, tier').eq('status', 'confirmed').gte('confirmed_at', since)
+    // usdt_invoices, not wallet_topups. wallet_topups was PayRam's table and
+    // nothing writes to it any more, so this figure had been a guaranteed
+    // zero since the switch to USDT -- a summary line that cannot report a
+    // real number is worse than no line, because it reads as "no sales
+    // today" rather than "not measured".
+    //
+    // base_usd is the amount credited to the wallet. `amount` is the
+    // on-chain figure, which carries the per-invoice nonce (20.000007) and
+    // would quietly inflate the total.
+    supabaseAdmin.from('usdt_invoices').select('base_usd, tier').eq('status', 'paid').gte('paid_at', since)
   ]);
 
   const deliveredCount = delivered?.length ?? 0;
   const failedCount = failed?.length ?? 0;
   const topupCount = topups?.length ?? 0;
-  const topupTotal = (topups ?? []).reduce((sum, t: any) => sum + Number(t.amount_usd ?? 0), 0);
+  const topupTotal = (topups ?? []).reduce((sum, t: any) => sum + Number(t.base_usd ?? 0), 0);
 
   if (deliveredCount === 0 && failedCount === 0 && topupCount === 0) {
     return jsonResponse({ ok: true, skipped: true });
@@ -41,9 +50,7 @@ export async function handleRequest(req: Request): Promise<Response> {
     failedCount ? `- Tasks failed: ${failedCount} (${(failed ?? []).map((t: any) => t.public_id).join(', ')})` : '- Tasks failed: 0',
     `- Wallet top-ups: ${topupCount}${topupCount ? ` totaling $${topupTotal.toFixed(2)}` : ''}`
   ];
-
-  const language = await getOwnerLanguage();
-  await sendBotMessage(Number(OWNER_TELEGRAM_ID), lines.join('\n'), language);
+  await sendBotMessage(Number(OWNER_TELEGRAM_ID), lines.join('\n'));
 
   return jsonResponse({ ok: true, deliveredCount, failedCount, topupCount });
 }

@@ -22,7 +22,8 @@ import { supabaseAdmin } from '../_shared/storage.ts';
 import { getBrandProfile, brandStyleForPrompt, extractUrl, normalizeUrl } from '../_shared/brandProfile.ts';
 import { grokChat, grokVisionChat } from '../_shared/grok.ts';
 import { fetchAttachments } from '../_shared/attachments.ts';
-import { aspectFor, resolutionIn } from '../_shared/videoFormat.ts';
+import { aspectFor } from '../_shared/videoFormat.ts';
+import { VIDEO_RESOLUTION } from '../_shared/pricing.ts';
 import { resolveSku, shapeInstruction, specOf } from '../_shared/catalog.ts';
 import { missingRequired, infoRequest } from '../_shared/requirements.ts';
 import { submitGrokVideo } from '../_shared/grokVideo.ts';
@@ -39,9 +40,9 @@ import { requireInternalCaller } from '../_shared/internal.ts';
 // and a missing `avatarStyle` fell through to the HeyGen avatar branch,
 // spending real render credits on it. So the brief becomes the description
 // (same `?? payload.brief` convention as worker-image/worker-pdf), and every
-// other field falls back to the cheapest fully-automated shape the form
-// itself offers: a short, no-avatar clip at 720p. Anything the bot *did*
-// capture in payload.details survives, since that's merged in at intake.
+// other field falls back to the shape the form itself offers: a short,
+// no-avatar 1080p clip. Anything the bot *did* capture in payload.details
+// survives, since that's merged in at intake.
 
 // The client's site is the brand reference for every product that carries
 // their branding -- explicit field first, then any URL in the brief.
@@ -86,13 +87,16 @@ function normalizeVideoPayload(raw: Record<string, unknown>): VideoDefaulting {
     defaulted.push('noAvatarMode=full');
   }
 
-  // Quality: what the order names, else what the brief asks for in words,
-  // else 1080p. A Telegram order is one line of free text with no structured
-  // fields, so "make it 720p" is the only way to ask from there.
-  if (payload.resolution !== '720p' && payload.resolution !== '1080p') {
-    const asked = resolutionIn(description);
-    payload.resolution = asked ?? '1080p';
-    defaulted.push(asked ? `resolution=${asked} (from the brief)` : 'resolution=1080p');
+  // Every clip is 1080p, full stop.
+  //
+  // This used to read a resolution out of the order, and failing that out
+  // of the words of the brief, because resolution was a priced tier. It is
+  // not any more -- one price, one quality -- so honouring "make it 720p"
+  // from a brief now means charging the full $3 and shipping the worse
+  // clip, on the strength of a phrase the client may not even have meant
+  // as an instruction.
+  if (payload.resolution !== VIDEO_RESOLUTION) {
+    payload.resolution = VIDEO_RESOLUTION;
   }
 
   return { payload, defaulted };
@@ -186,9 +190,7 @@ export async function handleRequest(req: Request): Promise<Response> {
     try {
       const prompt = await generateNoAvatarPrompt(payload);
       const durationSeconds = NO_AVATAR_CLIP_SECONDS;
-      // Resolution is what the short clip is priced on, so render the one
-      // the client actually paid for rather than always 720p.
-      const resolution = payload.resolution === '1080p' ? '1080p' : '720p';
+      const resolution = VIDEO_RESOLUTION;
       const requestId = await submitGrokVideo(prompt, {
         durationSeconds,
         resolution,

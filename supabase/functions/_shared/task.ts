@@ -1,4 +1,7 @@
 import { supabaseAdmin } from './storage.ts';
+import { getSku } from './catalog.ts';
+import { queueEmailForUser } from './email.ts';
+import { sendBotMessage } from './botMessage.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -46,6 +49,61 @@ async function setStatus(taskId: string, status: string): Promise<void> {
 export async function markDelivered(taskId: string): Promise<void> {
   await setStatus(taskId, 'delivered');
   await logEvent(taskId, 'delivered', 'worker');
+  await notifyTheClient(taskId);
+}
+
+// "Your thing is ready" -- the message a client actually waits for, by
+// email and, if they have a chat with us, in Telegram.
+//
+// Here rather than in each worker because every worker ends here, and a
+// notification wired into seven call sites is a notification missing from
+// the eighth. Owner and dogfood tasks have no user_id and get nothing; the
+// owner already hears about those in Telegram.
+//
+// Both channels, not one or the other, and not chosen by where the order
+// came from. Somebody who orders in the chat still gets the email, because
+// the email is the copy that survives; somebody who orders on the website
+// and has a linked chat still gets the message, because that is where they
+// will see it first. Neither is the delivery itself -- the files are in the
+// dashboard either way -- so neither failing can fail anything.
+async function notifyTheClient(taskId: string): Promise<void> {
+  const { data: task, error } = await supabaseAdmin
+    .from('tasks')
+    .select('user_id, public_id, sku, type')
+    .eq('id', taskId)
+    .maybeSingle<{ user_id: string | null; public_id: string; sku: number | null; type: string }>();
+
+  if (error) {
+    console.error(`markDelivered: could not read ${taskId} to notify`, error);
+    return;
+  }
+  if (!task?.user_id) return;
+
+  const productName = (task.sku == null ? null : getSku(task.sku)?.name) ?? task.type;
+
+  await queueEmailForUser(task.user_id, 'order_delivered', {
+    publicId: task.public_id,
+    productName
+  });
+
+  const { data: link } = await supabaseAdmin
+    .from('telegram_accounts')
+    .select('chat_id')
+    .eq('user_id', task.user_id)
+    .maybeSingle<{ chat_id: number }>();
+
+  if (!link?.chat_id) return;
+
+  await sendBotMessage(
+    Number(link.chat_id),
+    [
+      `${productName} is ready — ${task.public_id}.`,
+      '',
+      'Download it from https://agenticcore.click/dashboard',
+      '',
+      'Send /orders to see everything you have ordered.'
+    ].join('\n')
+  ).catch((err) => console.error(`markDelivered: Telegram notice failed for ${taskId}`, err));
 }
 
 export async function markFailed(taskId: string, reason: string): Promise<void> {

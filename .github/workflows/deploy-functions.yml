@@ -77,6 +77,15 @@ jobs:
       # covers the whole deployed surface. The *.test.ts files are
       # deliberately excluded: they run under Node, so Deno is the wrong
       # compiler to judge them by -- the test step below is their check.
+      #
+      # No import map here: CI can reach esm.sh, so this checks against the
+      # real published types. typecheck-map.json in the repo root points the
+      # same three remote imports at node_modules copies, for checking from
+      # an environment whose egress policy blocks esm.sh:
+      #
+      #   npm i --no-save @anthropic-ai/sdk@0.125.0 qrcode-generator@1.4.4
+      #   deno check --import-map=typecheck-map.json --no-remote \
+      #     supabase/functions/*/index.ts
       - name: Type-check the functions
         run: deno check supabase/functions/*/index.ts
 

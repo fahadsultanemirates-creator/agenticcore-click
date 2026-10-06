@@ -1,4 +1,19 @@
-// AgenticCore Click — Telegram owner channel. Unlike .agency's bot, this
+// AgenticCore Click — the Telegram bot. Two audiences through one chat.
+//
+// The OWNER gets the control channel this file has always been: watch the
+// queue, inject a dogfood task, request a revision, pull a delivered
+// task's files, route a product to an external agent.
+//
+// Everyone ELSE is a client, and used to get "this bot is for internal
+// use only". They can now open a real account here -- an email address is
+// all it takes -- and get a one-time code to set a password on the
+// website. That side lives in _shared/tgClient.ts; this file only decides
+// which of the two a message is.
+//
+// Which one you are is decided by Telegram's verified user id against
+// OWNER_TELEGRAM_ID, never by anything in the message.
+//
+// Unlike .agency's bot, the owner side
 // is NOT a public conversational assistant and there is NO manual
 // approve/reject gate before generation: website-sourced tasks are
 // already wallet-funded at creation time (see submit-task) and queue
@@ -7,10 +22,8 @@
 // never ahead), request a revision, pull a delivered task's files, or ask
 // for an owner-only business report on any URL.
 //
-// Every reply -- whatever triggered it, typed slash command, free-form
-// text, or a voice note -- goes out as both a short plain-language text
-// message and a short spoken voice note, in whichever of English/Urdu the
-// owner last used (see _shared/botMessage.ts). Slash commands are matched
+// Voice notes are listened to and transcribed; replies are always text,
+// always English (see _shared/botMessage.ts). Slash commands are matched
 // first for speed/determinism; anything else (free text, or any voice
 // transcript, which never contains a literal "/") falls back to Claude-based
 // intent classification (_shared/botConversation.ts, shapes: _shared/intent.ts).
@@ -26,12 +39,14 @@ import { fallbackToBuiltIn, grokbotSecretStatus } from '../_shared/grokbot.ts';
 import { fileProblem } from '../_shared/deliverableTypes.ts';
 import type { Bytes } from '../_shared/bytes.ts';
 import { uploadClientMedia, uploadDeliverable } from '../_shared/storage.ts';
-import { detectLanguage, getOwnerLanguage, setOwnerLanguage, sendBotMessage } from '../_shared/botMessage.ts';
+import { sendBotMessage } from '../_shared/botMessage.ts';
 import { converse } from '../_shared/botConversation.ts';
 import { expandSku, getSku, CATALOG } from '../_shared/catalog.ts';
 import { applyRevision, findTaskReference, allocateOwnerTask } from '../_shared/orders.ts';
 import { resolveOwnerTaskReference, getPlatformSnapshot, getTaskStatus } from '../_shared/accounts.ts';
 import { describeCandidates } from '../_shared/orderMatch.ts';
+import { claimUpdate } from '../_shared/tgAccounts.ts';
+import { routeClientMessage } from '../_shared/tgClient.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -86,7 +101,7 @@ function helpText(): string {
     '/fallback <task id> — take a job back from an external agent',
     '',
     'Send /products for the numbered list.',
-    'You can also just type or speak what you want in plain English or Urdu.'
+    'You can also just type or speak what you want, in plain English.'
   ].join('\n');
 }
 
@@ -684,17 +699,43 @@ export async function handleRequest(req: Request): Promise<Response> {
 
   if (!chatId) return new Response('ok');
 
+  // Telegram redelivers an update it believes failed, and this handler can
+  // take long enough -- a transcription, a model call -- for that to happen
+  // while the first copy is still running. Without this, one "yes, create
+  // my account" is two accounts.
+  const updateId = update?.update_id;
+  if (typeof updateId === 'number' && !(await claimUpdate(updateId))) {
+    return new Response('ok');
+  }
+
   const fromId = message?.from?.id;
   if (!isOwner(fromId)) {
-    // Purely an owner control channel -- not a public assistant (that's
-    // Forge, on the dashboard). Reply once so a stray sender isn't left
-    // wondering, but do nothing else.
-    await sendBotMessage(chatId, 'This bot is for internal use only.', 'en').catch(() => {});
+    // A client. Text only -- the account flow asks for an email address,
+    // and there is nothing useful to do with a photo until ordering from
+    // the chat exists.
+    const clientText = typeof message?.text === 'string' ? message.text.trim() : '';
+    if (!clientText || typeof fromId !== 'number') return new Response('ok');
+
+    let reply: string;
+    try {
+      reply = await routeClientMessage({
+        chatId,
+        tgUserId: fromId,
+        username: typeof message?.from?.username === 'string' ? message.from.username : undefined,
+        text: clientText
+      });
+    } catch (err) {
+      console.error('telegram-webhook: client message failed', err);
+      reply = 'Something went wrong on our side. Please try again in a moment.';
+    }
+
+    await sendBotMessage(chatId, reply).catch((err) =>
+      console.error('telegram-webhook: client reply failed', err)
+    );
     return new Response('ok');
   }
 
   let text: string;
-  let language: 'en' | 'ur';
   const attachmentUrls: string[] = [];
 
   // The file itself, kept aside from its client-media URL.
@@ -711,7 +752,6 @@ export async function handleRequest(req: Request): Promise<Response> {
       const audioBytes = await downloadTelegramFile(message.voice.file_id);
       const transcription = await transcribeAudio(audioBytes, 'voice.oga');
       text = transcription.text.trim();
-      language = detectLanguage(text);
     } else if (Array.isArray(message?.photo) && message.photo.length > 0) {
       // Telegram sends multiple resolutions -- the last is the largest.
       const largest = message.photo[message.photo.length - 1];
@@ -720,7 +760,6 @@ export async function handleRequest(req: Request): Promise<Response> {
       const { url } = await uploadClientMedia(`telegram/${chatId}`, incomingFile.filename, bytes, incomingFile.mimeType);
       attachmentUrls.push(url);
       text = typeof message?.caption === 'string' ? message.caption.trim() : '(sent a photo)';
-      language = detectLanguage(text);
     } else if (message?.document?.file_id) {
       const doc = message.document;
       const bytes = await downloadTelegramFile(doc.file_id);
@@ -732,21 +771,17 @@ export async function handleRequest(req: Request): Promise<Response> {
       const { url } = await uploadClientMedia(`telegram/${chatId}`, incomingFile.filename, bytes, incomingFile.mimeType);
       attachmentUrls.push(url);
       text = typeof message?.caption === 'string' ? message.caption.trim() : `(sent a document: ${doc.file_name || 'file'})`;
-      language = detectLanguage(text);
     } else if (typeof message?.text === 'string' && message.text.trim()) {
       text = message.text.trim();
-      language = detectLanguage(text);
     } else {
       // Not text, voice, photo, or document (sticker, etc.) -- nothing to act on.
       return new Response('ok');
     }
   } catch (err) {
     console.error('telegram-webhook: could not read incoming message', err);
-    await sendBotMessage(chatId, 'Could not understand that message. Please try again or type instead.', await getOwnerLanguage()).catch(() => {});
+    await sendBotMessage(chatId, 'Could not understand that message. Please try again or type instead.').catch(() => {});
     return new Response('ok');
   }
-
-  await setOwnerLanguage(language);
 
   let rawReply: string;
   try {
@@ -756,7 +791,7 @@ export async function handleRequest(req: Request): Promise<Response> {
     rawReply = 'Something went wrong handling that.';
   }
 
-  await sendBotMessage(chatId, rawReply, language).catch((err) => console.error('telegram-webhook: sendBotMessage failed', err));
+  await sendBotMessage(chatId, rawReply).catch((err) => console.error('telegram-webhook: sendBotMessage failed', err));
 
   return new Response('ok');
 }

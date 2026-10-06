@@ -1,6 +1,6 @@
 import { AlertTriangle, Check, Copy, Loader2, Sparkles } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { flagshipPackage, walletPackages } from "../../data/packages";
+import { firstOrderDiscountLine, flagshipPackage, walletPackages } from "../../data/packages";
 import { supabase } from "../../lib/supabase";
 
 // Topping up in USDT on BNB Smart Chain.
@@ -217,16 +217,16 @@ export function BillingSection() {
               >
                 <p className="font-display text-3xl font-semibold text-fg">{pkg.price}</p>
                 <p className="mt-1 text-sm text-fg-muted">to your wallet</p>
-                <ul className="mt-4 flex flex-col gap-2">
-                  <li className="flex items-start gap-2 text-sm text-fg-muted">
-                    <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-yellow-400" />
-                    {pkg.firstTimeDiscount}% off, first order
-                  </li>
-                  <li className="flex items-start gap-2 text-sm text-fg-muted">
-                    <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-yellow-400" />
-                    {pkg.routineDiscount}% off, every order after
-                  </li>
-                </ul>
+                <p className="mt-4 flex items-start gap-2 text-sm text-fg-muted">
+                  {pkg.routineDiscount > 0 ? (
+                    <>
+                      <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-yellow-400" />
+                      {pkg.routineDiscount}% off every order, always
+                    </>
+                  ) : (
+                    "No standing discount at this tier."
+                  )}
+                </p>
                 {pkg.note && <p className="mt-3 text-xs text-fg-faint">{pkg.note}</p>}
                 <button
                   type="button"
@@ -240,6 +240,18 @@ export function BillingSection() {
               </div>
             );
           })}
+        </div>
+
+        {/* Same split as the landing page: the tier discount is standing and
+            lives on the card, the first-order one happens once and needs a
+            sentence -- including the part nobody was being told, that it
+            covers the $20 Full Business Setup. */}
+        <div className="mt-6 rounded-2xl border border-dashed border-yellow-400/40 bg-yellow-400/5 p-5">
+          <p className="text-sm text-fg">
+            <span className="font-semibold text-yellow-400">Your first order is discounted too.</span>{" "}
+            After your first top-up, your first order takes {firstOrderDiscountLine()} off. It
+            applies to every service — the $20 Full Business Setup included — and it applies once.
+          </p>
         </div>
 
         <div className="mt-8 rounded-2xl border border-border bg-surface p-6">

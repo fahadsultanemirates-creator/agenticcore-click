@@ -2,6 +2,7 @@ import { supabaseAdmin } from './storage.ts';
 import { getSku } from './catalog.ts';
 import { queueEmailForUser } from './email.ts';
 import { sendBotMessage } from './botMessage.ts';
+import { alertDelivered, alertFailed } from './ownerAlerts.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -92,23 +93,50 @@ async function notifyTheClient(taskId: string): Promise<void> {
     .eq('user_id', task.user_id)
     .maybeSingle<{ chat_id: number }>();
 
-  if (!link?.chat_id) return;
+  if (link?.chat_id) {
+    await sendBotMessage(
+      Number(link.chat_id),
+      [
+        `${productName} is ready — ${task.public_id}.`,
+        '',
+        'Download it from https://agenticcore.click/dashboard',
+        '',
+        'Send /orders to see everything you have ordered.'
+      ].join('\n')
+    ).catch((err) => console.error(`markDelivered: Telegram notice failed for ${taskId}`, err));
+  }
 
-  await sendBotMessage(
-    Number(link.chat_id),
-    [
-      `${productName} is ready — ${task.public_id}.`,
-      '',
-      'Download it from https://agenticcore.click/dashboard',
-      '',
-      'Send /orders to see everything you have ordered.'
-    ].join('\n')
-  ).catch((err) => console.error(`markDelivered: Telegram notice failed for ${taskId}`, err));
+  // And a receipt to the owner. While orders are fulfilled by hand, the
+  // person who just did the work has no other way to know the client was
+  // actually reached -- the email queues silently and the chat message is
+  // sent to somebody else.
+  await alertDelivered({
+    publicId: task.public_id,
+    productName,
+    toEmail: true,
+    toTelegram: Boolean(link?.chat_id)
+  }).catch(() => {});
 }
 
 export async function markFailed(taskId: string, reason: string): Promise<void> {
   await setStatus(taskId, 'failed');
   await logEvent(taskId, 'failed', 'worker', { reason });
+
+  // A failure the client's money depends on. It refunds automatically, but
+  // the owner should hear about it without reading logs.
+  const { data: task } = await supabaseAdmin
+    .from('tasks')
+    .select('public_id, sku, type')
+    .eq('id', taskId)
+    .maybeSingle<{ public_id: string; sku: number | null; type: string }>();
+
+  if (task) {
+    await alertFailed({
+      publicId: task.public_id,
+      productName: (task.sku == null ? null : getSku(task.sku)?.name) ?? task.type,
+      reason
+    }).catch(() => {});
+  }
 }
 
 export async function markNeedsInfo(taskId: string, reason: string): Promise<void> {

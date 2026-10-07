@@ -1,30 +1,25 @@
 import { ChatLauncher } from "../components/ChatLauncher";
 import { BillingSection } from "../components/dashboard/BillingSection";
 import { DashboardShell } from "../components/dashboard/DashboardShell";
-import { PortfolioSection } from "../components/dashboard/PortfolioSection";
-import { ProjectsCallout } from "../components/dashboard/ProjectsCallout";
 import { ServicesSection } from "../components/dashboard/ServicesSection";
 import { WelcomeSection } from "../components/dashboard/WelcomeSection";
 import { useOrders } from "../lib/useOrders";
-import { useProjects } from "../lib/useProjects";
 
-// Money and ordering. The finished work moved to /projects: this page was
-// a wallet, a service grid, a package, a deliverables grid, a history
-// table and a billing table stacked on one scroll, and the thing a client
-// actually came back for -- their logo -- was four lines of text near the
-// bottom of it.
+// Start something, and pay for it. That is the whole job of this page now.
+//
+// Finished work and order history both moved to /projects, where they are
+// kept with the project they belong to. What was left here was the same
+// information three times over -- a wallet card above the billing
+// section, a package tile above the package, a deliverables grid and a
+// history table listing the same orders -- and the thing a client came
+// back for was at the bottom of all of it.
 export function Dashboard() {
-  // Read once here and passed down, so the history table and the
-  // deliverables count can never disagree about what the client has.
-  const { orders, loading, failed, unseenCount } = useOrders();
-  const { projects } = useProjects();
+  const { unseenCount } = useOrders();
 
   return (
     <DashboardShell title="Dashboard">
       <WelcomeSection unseenCount={unseenCount} />
       <ServicesSection />
-      <ProjectsCallout projectCount={projects.length} unseenCount={unseenCount} />
-      <PortfolioSection orders={orders} loading={loading} failed={failed} />
       <div id="billing" className="scroll-mt-20">
         <BillingSection />
       </div>

@@ -12,6 +12,7 @@ import { getSku } from '../_shared/catalog.ts';
 import { queueEmailForUser } from '../_shared/email.ts';
 import { applyDiscount } from '../_shared/discount.ts';
 import { discountContextFor } from '../_shared/placeOrder.ts';
+import { resolveProjectId } from '../_shared/projects.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!;
@@ -131,6 +132,25 @@ export async function handleRequest(req: Request): Promise<Response> {
   }
 
   const bundleId = isBundle ? crypto.randomUUID() : null;
+
+  // One project for the whole submission, resolved once outside the loop.
+  //
+  // A Full Business Setup is seven orders that are obviously one piece of
+  // work -- giving each its own project would be the opposite of what a
+  // project is for. The name comes from the first task, which is the one
+  // the client actually described.
+  //
+  // This file has its own copy of the task insert rather than going
+  // through placeOrder, which is why it did not learn about project_id
+  // when placeOrder did: the first order placed through Forge after that
+  // change landed with no project at all.
+  const projectId = await resolveProjectId({
+    userId: caller.id,
+    requestedId: typeof body?.projectId === 'string' && body.projectId !== '' ? body.projectId : null,
+    productName: tasks[0]?.type ?? 'New project',
+    payload: tasks[0]?.payload ?? {}
+  });
+
   const publicIds: string[] = [];
   let anchorTaskId: string | null = null;
   let insertFailed = false;
@@ -165,6 +185,7 @@ export async function handleRequest(req: Request): Promise<Response> {
         sku: identity.sku,
         revisions_allowed: identity.revisionsAllowed,
         parent_task_id: anchorTaskId,
+        project_id: projectId,
         payload
       })
       .select('id, public_id')

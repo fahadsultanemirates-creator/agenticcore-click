@@ -19,7 +19,10 @@ export function XIcon({ className = "" }: IconProps) {
 export function FacebookIcon({ className = "" }: IconProps) {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden>
-      <path d="M24 12.07C24 5.4 18.63 0 12 0S0 5.4 0 12.07C0 18.1 4.39 23.1 10.13 24v-8.44H7.08v-3.49h3.05V9.41c-3.01 0-4.54 1.49-4.54 4.46v2.02H2.46v3.49h3.1V24C11.29 23.1 15.69 18.1 15.69 12.07z" />
+      {/* The previous path was mangled: the circle never closed and the
+          inner "f" was drawn at the wrong coordinates, so it rendered as a
+          blob with a stray notch rather than a recognisable mark. */}
+      <path d="M24 12.073C24 5.446 18.627 0 12 0S0 5.446 0 12.073c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.469h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.469h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
     </svg>
   );
 }

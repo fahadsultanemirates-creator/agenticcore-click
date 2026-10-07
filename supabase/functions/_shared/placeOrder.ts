@@ -16,6 +16,7 @@
 // caller. That is the rule this module exists to make unskippable: a bot
 // message, like a browser request, is a thing the client controls.
 import { getSku } from './catalog.ts';
+import { applyDiscount, type DiscountContext, type PricedOrder } from './discount.ts';
 import { queueEmailForUser } from './email.ts';
 import { allocateClientOrder } from './orders.ts';
 import { calculatePriceUsd, REAL_TASK_TYPES } from './pricing.ts';
@@ -33,7 +34,17 @@ export type PlaceOrderFailure =
   | 'failed';
 
 export type PlaceOrderResult =
-  | { ok: true; taskId: string; publicId: string; priceUsd: number; productName: string }
+  | {
+      ok: true;
+      taskId: string;
+      publicId: string;
+      /** What was actually debited, after any discount. */
+      priceUsd: number;
+      /** Before the discount, for a receipt that shows the saving. */
+      listUsd: number;
+      discountPct: number;
+      productName: string;
+    }
   | { ok: false; reason: PlaceOrderFailure; priceUsd?: number; message: string };
 
 export interface PlaceOrderInput {
@@ -67,6 +78,49 @@ export function priceFor(type: string, payload: Record<string, unknown>): number
   return calculatePriceUsd(type, payload);
 }
 
+/**
+ * Which discount this account is entitled to right now.
+ *
+ * Two facts, neither of them stored as a discount: the tier that last
+ * funded the wallet, and whether any order has been placed. An account
+ * with no client_accounts row has never ordered -- the row is created by
+ * allocate_order, so its absence is the first-order signal rather than
+ * something to track separately.
+ */
+export async function discountContextFor(userId: string): Promise<DiscountContext> {
+  const [{ data: wallet }, { data: account }] = await Promise.all([
+    supabaseAdmin.from('wallets').select('tier').eq('user_id', userId).maybeSingle<{ tier: string | null }>(),
+    supabaseAdmin
+      .from('client_accounts')
+      .select('next_order_no')
+      .eq('user_id', userId)
+      .maybeSingle<{ next_order_no: number }>()
+  ]);
+
+  return {
+    tier: wallet?.tier ?? null,
+    isFirstOrder: (account?.next_order_no ?? 1) <= 1
+  };
+}
+
+/**
+ * The full price of a request: list, discount, and what will be charged.
+ *
+ * Exported because every path that QUOTES has to use the same function
+ * that CHARGES. Quote at list and charge at the discount and the two
+ * disagree -- which the confirmation guard then reads as a price change
+ * and refuses, blocking every order.
+ */
+export async function quoteFor(
+  userId: string,
+  type: string,
+  payload: Record<string, unknown>
+): Promise<PricedOrder | null> {
+  const listUsd = priceFor(type, payload);
+  if (listUsd === null) return null;
+  return applyDiscount(listUsd, await discountContextFor(userId));
+}
+
 export async function placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResult> {
   const { userId, type, payload, source } = input;
   const subtype = input.subtype ?? null;
@@ -79,14 +133,20 @@ export async function placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResu
     return { ok: false, reason: 'paused', message: PAUSED_MESSAGE };
   }
 
-  const priceUsd = calculatePriceUsd(type, payload);
-  if (priceUsd === null) {
+  const listUsd = calculatePriceUsd(type, payload);
+  if (listUsd === null) {
     return {
       ok: false,
       reason: 'unpriceable',
       message: 'Could not price this request — check the selected options.'
     };
   }
+
+  // Read BEFORE the order is allocated. allocate_order increments
+  // next_order_no, so asking afterwards would always say "not the first
+  // order" and the first-order discount would never once apply.
+  const priced = applyDiscount(listUsd, await discountContextFor(userId));
+  const priceUsd = priced.chargeUsd;
 
   const { data: debited, error: debitError } = await supabaseAdmin.rpc('deduct_wallet_balance', {
     p_user_id: userId,
@@ -149,7 +209,17 @@ export async function placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResu
     task_id: task.id,
     event_type: 'created',
     actor: 'client',
-    detail: { price_usd: priceUsd, type, subtype, sku: identity.sku, revisions_allowed: identity.revisionsAllowed, source }
+    detail: {
+      price_usd: priceUsd,
+      list_usd: priced.listUsd,
+      discount_pct: priced.discountPct,
+      discount_reason: priced.reason,
+      type,
+      subtype,
+      sku: identity.sku,
+      revisions_allowed: identity.revisionsAllowed,
+      source
+    }
   });
 
   await queueEmailForUser(userId, 'order_placed', {
@@ -160,7 +230,15 @@ export async function placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResu
 
   triggerDispatch();
 
-  return { ok: true, taskId: task.id, publicId: identity.publicId, priceUsd, productName };
+  return {
+    ok: true,
+    taskId: task.id,
+    publicId: identity.publicId,
+    priceUsd,
+    listUsd: priced.listUsd,
+    discountPct: priced.discountPct,
+    productName
+  };
 }
 
 async function refund(userId: string, amount: number): Promise<void> {

@@ -1,7 +1,7 @@
 // Run with: node --experimental-strip-types supabase/functions/_shared/deliverTo.test.ts
 
 import assert from 'node:assert/strict';
-import { extensionOf, sendKindFor } from './deliverTo.ts';
+import { deliveryHeader, extensionOf, sendKindFor } from './deliverTo.ts';
 
 let passed = 0;
 let failed = 0;
@@ -59,6 +59,37 @@ test('an svg goes as a document', () => {
 test('anything unrecognised goes as a document', () => {
   for (const url of ['https://x/thing.xyz', 'https://x/a.b.c.qqq', 'https://x/']) {
     assert.equal(sendKindFor({ fileType: 'manual', url }), 'document', url);
+  }
+});
+
+// The first real order delivered to a Telegram client pointed them at
+// /dashboard, which is a login screen their sign-in code does not open.
+test('a client with no password is sent to claim, not to a login screen', () => {
+  const header = deliveryHeader({ productName: 'Logo', publicId: 'AC-1002-01', fileCount: 5, needsClaim: true });
+  assert.match(header, /\/claim/);
+  assert.ok(!header.includes('/dashboard'), 'must not send them to a login screen');
+  assert.match(header, /not the password/);
+});
+
+test('a client who has a password is sent to the dashboard', () => {
+  const header = deliveryHeader({ productName: 'Logo', publicId: 'AC-1002-01', fileCount: 5, needsClaim: false });
+  assert.match(header, /\/dashboard/);
+  assert.ok(!header.includes('/claim'));
+});
+
+test('the file count is only mentioned when there is more than one', () => {
+  const many = deliveryHeader({ productName: 'Logo', publicId: 'AC-1', fileCount: 5, needsClaim: false });
+  const one = deliveryHeader({ productName: 'Brochure', publicId: 'AC-2', fileCount: 1, needsClaim: false });
+  assert.match(many, /5 files/);
+  assert.ok(!/\bfiles\b/.test(one), one);
+});
+
+test('the header always names the product and the order', () => {
+  for (const needsClaim of [true, false]) {
+    const header = deliveryHeader({ productName: 'Promo video', publicId: 'AC-1002-07', fileCount: 1, needsClaim });
+    assert.match(header, /Promo video is ready/);
+    assert.match(header, /AC-1002-07/);
+    assert.match(header, /\/orders/);
   }
 });
 

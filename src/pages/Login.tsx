@@ -2,7 +2,9 @@ import { ArrowRight } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { Logo } from "../components/Logo";
+import { PasswordInput } from "../components/PasswordInput";
 import { useAuth } from "../context/AuthContext";
+import { looksLikeSigninCode } from "../lib/signinCodeShape";
 
 export function Login() {
   const { login } = useAuth();
@@ -11,6 +13,7 @@ export function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [codeInPassword, setCodeInPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   const from = (location.state as { from?: string } | null)?.from ?? "/dashboard";
@@ -22,11 +25,17 @@ export function Login() {
       return;
     }
     setError("");
+    setCodeInPassword(false);
     setSubmitting(true);
     const { error: loginError } = await login(email.trim(), password);
     setSubmitting(false);
     if (loginError) {
+      // A client who signed up in Telegram has exactly one credential --
+      // the sign-in code -- and no reason to know it is not a password.
+      // "Invalid login credentials" sends them nowhere; this sends them
+      // to the page that turns the code into a password.
       setError(loginError);
+      setCodeInPassword(looksLikeSigninCode(password));
       return;
     }
     navigate(from, { replace: true });
@@ -64,17 +73,26 @@ export function Login() {
                   Forgot?
                 </Link>
               </div>
-              <input
-                type="password"
+              <PasswordInput
                 autoComplete="current-password"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={setPassword}
                 placeholder="••••••••"
                 className="rounded-xl border-2 border-border bg-void px-3.5 py-2.5 text-fg placeholder:text-fg-faint focus:border-yellow-400 focus:outline-none"
               />
             </label>
 
             {error && <p className="text-sm text-yellow-400">{error}</p>}
+            {codeInPassword && (
+              <p className="rounded-xl border border-yellow-400/30 bg-yellow-400/5 p-3 text-sm text-fg-muted">
+                That looks like the sign-in code from your Telegram chat. It is not a password — it{" "}
+                <em>sets</em> one.{" "}
+                <Link to="/claim" className="font-semibold text-yellow-400 hover:underline">
+                  Use it here to choose a password
+                </Link>
+                , then come back and log in with that.
+              </p>
+            )}
 
             <button
               type="submit"

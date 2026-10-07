@@ -8,7 +8,7 @@ import {
   sendTelegramPhoto,
   sendTelegramVideo
 } from './telegramApi.ts';
-import { MAX_FILES_TO_CHAT, sendKindFor } from './deliverTo.ts';
+import { deliveryHeader, MAX_FILES_TO_CHAT, sendKindFor } from './deliverTo.ts';
 import { alertDelivered, alertFailed } from './ownerAlerts.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
@@ -102,12 +102,19 @@ async function notifyTheClient(taskId: string): Promise<void> {
 
   const { data: link } = await supabaseAdmin
     .from('telegram_accounts')
-    .select('chat_id')
+    .select('chat_id, password_set_at')
     .eq('user_id', task.user_id)
-    .maybeSingle<{ chat_id: number }>();
+    .maybeSingle<{ chat_id: number; password_set_at: string | null }>();
 
   if (link?.chat_id) {
-    await sendFilesToChat(Number(link.chat_id), taskId, productName, task.public_id, task.version ?? 1);
+    await sendFilesToChat(
+      Number(link.chat_id),
+      taskId,
+      productName,
+      task.public_id,
+      task.version ?? 1,
+      !link.password_set_at
+    );
   }
 
   // And a receipt to the owner. While orders are fulfilled by hand, the
@@ -194,7 +201,8 @@ async function sendFilesToChat(
   taskId: string,
   productName: string,
   publicId: string,
-  version: number
+  version: number,
+  needsClaim: boolean
 ): Promise<void> {
   // This version only. A revised task keeps every version's files in
   // task_files, and sending all of them would hand the client the thing
@@ -211,15 +219,12 @@ async function sendFilesToChat(
   const rows = (files ?? []) as { url: string; file_type: string | null; option_index: number | null }[];
   const sendable = rows.filter((f) => typeof f.url === 'string' && f.url.startsWith('http'));
 
-  const header = [
-    `${productName} is ready — ${publicId}.`,
-    sendable.length > 1 ? `${sendable.length} files, pick the one you like best.` : '',
-    '',
-    'Also saved to your dashboard: https://agenticcore.click/dashboard',
-    'Send /orders any time to find it again.'
-  ]
-    .filter((line) => line !== '')
-    .join('\n');
+  const header = deliveryHeader({
+    productName,
+    publicId,
+    fileCount: sendable.length,
+    needsClaim
+  });
 
   await sendBotMessage(chatId, header).catch((err) =>
     console.error(`markDelivered: Telegram notice failed for ${taskId}`, err)

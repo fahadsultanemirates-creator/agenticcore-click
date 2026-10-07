@@ -2,6 +2,7 @@ import { ArrowRight, MailCheck } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Logo } from "../components/Logo";
+import { PasswordInput } from "../components/PasswordInput";
 import { useAuth } from "../context/AuthContext";
 
 export function Signup() {
@@ -94,11 +95,10 @@ export function Signup() {
             </label>
             <label className="flex flex-col gap-1.5">
               <span className="text-xs font-semibold tracking-wide text-fg-muted uppercase">Password</span>
-              <input
-                type="password"
+              <PasswordInput
                 autoComplete="new-password"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={setPassword}
                 placeholder="••••••••"
                 className="rounded-xl border-2 border-border bg-void px-3.5 py-2.5 text-fg placeholder:text-fg-faint focus:border-yellow-400 focus:outline-none"
               />

@@ -20,7 +20,7 @@ export async function handleRequest(req: Request): Promise<Response> {
 
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
-  const [{ data: delivered }, { data: failed }, { data: topups }] = await Promise.all([
+  const [{ data: delivered }, { data: failed }, { data: topups }, { data: waiting }] = await Promise.all([
     supabaseAdmin.from('tasks').select('public_id, type, source').eq('status', 'delivered').gte('updated_at', since),
     supabaseAdmin.from('tasks').select('public_id, type, source').eq('status', 'failed').gte('updated_at', since),
     // usdt_invoices, not wallet_topups. wallet_topups was PayRam's table and
@@ -32,7 +32,11 @@ export async function handleRequest(req: Request): Promise<Response> {
     // base_usd is the amount credited to the wallet. `amount` is the
     // on-chain figure, which carries the per-invoice nonce (20.000007) and
     // would quietly inflate the total.
-    supabaseAdmin.from('usdt_invoices').select('base_usd, tier').eq('status', 'paid').gte('paid_at', since)
+    supabaseAdmin.from('usdt_invoices').select('base_usd, tier').eq('status', 'paid').gte('paid_at', since),
+    // Everything still sitting with the owner. Not limited to the last 24
+    // hours: an order forgotten three days ago is exactly the one worth
+    // naming, and in manual mode nothing else chases it.
+    supabaseAdmin.from('tasks').select('public_id, created_at').eq('status', 'in_progress').order('created_at', { ascending: true })
   ]);
 
   const deliveredCount = delivered?.length ?? 0;
@@ -40,7 +44,10 @@ export async function handleRequest(req: Request): Promise<Response> {
   const topupCount = topups?.length ?? 0;
   const topupTotal = (topups ?? []).reduce((sum, t: any) => sum + Number(t.base_usd ?? 0), 0);
 
-  if (deliveredCount === 0 && failedCount === 0 && topupCount === 0) {
+  const waitingRows = (waiting ?? []) as { public_id: string; created_at: string }[];
+
+  // A quiet day with work outstanding is not a quiet day.
+  if (deliveredCount === 0 && failedCount === 0 && topupCount === 0 && waitingRows.length === 0) {
     return jsonResponse({ ok: true, skipped: true });
   }
 
@@ -48,11 +55,14 @@ export async function handleRequest(req: Request): Promise<Response> {
     "Here's today's summary:",
     `- Tasks delivered: ${deliveredCount}${deliveredCount ? ` (${(delivered ?? []).map((t: any) => t.public_id).join(', ')})` : ''}`,
     failedCount ? `- Tasks failed: ${failedCount} (${(failed ?? []).map((t: any) => t.public_id).join(', ')})` : '- Tasks failed: 0',
-    `- Wallet top-ups: ${topupCount}${topupCount ? ` totaling $${topupTotal.toFixed(2)}` : ''}`
+    `- Wallet top-ups: ${topupCount}${topupCount ? ` totaling $${topupTotal.toFixed(2)}` : ''}`,
+    waitingRows.length > 0
+      ? `- Waiting on you: ${waitingRows.length} (${waitingRows.slice(0, 10).map((t) => t.public_id).join(', ')}${waitingRows.length > 10 ? ', …' : ''})`
+      : '- Waiting on you: nothing'
   ];
   await sendBotMessage(Number(OWNER_TELEGRAM_ID), lines.join('\n'));
 
-  return jsonResponse({ ok: true, deliveredCount, failedCount, topupCount });
+  return jsonResponse({ ok: true, deliveredCount, failedCount, topupCount, waiting: waitingRows.length });
 }
 
 Deno.serve(handleRequest);

@@ -13,11 +13,22 @@
 // rather than on what it actually is. That decision now lives in
 // _shared/supervisor.ts, in one place, applied to every task from every
 // intake -- see the note at the top of that file.
+//
+// MANUAL MODE. While it is on -- and it is on by default -- this stops one
+// step short of generating anything. The task is claimed, validated and
+// routed exactly as before, so an unroutable one is still caught and held
+// for a question; it is simply not handed to the worker that routing
+// chose, and the owner is told instead. Nothing reaches an in-house worker
+// or an external agent. See _shared/manualMode.ts.
 
 import { supabaseAdmin } from '../_shared/storage.ts';
 import { superviseTask, type SupervisedTask } from '../_shared/supervisor.ts';
 import { markNeedsInfo, logEvent } from '../_shared/task.ts';
 import { jsonResponse } from '../_shared/cors.ts';
+import { manualModeOn } from '../_shared/manualMode.ts';
+import { alertNewOrder } from '../_shared/ownerAlerts.ts';
+import { emailForUser } from '../_shared/email.ts';
+import { calculatePriceUsd } from '../_shared/pricing.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -62,6 +73,11 @@ function retrigger(): void {
 export async function handleRequest(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response(null, { headers: {} });
 
+  // Read once per invocation, not per task: three tasks in a batch cannot
+  // meaningfully disagree about it, and three round trips to say so is
+  // three round trips wasted.
+  const manual = await manualModeOn();
+
   let processed = 0;
 
   for (let i = 0; i < MAX_TASKS_PER_INVOCATION; i++) {
@@ -98,6 +114,31 @@ export async function handleRequest(req: Request): Promise<Response> {
       });
     }
 
+    // Manual mode: the routing decision is still made and logged -- it is
+    // what the task WILL go to when the robots come back -- but the hand-off
+    // does not happen. The task stays in_progress, which is honest: a person
+    // is working on it.
+    if (manual) {
+      await logEvent(task.id, 'held_for_owner', 'dispatcher', {
+        sku: routing.item?.sku,
+        product: routing.item?.name,
+        would_route_to: routing.agent
+      });
+      await alertNewOrder({
+        publicId: task.public_id,
+        productName: routing.item?.name ?? task.type,
+        // Recomputed, not read off the row: the price is not a column --
+        // it lives in the created event -- and the function that computes
+        // it here is the same one that charged for it.
+        priceUsd: calculatePriceUsd(task.type, task.payload ?? {}) ?? 0,
+        source: task.source ?? 'website',
+        payload: task.payload ?? {},
+        clientEmail: task.user_id ? await emailForUser(task.user_id) : null
+      });
+      processed++;
+      continue;
+    }
+
     await callWorker(routing.agent, task.id);
     processed++;
   }
@@ -108,6 +149,10 @@ export async function handleRequest(req: Request): Promise<Response> {
 
   // Sweep up hand-offs an external agent never accepted.
   //
+  // Skipped in manual mode: nothing has been handed to an external agent,
+  // so there is nothing to sweep, and the call is a wasted invocation
+  // every two minutes forever.
+  //
   // This rides the dispatcher's own cron rather than getting one of its own
   // on purpose. A separate pg_cron entry would have to carry an
   // Authorization header in a committed migration file, and worker-grokbot
@@ -115,9 +160,9 @@ export async function handleRequest(req: Request): Promise<Response> {
   // key into git. The dispatcher already holds it in its environment and
   // already runs every two minutes, which is well inside the ten-minute
   // window an offer stays open.
-  await sweepExternalAgents();
+  if (!manual) await sweepExternalAgents();
 
-  return jsonResponse({ ok: true, processed });
+  return jsonResponse({ ok: true, processed, manual });
 }
 
 Deno.serve(handleRequest);

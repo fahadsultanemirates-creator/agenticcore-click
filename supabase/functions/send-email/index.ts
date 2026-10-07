@@ -19,6 +19,7 @@ import {
   type Email
 } from '../_shared/emailTemplates.ts';
 import { supabaseAdmin } from '../_shared/storage.ts';
+import { alertNewAccount } from '../_shared/ownerAlerts.ts';
 
 interface OutboxRow {
   id: string;
@@ -64,6 +65,30 @@ function render(row: OutboxRow): Email | null {
   }
 }
 
+/**
+ * Where an account came from, inferred from whether it has a linked chat.
+ *
+ * There is no column that records this, and adding one would mean a
+ * second thing to keep true. A Telegram signup writes its link row
+ * immediately after creating the user, and this runs at least a cron tick
+ * later, so the link is always there by now. Worst case it reads
+ * "website" for a Telegram signup, which is a wrong word in a
+ * notification and nothing else.
+ */
+async function signupChannel(email: string): Promise<'website' | 'telegram'> {
+  const { data } = await supabaseAdmin.auth.admin.listUsers();
+  const user = data?.users?.find((u) => (u.email ?? '').toLowerCase() === email.toLowerCase());
+  if (!user) return 'website';
+
+  const { data: link } = await supabaseAdmin
+    .from('telegram_accounts')
+    .select('user_id')
+    .eq('user_id', user.id)
+    .maybeSingle<{ user_id: string }>();
+
+  return link ? 'telegram' : 'website';
+}
+
 export async function handleRequest(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response(null, { headers: CORS_HEADERS });
 
@@ -88,6 +113,17 @@ export async function handleRequest(req: Request): Promise<Response> {
         .eq('id', row.id);
       failed++;
       continue;
+    }
+
+    // Tell the owner about a new account -- here, and only here.
+    //
+    // Every signup passes through this exactly once however it was made:
+    // the welcome row is written by a trigger on auth.users, and a unique
+    // index makes it one per address ever. Alerting at each signup path
+    // instead would mean two implementations that can disagree about what
+    // counts as a signup, and a Telegram account would be announced twice.
+    if (row.kind === 'welcome') {
+      await alertNewAccount({ email: row.to_email, via: await signupChannel(row.to_email) }).catch(() => {});
     }
 
     const ok = await sendEmail(row.to_email, email);

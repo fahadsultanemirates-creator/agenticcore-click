@@ -43,6 +43,8 @@ import { sendBotMessage } from '../_shared/botMessage.ts';
 import { converse } from '../_shared/botConversation.ts';
 import { expandSku, getSku, CATALOG } from '../_shared/catalog.ts';
 import { applyRevision, findTaskReference, allocateOwnerTask } from '../_shared/orders.ts';
+import { markDelivered } from '../_shared/task.ts';
+import { manualModeOn, setManualMode } from '../_shared/manualMode.ts';
 import { resolveOwnerTaskReference, getPlatformSnapshot, getTaskStatus } from '../_shared/accounts.ts';
 import { describeCandidates } from '../_shared/orderMatch.ts';
 import { claimUpdate } from '../_shared/tgAccounts.ts';
@@ -67,6 +69,7 @@ const UNASSIGN_PATTERN = /^\/unassign(?:@\S+)?\s+(\d{1,3})\s*$/i;
 const ROUTES_PATTERN = /^\/routes(?:@\S+)?$/i;
 const JOBS_PATTERN = /^\/jobs(?:@\S+)?$/i;
 const FALLBACK_PATTERN = /^\/fallback(?:@\S+)?\s+(\S+)\s*$/i;
+const MANUAL_PATTERN = /^\/manual(?:@\S+)?(?:\s+(on|off))?\s*$/i;
 
 
 const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
@@ -99,6 +102,7 @@ function helpText(): string {
     '/routes — which products go to an external agent',
     '/jobs — open external jobs',
     '/fallback <task id> — take a job back from an external agent',
+    '/manual [on|off] — hold every order for you, or let the workers run',
     '',
     'Send /products for the numbered list.',
     'You can also just type or speak what you want, in plain English.'
@@ -266,7 +270,6 @@ async function handleDeliverCommand(
     return `Could not attach that file to ${publicId}.`;
   }
 
-  await supabaseAdmin.from('tasks').update({ status: 'delivered', updated_at: new Date().toISOString() }).eq('id', task.id);
   await supabaseAdmin.from('task_events').insert({
     task_id: task.id,
     event_type: 'delivered',
@@ -274,7 +277,42 @@ async function handleDeliverCommand(
     detail: { url: deliveredUrl, manual: true, uploaded: !!file }
   });
 
+  // markDelivered, not a bare status update.
+  //
+  // This set the status by hand and stopped there, which was fine while
+  // /deliver was an owner convenience for owner tasks. It is now the way
+  // every client order gets finished, and the client has to be told --
+  // markDelivered is what emails them and messages their chat. Without
+  // this the work lands in the dashboard and nobody ever learns it is
+  // there.
+  await markDelivered(task.id);
+
   return `${publicId} marked delivered with ${url}.`;
+}
+
+/**
+ * Turn the robots on and off from the chat.
+ *
+ * /manual        -- say which mode we are in
+ * /manual off    -- let the workers generate again
+ * /manual on     -- everything comes to you
+ *
+ * A command rather than a deploy because the moment you need this is the
+ * moment a product has started producing something wrong, and waiting on
+ * CI to stop it is not a plan.
+ */
+async function handleManualCommand(arg: string | undefined): Promise<string> {
+  if (!arg) {
+    return (await manualModeOn())
+      ? 'Manual mode is ON. Every order comes to you; no worker and no external agent runs.\n\nSend /manual off to let the framework fulfil orders again.'
+      : 'Manual mode is OFF. Orders are being fulfilled by the workers.\n\nSend /manual on to take them back.';
+  }
+
+  const on = arg.toLowerCase() === 'on';
+  await setManualMode(on);
+  return on
+    ? 'Manual mode ON. Every new order will be held and sent to you here.\n\nAnything already with a worker finishes on its own.'
+    : 'Manual mode OFF. New orders go to the workers again.\n\nAnything currently held for you stays held -- deliver those by hand.';
 }
 
 async function handleReviseCommand(publicId: string, note: string): Promise<string> {
@@ -612,6 +650,9 @@ async function routeMessage(
 
   const filesMatch = text.match(FILES_PATTERN);
   if (filesMatch) return handleFilesCommand(filesMatch[1].toUpperCase());
+
+  const manualMatch = text.match(MANUAL_PATTERN);
+  if (manualMatch) return handleManualCommand(manualMatch[1]);
 
   const deliverMatch = text.match(DELIVER_PATTERN);
   if (deliverMatch) return handleDeliverCommand(deliverMatch[1].toUpperCase(), deliverMatch[2], incomingFile);

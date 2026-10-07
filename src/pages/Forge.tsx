@@ -1,11 +1,10 @@
-import { ArrowLeft, Loader2, Mic, Paperclip, Send, Sparkles, Square, Volume2, X } from "lucide-react";
+import { ArrowLeft, Loader2, Mic, Paperclip, Send, Sparkles, Square, X } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { Link } from "react-router-dom";
 import { AccountMenu } from "../components/AccountMenu";
 import {
   fetchActiveConversation,
   sendForgeMessage,
-  speakForgeText,
   submitForgeTasks,
   transcribeForgeVoice,
   uploadForgeFile,
@@ -59,13 +58,11 @@ export function Forge() {
   const [pending, setPending] = useState<PendingSubmission | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
-  const [speakingId, setSpeakingId] = useState<string | null>(null);
 
   const uploadScopeId = useRef(crypto.randomUUID());
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
 
@@ -206,21 +203,6 @@ export function Forge() {
     }
   };
 
-  const playReply = async (message: ChatMessage) => {
-    setSpeakingId(message.id);
-    try {
-      const url = await speakForgeText(message.content);
-      if (audioRef.current) {
-        audioRef.current.src = url;
-        await audioRef.current.play();
-      }
-    } catch {
-      setError("Could not play that reply.");
-    } finally {
-      setSpeakingId(null);
-    }
-  };
-
   const confirmSubmit = async () => {
     if (!pending || !conversationId) return;
     setSubmitting(true);
@@ -251,7 +233,6 @@ export function Forge() {
 
   return (
     <div className="flex h-screen flex-col bg-void">
-      <audio ref={audioRef} className="hidden" />
       <header className="flex items-center justify-between border-b border-border px-4 py-4 sm:px-6">
         <div className="flex items-center gap-3">
           <Link
@@ -317,17 +298,6 @@ export function Forge() {
                         </a>
                       ))}
                     </div>
-                  )}
-                  {message.role === "assistant" && (
-                    <button
-                      type="button"
-                      onClick={() => playReply(message)}
-                      disabled={speakingId === message.id}
-                      className="mt-2 flex items-center gap-1 text-[11px] text-fg-faint hover:text-fg"
-                    >
-                      {speakingId === message.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Volume2 className="h-3 w-3" />}
-                      Play
-                    </button>
                   )}
                 </div>
               </div>

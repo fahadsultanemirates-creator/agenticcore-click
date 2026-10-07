@@ -1,8 +1,6 @@
 import { functionErrorMessage } from "./functionError";
 import { supabase } from "./supabase";
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
-
 export interface ForgeTaskDraft {
   type: string;
   subtype?: string | null;
@@ -118,17 +116,6 @@ export async function transcribeForgeVoice(blob: Blob): Promise<string> {
 
 // Raw fetch, not functions.invoke -- this endpoint returns binary mp3
 // bytes, not JSON, so it needs a blob response type directly.
-export async function speakForgeText(text: string): Promise<string> {
-  const headers = await authHeader();
-  const resp = await fetch(`${SUPABASE_URL}/functions/v1/forge-speak`, {
-    method: "POST",
-    headers: { ...headers, "Content-Type": "application/json" },
-    body: JSON.stringify({ text }),
-  });
-  if (!resp.ok) throw new Error("Could not synthesize speech.");
-  const blob = await resp.blob();
-  return URL.createObjectURL(blob);
-}
 
 export async function fetchWalletBalance(): Promise<number> {
   const { data } = await supabase.from("wallets").select("balance_usd").maybeSingle();

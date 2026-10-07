@@ -50,6 +50,8 @@ export interface SupervisedTask {
   public_id: string;
   type: string;
   source?: string | null;
+  /** Whose order this is. Null for the owner's own tasks. */
+  user_id?: string | null;
   sku?: number | null;
   revisions_allowed?: number | null;
   payload?: Record<string, unknown> | null;

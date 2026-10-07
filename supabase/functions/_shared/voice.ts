@@ -1,9 +1,16 @@
 import type { Bytes } from './bytes.ts';
 // Grok's real STT/TTS APIs (api.x.ai/v1/stt, /v1/tts) -- confirmed via
-// xAI's own docs, not guessed. STT's `language` field is left unset: that
-// only disables number/currency formatting, and it still transcribes
-// whatever is spoken -- which is what we want, because a caller may speak
-// anything even though everything we send back is English.
+// xAI's own docs, not guessed. STT only -- there is no TTS here any more.
+//
+// Voice goes one way across the whole product now: a client may speak to
+// the Telegram bot or to Forge, and both answer in text. The synthesis
+// half had no callers left once Forge's "Play" button went, and an unused
+// speech function is how a bot starts talking again.
+//
+// STT's `language` field is left unset: that only disables number and
+// currency formatting, and it still transcribes whatever is spoken --
+// which is what we want, because a caller may speak anything even though
+// everything we send back is English.
 
 const XAI_API_KEY = Deno.env.get('XAI_API_KEY')!;
 const XAI_BASE_URL = 'https://api.x.ai/v1';
@@ -32,21 +39,3 @@ export async function transcribeAudio(bytes: Bytes, filename: string): Promise<T
   return { text: data.text, language: data.language ?? 'auto' };
 }
 
-// Returns raw audio bytes (mp3) ready to send as a Telegram voice note
-// (Telegram accepts mp3 for sendVoice, alongside ogg/opus).
-export async function synthesizeSpeech(text: string, language: string): Promise<Bytes> {
-  const resp = await fetch(`${XAI_BASE_URL}/tts`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${XAI_API_KEY}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      text,
-      language,
-      voice_id: 'rex',
-      output_format: { codec: 'mp3' }
-    })
-  });
-  if (!resp.ok) {
-    throw new Error(`Grok TTS failed (${resp.status}): ${await resp.text()}`);
-  }
-  return new Uint8Array(await resp.arrayBuffer());
-}

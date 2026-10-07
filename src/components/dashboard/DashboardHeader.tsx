@@ -25,7 +25,7 @@ export function DashboardHeader({ crumb, backTo, backLabel }: Props) {
 
         <Link to="/dashboard" aria-label="Dashboard" className="min-w-0 shrink-0">
           <Logo compact className="sm:hidden" />
-          <Logo className="hidden sm:flex" />
+          <Logo className="hidden sm:block" />
         </Link>
 
         {crumb && (

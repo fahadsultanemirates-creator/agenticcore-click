@@ -1,20 +1,20 @@
-import logoMark from "../assets/agenticcore-mark.png";
+import logoLockup from "../assets/agenticcore-lockup.png";
 
+/**
+ * The whole lockup, monogram and wordmark together, as one image -- the
+ * wordmark used to be html text beside a cropped monogram, which meant the
+ * compact header showed the monogram alone and read as half a logo.
+ *
+ * The artwork's black field is keyed out, so it sits on --color-void with no
+ * visible plate. It stacks, so it needs the height: much below h-11 the
+ * wordmark stops being readable.
+ */
 export function Logo({ className = "", compact = false }: { className?: string; compact?: boolean }) {
   return (
-    <div className={`flex items-center gap-2.5 ${className}`}>
-      <img
-        src={logoMark}
-        alt=""
-        aria-hidden
-        className="h-9 w-9 shrink-0 rounded-xl bg-void object-cover ring-1 ring-border"
-      />
-      {!compact && (
-        <span className="font-display text-xl font-semibold tracking-tight whitespace-nowrap text-fg">
-          agentic<span className="text-yellow-400">core</span>
-          <span className="font-sans text-base font-medium text-fg-muted">.click</span>
-        </span>
-      )}
-    </div>
+    <img
+      src={logoLockup}
+      alt="agenticcore.click"
+      className={`${compact ? "h-11" : "h-12"} w-auto shrink-0 ${className}`}
+    />
   );
 }

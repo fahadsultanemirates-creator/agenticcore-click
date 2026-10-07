@@ -28,10 +28,10 @@ export function Nav() {
         scrolled || menuOpen ? "border-border" : "border-transparent"
       }`}
     >
-      <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-4 sm:px-6">
+      <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3 sm:px-6 sm:py-4">
         <Link to="/" aria-label="agenticcore.click home" className="shrink-0">
           <Logo compact className="sm:hidden" />
-          <Logo className="hidden sm:flex" />
+          <Logo className="hidden sm:block" />
         </Link>
 
         <nav className="hidden items-center gap-8 font-medium text-fg-muted lg:flex">

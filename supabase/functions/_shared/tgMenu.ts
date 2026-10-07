@@ -157,6 +157,24 @@ export function homeScreen(opts: { hasAccount: boolean; balanceUsd?: number }): 
   };
 }
 
+/**
+ * The moment just after an account is created.
+ *
+ * The one screen a brand-new client sees, and the one that was wrong: it
+ * handed over a code and said nothing about what to do, so a new user had
+ * to go hunting for /packages on their own. Buttons, in the order they
+ * are needed.
+ */
+export function justSignedUpScreen(codeMessage: string): Screen {
+  return {
+    text: codeMessage,
+    keyboard: [
+      [{ text: 'Add funds to start', data: encode({ kind: 'wallet' }) }],
+      [{ text: 'See what we make', data: encode({ kind: 'categories' }) }]
+    ]
+  };
+}
+
 export function categoriesScreen(): Screen {
   return {
     text: 'What kind of thing do you need?',
@@ -240,6 +258,25 @@ export function confirmScreen(text: string, opts: { affordable: boolean; suggest
  * chat should not be deciding on less information than one choosing on
  * the site.
  */
+/**
+ * After an invoice is issued.
+ *
+ * The payment details are above this; what was missing is the sentence
+ * that says the client's job is finished. Without it somebody sends the
+ * money and then sits in a chat wondering whether they were supposed to
+ * confirm something.
+ */
+export function invoiceIssuedScreen(details: string): Screen {
+  return {
+    text: details,
+    keyboard: [
+      [{ text: 'See what we make', data: encode({ kind: 'categories' }) }],
+      [{ text: 'A different amount', data: encode({ kind: 'wallet' }) }],
+      [{ text: '‹ Menu', data: encode({ kind: 'home' }) }]
+    ]
+  };
+}
+
 export function walletScreen(
   balanceUsd: number,
   packages: readonly { amountUsd: number; routineDiscount: number; firstOrderDiscount: number }[]

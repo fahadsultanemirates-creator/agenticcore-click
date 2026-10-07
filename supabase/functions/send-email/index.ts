@@ -10,7 +10,7 @@
 // wording lives in _shared/emailTemplates.ts and is applied at send time,
 // so correcting a sentence also corrects mail that has not left yet.
 import { CORS_HEADERS, jsonResponse } from '../_shared/cors.ts';
-import { sendEmail } from '../_shared/email.ts';
+import { sendEmailDetailed } from '../_shared/email.ts';
 import {
   orderDeliveredEmail,
   orderPlacedEmail,
@@ -115,30 +115,46 @@ export async function handleRequest(req: Request): Promise<Response> {
       continue;
     }
 
-    // Tell the owner about a new account -- here, and only here.
+    // Tell the owner about a new account -- here, once, and only here.
     //
-    // Every signup passes through this exactly once however it was made:
-    // the welcome row is written by a trigger on auth.users, and a unique
-    // index makes it one per address ever. Alerting at each signup path
-    // instead would mean two implementations that can disagree about what
-    // counts as a signup, and a Telegram account would be announced twice.
-    if (row.kind === 'welcome') {
+    // Every signup passes through this: the welcome row is written by a
+    // trigger on auth.users, and a unique index makes it one per address
+    // ever. Alerting at each signup path instead would mean two
+    // implementations that can disagree about what counts as a signup.
+    //
+    // `attempts === 1` is the whole guard, and it is not optional. This
+    // ran before the send and outside any check, so when Brevo rejected
+    // the first welcome email the row stayed pending, the sweep retried
+    // it every minute, and the owner got five identical NEW ACCOUNT
+    // alerts for one signup. The account is news once; whether its email
+    // lands is a separate question with its own retries.
+    if (row.kind === 'welcome' && row.attempts === 1) {
       await alertNewAccount({ email: row.to_email, via: await signupChannel(row.to_email) }).catch(() => {});
     }
 
-    const ok = await sendEmail(row.to_email, email);
-    if (ok) {
+    const result = await sendEmailDetailed(row.to_email, email);
+    if (result.ok) {
       await supabaseAdmin
         .from('email_outbox')
         .update({ status: 'sent', sent_at: new Date().toISOString(), last_error: null })
         .eq('id', row.id);
       sent++;
+    } else if (result.permanent) {
+      // Retrying a 401 gets another 401 a minute later, four more times.
+      // Retire it now and record what Brevo actually said -- "send failed
+      // on attempt 5" told nobody that the account's IP allowlist was
+      // refusing a function that runs from a new address every call.
+      await supabaseAdmin
+        .from('email_outbox')
+        .update({ status: 'failed', last_error: result.error ?? 'permanent failure' })
+        .eq('id', row.id);
+      failed++;
     } else {
       // Left pending: the attempt counter was already incremented by the
       // claim, and expire_failed_emails retires it once it runs out.
       await supabaseAdmin
         .from('email_outbox')
-        .update({ last_error: `send failed on attempt ${row.attempts}` })
+        .update({ last_error: result.error ?? `send failed on attempt ${row.attempts}` })
         .eq('id', row.id);
       failed++;
     }

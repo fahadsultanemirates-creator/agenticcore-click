@@ -6,6 +6,8 @@ import { calculatePriceUsd } from './pricing.ts';
 import { WALLET_PACKAGES } from './orderOffer.ts';
 import {
   CATEGORIES,
+  invoiceIssuedScreen,
+  justSignedUpScreen,
   CLIENT_COMMANDS,
   MAX_CALLBACK_BYTES,
   categoriesScreen,
@@ -232,6 +234,27 @@ test('no button has both a code and a url, or neither', () => {
       assert.ok(Boolean(button.data) !== Boolean(button.url), `${button.text} must have exactly one of data/url`);
     }
   }
+});
+
+// The one screen a brand-new client sees. It handed over a sign-in code
+// and said nothing about what to do next, so a new user went hunting for
+// /packages on their own -- which is how the first real test went.
+test('a new account is told what to do next, with buttons', () => {
+  const screen = justSignedUpScreen('Your account is open.');
+  const codes = allButtons(screen.keyboard).map((b) => b.data);
+  assert.ok(codes.includes(encode({ kind: 'wallet' })), 'no way to add funds');
+  assert.ok(codes.includes(encode({ kind: 'categories' })), 'no way to see the products');
+  assert.ok(screen.keyboard.length > 0, 'no buttons at all');
+});
+
+// Somebody who has just sent USDT should not be left wondering whether
+// they were supposed to confirm something.
+test('an issued invoice offers a way onward, not a dead end', () => {
+  const screen = invoiceIssuedScreen('Send 10.000007 USDT to 0x...');
+  const codes = allButtons(screen.keyboard).map((b) => b.data);
+  assert.ok(codes.includes(encode({ kind: 'home' })), 'no way back to the menu');
+  assert.ok(codes.includes(encode({ kind: 'categories' })), 'no way to go and order');
+  assert.ok(screen.text.includes('10.000007'), 'lost the payment details');
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

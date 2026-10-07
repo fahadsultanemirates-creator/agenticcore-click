@@ -16,7 +16,7 @@
 import { supabaseAdmin } from './storage.ts';
 import { expandSku, getSku } from './catalog.ts';
 import { classifyClientMessage, type ClientIntent } from './clientConversation.ts';
-import { describeOffer, clientCatalogue, suggestTopUp, TOPUP_TIERS, usd, WALLET_PACKAGES } from './orderOffer.ts';
+import { describeOffer, clientCatalogue, suggestTopUp, usd, WALLET_PACKAGES } from './orderOffer.ts';
 import { createUsdtInvoice, tierForAmount } from './usdtInvoice.ts';
 import { listAccountOrders } from './orders.ts';
 import { calculatePriceUsd } from './pricing.ts';
@@ -42,6 +42,8 @@ import {
   backHome,
   briefPromptScreen,
   categoriesScreen,
+  invoiceIssuedScreen,
+  justSignedUpScreen,
   categoryScreen,
   confirmScreen,
   decode,
@@ -361,33 +363,23 @@ async function describeWallet(userId: string): Promise<string> {
  * them to a login screen. The invoice is the same one the dashboard opens
  * -- same function, same nonce allocation, same chain-height bound.
  */
-async function handleTopUp(userId: string, amountUsd?: number): Promise<string> {
+async function handleTopUp(userId: string, amountUsd?: number): Promise<Reply> {
   if (!amountUsd || amountUsd <= 0) {
-    return [
-      'How much would you like to add?',
-      '',
-      ...TOPUP_TIERS.map((tier) => `/topup ${tier} — ${usd(tier)}`),
-      '',
-      'Paid in USDT on BNB Smart Chain (BEP-20).'
-    ].join('\n');
+    return asReply(walletScreen(await walletBalance(userId), WALLET_PACKAGES));
   }
 
   const tier = tierForAmount(amountUsd);
   if (!tier) {
-    return [
-      `${usd(amountUsd)} is not one of the amounts we take.`,
-      '',
-      ...TOPUP_TIERS.map((t) => `/topup ${t} — ${usd(t)}`)
-    ].join('\n');
+    return asReply(walletScreen(await walletBalance(userId), WALLET_PACKAGES));
   }
 
   const result = await createUsdtInvoice(userId, tier);
-  if (!result.ok) return result.error;
+  if (!result.ok) return withMenu(result.error);
 
   const { invoice } = result;
   const minutes = Math.max(1, Math.round((new Date(invoice.expiresAt).getTime() - Date.now()) / 60000));
 
-  return [
+  return asReply(invoiceIssuedScreen([
     `To add ${usd(invoice.creditUsd)}, send exactly:`,
     '',
     `${invoice.amount} USDT`,
@@ -396,12 +388,13 @@ async function handleTopUp(userId: string, amountUsd?: number): Promise<string> 
     '',
     invoice.address,
     '',
-    'The amount is how I know the payment is yours — there is one address',
-    'and no memo field — so send it to the last decimal place, not rounded.',
+    'Send it to the last decimal place, not rounded — the amount is how I',
+    'know the payment is yours, since there is one address and no memo.',
     '',
-    `This invoice is good for ${minutes} minutes. I will message you here as`,
-    'soon as it confirms, usually within a minute of you sending it.'
-  ].join('\n');
+    `That is all you need to do. Nothing to confirm here: I will message you`,
+    'the moment it lands, usually within a minute, and your balance updates',
+    `by itself. This invoice is good for ${minutes} minutes.`
+  ].join('\n')));
 }
 
 /**
@@ -459,7 +452,7 @@ export async function routeClientMessage(message: IncomingClientMessage): Promis
     await saveSignupState(chatId, tgUserId, { step: 'idle' });
 
     if (result.ok) {
-      return { text: signinCodeMessage(result.code, { firstTime: true }), keyboard: backHome() };
+      return asReply(justSignedUpScreen(signinCodeMessage(result.code, { firstTime: true })));
     }
     switch (result.reason) {
       case 'email_taken':
@@ -522,7 +515,7 @@ async function handleClientTurn(
     case '/topup': {
       const amount = Number(text.trim().split(/\s+/)[1]);
       if (Number.isFinite(amount) && amount > 0) {
-        return withMenu(await handleTopUp(account.userId, amount));
+        return handleTopUp(account.userId, amount);
       }
       return asReply(walletScreen(await walletBalance(account.userId), WALLET_PACKAGES));
     }
@@ -595,9 +588,7 @@ async function handleClientTurn(
       reply = asReply(walletScreen(await walletBalance(account.userId), WALLET_PACKAGES));
       break;
     case 'topup':
-      reply = intent.amountUsd
-        ? withMenu(await handleTopUp(account.userId, intent.amountUsd))
-        : asReply(walletScreen(await walletBalance(account.userId), WALLET_PACKAGES));
+      reply = await handleTopUp(account.userId, intent.amountUsd);
       break;
     case 'ask':
       reply = { text: intent.question };
@@ -786,7 +777,7 @@ export async function routeClientCallback(message: {
       return asReply(walletScreen(await walletBalance(account!.userId), WALLET_PACKAGES));
 
     case 'topup':
-      return withMenu(await handleTopUp(account!.userId, action.amountUsd));
+      return handleTopUp(account!.userId, action.amountUsd);
 
     case 'orders':
       return withMenu(await describeOrders(account!.userId));

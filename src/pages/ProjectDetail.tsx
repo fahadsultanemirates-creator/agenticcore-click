@@ -1,4 +1,4 @@
-import { Check, Download, ExternalLink, FolderInput, Pencil, Plus } from "lucide-react";
+import { Check, Download, ExternalLink, FolderInput, Pencil, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ChatLauncher } from "../components/ChatLauncher";
@@ -7,6 +7,7 @@ import { ShareButton } from "../components/dashboard/ShareButton";
 import { services } from "../data/services";
 import { deliverableFilename, forcedDownloadUrl } from "../lib/downloadUrl";
 import {
+  deleteProject,
   moveTaskToProject,
   renameProject,
   useProjects,
@@ -54,6 +55,7 @@ export function ProjectDetail() {
   }
 
   const ready = project.orders.filter((order) => order.files.length > 0 || order.previewUrl);
+  const others = projects.filter((p) => p.id !== project.id);
   const saveName = async () => {
     if (draftName.trim() && draftName.trim() !== project.name) {
       await renameProject(project.id, draftName);
@@ -99,13 +101,26 @@ export function ProjectDetail() {
           </div>
         )}
 
-        <div className="mt-2 flex flex-wrap items-center gap-3">
-          <p className="text-sm text-fg-muted">
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <p className="mr-1 text-sm text-fg-muted">
             {project.orders.length} {project.orders.length === 1 ? "order" : "orders"} in this project.
           </p>
           {/* The project page itself is behind a login, so what gets shared
               is the finished files -- those open for anybody. */}
           <ShareButton title={project.name} urls={project.files.map((file) => file.url)} label="Share everything" />
+
+          {/* Moving one order at a time is the general case, but almost
+              every move anybody needs is this one: the backfill gave each
+              old order its own project, so putting the logos with the
+              business they are for means emptying a whole folder into
+              another. Asking for that order by order is busywork. */}
+          {project.orders.length > 0 && others.length > 0 ? (
+            <MoveEverything project={project} others={others} onMoved={() => void reload()} />
+          ) : null}
+
+          {project.orders.length === 0 ? (
+            <DeleteProject project={project} onDeleted={() => navigate("/projects")} />
+          ) : null}
         </div>
 
         {/* FIRST: what is actually ready. This is what the client came for,
@@ -162,6 +177,109 @@ export function ProjectDetail() {
       </section>
       <ChatLauncher />
     </DashboardShell>
+  );
+}
+
+/** Empties this project into another one, in a single action. */
+function MoveEverything({
+  project,
+  others,
+  onMoved,
+}: {
+  project: Project;
+  others: Project[];
+  onMoved: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const moveAll = async (destinationId: string) => {
+    setBusy(true);
+    // Sequential, not Promise.all: each move also touches the
+    // destination's updated_at, and a handful of orders is not worth the
+    // write contention of firing them together.
+    for (const order of project.orders) {
+      await moveTaskToProject(order.id, destinationId);
+    }
+    setBusy(false);
+    setOpen(false);
+    onMoved();
+  };
+
+  return (
+    <span className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        disabled={busy}
+        className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs font-semibold text-fg-muted transition-colors hover:border-yellow-400/50 hover:text-fg disabled:opacity-60"
+      >
+        <FolderInput className="h-3 w-3" /> {busy ? "Moving…" : "Move everything to…"}
+      </button>
+
+      {open ? (
+        // A popover, not a sibling block: this lives inside an inline
+        // flex row, where a full-width child would be sized by the
+        // button beside it rather than by the row.
+        <span className="absolute top-full left-0 z-10 mt-2 flex w-max max-w-[78vw] flex-wrap gap-1.5 rounded-xl border border-border bg-surface p-2 shadow-lg">
+          {others.map((destination) => (
+            <button
+              key={destination.id}
+              type="button"
+              onClick={() => void moveAll(destination.id)}
+              className="rounded-full border border-yellow-400/40 bg-yellow-400/5 px-3 py-1.5 text-xs font-semibold text-yellow-400 transition-colors hover:bg-yellow-400/15"
+            >
+              {destination.name}
+            </button>
+          ))}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+/**
+ * Removes a project holding nothing.
+ *
+ * Only offered when it is already empty, and the database enforces that
+ * independently -- see the delete policy. Consolidating two projects
+ * always strands one, and a folder you cannot name usefully and cannot
+ * remove is litter.
+ */
+function DeleteProject({ project, onDeleted }: { project: Project; onDeleted: () => void }) {
+  const [confirming, setConfirming] = useState(false);
+
+  if (confirming) {
+    return (
+      <span className="inline-flex items-center gap-1.5">
+        <button
+          type="button"
+          onClick={async () => {
+            if (await deleteProject(project.id)) onDeleted();
+          }}
+          className="rounded-full bg-yellow-400 px-3 py-1.5 text-xs font-semibold text-void"
+        >
+          Delete it
+        </button>
+        <button
+          type="button"
+          onClick={() => setConfirming(false)}
+          className="rounded-full border border-border px-3 py-1.5 text-xs font-semibold text-fg-muted"
+        >
+          Keep it
+        </button>
+      </span>
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => setConfirming(true)}
+      className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs font-semibold text-fg-muted transition-colors hover:border-yellow-400/50 hover:text-fg"
+    >
+      <Trash2 className="h-3 w-3" /> Delete empty project
+    </button>
   );
 }
 
@@ -294,14 +412,16 @@ function OrderRow({
             logos landed under "Client wants a logo created." rather than
             the business they are for. Guessing is fine; being unable to
             correct the guess is not. */}
+        {/* Labelled. As an icon alone this was invisible: the first person
+            to need it went looking on the projects list and reported that
+            there was no way to move anything. */}
         {elsewhere.length > 0 ? (
           <button
             type="button"
             onClick={() => setMoving(!moving)}
-            aria-label={`Move ${order.publicId} to another project`}
-            className="shrink-0 rounded-full p-1.5 text-fg-muted transition-colors hover:text-fg"
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border px-2.5 py-1 text-[11px] font-semibold text-fg-muted transition-colors hover:border-yellow-400/50 hover:text-fg"
           >
-            <FolderInput className="h-4 w-4" />
+            <FolderInput className="h-3 w-3" /> Move
           </button>
         ) : null}
       </div>

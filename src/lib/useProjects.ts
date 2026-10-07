@@ -170,6 +170,20 @@ export async function moveTaskToProject(taskId: string, projectId: string): Prom
   return !error && data === true;
 }
 
+/**
+ * Removes a project that holds nothing.
+ *
+ * The emptiness rule lives in the row-level policy, not here: this call
+ * simply fails if the project still has orders in it. A button is not a
+ * rule, and the one thing that must never happen is paid-for work
+ * disappearing because the UI miscounted.
+ */
+export async function deleteProject(id: string): Promise<boolean> {
+  const { error } = await supabase.from("projects").delete().eq("id", id);
+  if (error) console.error("deleteProject failed:", error);
+  return !error;
+}
+
 export async function renameProject(id: string, name: string): Promise<boolean> {
   const { error } = await supabase
     .from("projects")

@@ -22,6 +22,8 @@ export type ProjectOrder = {
   summary: string;
   status: string;
   createdAt: string;
+  /** A deployed website has a URL to visit rather than a file to keep. */
+  previewUrl: string | null;
   files: ProjectFile[];
 };
 
@@ -50,6 +52,7 @@ type ProjectRow = {
         payload: Record<string, unknown> | null;
         created_at: string;
         version: number | null;
+        preview_url: string | null;
         task_files: { url: string; file_type: string; option_index: number; version: number }[] | null;
       }[]
     | null;
@@ -79,6 +82,7 @@ function toProject(row: ProjectRow): Project {
         summary: briefOf(task.payload),
         status: task.status,
         createdAt: task.created_at,
+        previewUrl: task.preview_url,
         files: (task.task_files ?? [])
           // Only this version's files: a revised order keeps the old ones,
           // and showing both hands back the thing they asked to change.
@@ -114,7 +118,7 @@ export function useProjects() {
     const { data, error } = await supabase
       .from("projects")
       .select(
-        "id, name, created_at, updated_at, tasks(id, public_id, type, sku, status, payload, created_at, version, task_files(url, file_type, option_index, version))"
+        "id, name, created_at, updated_at, tasks(id, public_id, type, sku, status, payload, created_at, version, preview_url, task_files(url, file_type, option_index, version))"
       )
       .order("updated_at", { ascending: false });
 
@@ -154,6 +158,16 @@ export async function createProject(name: string): Promise<{ id: string } | { er
     return { error: "Could not create that project. Please try again." };
   }
   return { id: data.id as string };
+}
+
+/** Files a finished order under a different project. */
+export async function moveTaskToProject(taskId: string, projectId: string): Promise<boolean> {
+  const { data, error } = await supabase.rpc("move_task_to_project", {
+    p_task_id: taskId,
+    p_project_id: projectId,
+  });
+  if (error) console.error("moveTaskToProject failed:", error);
+  return !error && data === true;
 }
 
 export async function renameProject(id: string, name: string): Promise<boolean> {

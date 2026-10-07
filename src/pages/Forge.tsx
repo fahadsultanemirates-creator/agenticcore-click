@@ -232,7 +232,7 @@ export function Forge() {
   const insufficientBalance = pending && pending.totalUsd !== null && pending.walletBalanceUsd < pending.totalUsd;
 
   return (
-    <div className="flex h-screen flex-col bg-void">
+    <div className="flex h-dvh flex-col bg-void">
       <header className="flex items-center justify-between border-b border-border px-4 py-4 sm:px-6">
         <div className="flex items-center gap-3">
           <Link
@@ -358,7 +358,12 @@ export function Forge() {
           </div>
         </div>
 
-        <div className="border-t border-border py-4">
+        {/* pb for the iOS home indicator, which otherwise sits over the
+            send button. The page is h-dvh rather than h-screen for the
+            same reason the composer was unreachable on Android: 100vh
+            counts the space behind the URL bar, so the bottom of the
+            page rendered below the visible viewport. */}
+        <div className="border-t border-border pt-4 pb-[max(1rem,env(safe-area-inset-bottom))]">
           {error && <p className="mb-2 text-xs text-yellow-400">{error}</p>}
 
           {messages.length <= 1 && (

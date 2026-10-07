@@ -14,6 +14,7 @@ import { ArrowRight, MailCheck } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Logo } from "../components/Logo";
+import { PasswordInput } from "../components/PasswordInput";
 import { useAuth } from "../context/AuthContext";
 import { supabase } from "../lib/supabase";
 
@@ -107,22 +108,20 @@ export function ResetPassword() {
               <form onSubmit={handleSet} className="mt-6 flex flex-col gap-4">
                 <label className="flex flex-col gap-1.5">
                   <span className={LABEL}>New password</span>
-                  <input
-                    type="password"
+                  <PasswordInput
                     autoComplete="new-password"
                     value={password}
-                    onChange={(e) => setPasswordValue(e.target.value)}
+                    onChange={setPasswordValue}
                     placeholder="At least 6 characters"
                     className={FIELD}
                   />
                 </label>
                 <label className="flex flex-col gap-1.5">
                   <span className={LABEL}>Confirm password</span>
-                  <input
-                    type="password"
+                  <PasswordInput
                     autoComplete="new-password"
                     value={confirm}
-                    onChange={(e) => setConfirm(e.target.value)}
+                    onChange={setConfirm}
                     placeholder="Type it again"
                     className={FIELD}
                   />

@@ -15,6 +15,18 @@ const TELEGRAM_FILE_API = `https://api.telegram.org/file/bot${TELEGRAM_BOT_TOKEN
 const MAX_TELEGRAM_MESSAGE_LENGTH = 4000;
 
 /**
+ * Telegram renders a link preview card for the first URL in a message,
+ * and caches that card per URL for a long time -- long enough that the
+ * site's open-graph image can be replaced and the chat keeps showing the
+ * old one. It did: a delivered logo arrived under a stale marketing card
+ * for the previous brand, between the client and the files they ordered.
+ *
+ * The bot's links are destinations (the dashboard, /claim, an invoice),
+ * never things to preview, so none of them is worth a card.
+ */
+const NO_LINK_PREVIEW = { link_preview_options: { is_disabled: true } } as const;
+
+/**
  * A message with buttons under it.
  *
  * Telegram calls these an inline keyboard: the buttons live on the
@@ -35,6 +47,7 @@ export async function sendTelegramKeyboard(
     body: JSON.stringify({
       chat_id: chatId,
       text: truncated,
+      ...NO_LINK_PREVIEW,
       reply_markup: {
         inline_keyboard: keyboard.map((row) =>
           row.map((b) => (b.url ? { text: b.text, url: b.url } : { text: b.text, callback_data: b.data }))
@@ -135,7 +148,7 @@ export async function sendTelegramText(chatId: number, text: string): Promise<vo
   const resp = await fetch(`${TELEGRAM_API}/sendMessage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chat_id: chatId, text: truncated })
+    body: JSON.stringify({ chat_id: chatId, text: truncated, ...NO_LINK_PREVIEW })
   });
   if (!resp.ok) {
     console.error(`Telegram sendMessage failed (${resp.status}):`, await resp.text().catch(() => ''));

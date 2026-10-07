@@ -64,3 +64,40 @@ export function sendKindFor(opts: { fileType?: string | null; url: string }): Se
  * the rest are in the dashboard.
  */
 export const MAX_FILES_TO_CHAT = 6;
+
+/**
+ * The line that goes out with a finished order.
+ *
+ * Pure because of where it points. A client who signed up in Telegram has
+ * no website password -- only the one-time code -- so "saved to your
+ * dashboard" sent them to a login screen their code does not open, which
+ * is exactly how the first real order ended. The link has to follow the
+ * account, not the product.
+ */
+export function deliveryHeader(opts: {
+  productName: string;
+  publicId: string;
+  fileCount: number;
+  /** True when this client has still not set a website password. */
+  needsClaim: boolean;
+}): string {
+  const lines = [`${opts.productName} is ready — ${opts.publicId}.`];
+
+  if (opts.fileCount > 1) {
+    lines.push(`${opts.fileCount} files, pick the one you like best.`);
+  }
+
+  if (opts.needsClaim) {
+    lines.push(
+      '',
+      'To keep them in your dashboard, set a password with the sign-in code',
+      'from this chat: https://agenticcore.click/claim',
+      'The code is not the password — it chooses one.'
+    );
+  } else {
+    lines.push('', 'Also saved to your dashboard: https://agenticcore.click/dashboard');
+  }
+
+  lines.push('Send /orders any time to find it again.');
+  return lines.join('\n');
+}

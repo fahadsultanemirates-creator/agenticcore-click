@@ -12,6 +12,7 @@ import { ArrowRight, Check } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { Logo } from "../components/Logo";
+import { PasswordInput } from "../components/PasswordInput";
 import { TelegramIcon } from "../components/icons/TelegramIcon";
 import { useAuth } from "../context/AuthContext";
 import { functionErrorMessage } from "../lib/functionError";
@@ -127,11 +128,10 @@ export function ClaimAccount() {
 
             <label className="flex flex-col gap-1.5">
               <span className={LABEL}>Choose a password</span>
-              <input
-                type="password"
+              <PasswordInput
                 autoComplete="new-password"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={setPassword}
                 placeholder={`At least ${MIN_PASSWORD_LENGTH} characters`}
                 className={FIELD}
               />
@@ -139,11 +139,10 @@ export function ClaimAccount() {
 
             <label className="flex flex-col gap-1.5">
               <span className={LABEL}>Confirm password</span>
-              <input
-                type="password"
+              <PasswordInput
                 autoComplete="new-password"
                 value={confirm}
-                onChange={(e) => setConfirm(e.target.value)}
+                onChange={setConfirm}
                 placeholder="Type it again"
                 className={FIELD}
               />

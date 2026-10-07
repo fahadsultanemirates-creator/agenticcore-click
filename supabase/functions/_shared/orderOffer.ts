@@ -70,10 +70,13 @@ export function suggestTopUp(shortfallUsd: number): number {
 
 export function describeOffer(opts: {
   productName: string;
+  /** What they will actually be charged, after any discount. */
   priceUsd: number;
   balanceUsd: number;
   brief: string;
   revisions: number;
+  /** One line about a discount, when one applies. See discount.ts. */
+  discountNote?: string | null;
 }): Offer {
   const shortfallRaw = opts.priceUsd - opts.balanceUsd;
   const shortfallUsd = shortfallRaw > 0 ? Math.round(shortfallRaw * 100) / 100 : 0;
@@ -82,6 +85,7 @@ export function describeOffer(opts: {
   const lines = [
     opts.productName,
     usd(opts.priceUsd),
+    ...(opts.discountNote ? [opts.discountNote] : []),
     '',
     `Brief: ${opts.brief}`,
     '',

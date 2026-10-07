@@ -10,6 +10,8 @@ import { jsonResponse, CORS_HEADERS } from '../_shared/cors.ts';
 import { allocateClientOrder } from '../_shared/orders.ts';
 import { getSku } from '../_shared/catalog.ts';
 import { queueEmailForUser } from '../_shared/email.ts';
+import { applyDiscount } from '../_shared/discount.ts';
+import { discountContextFor } from '../_shared/placeOrder.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!;
@@ -73,9 +75,9 @@ export async function handleRequest(req: Request): Promise<Response> {
     tasks.push({ type, subtype: typeof raw?.subtype === 'string' ? raw.subtype : null, payload });
   }
 
-  let totalUsd: number;
+  let listTotalUsd: number;
   if (isBundle) {
-    totalUsd = FULL_BUSINESS_SETUP_USD;
+    listTotalUsd = FULL_BUSINESS_SETUP_USD;
   } else {
     let sum = 0;
     for (const t of tasks) {
@@ -85,8 +87,21 @@ export async function handleRequest(req: Request): Promise<Response> {
       }
       sum += price;
     }
-    totalUsd = sum;
+    listTotalUsd = sum;
   }
+
+  // One batch is one purchase, so one discount on the total -- not one
+  // per task, which on a 16-task bundle would be sixteen roundings and a
+  // figure that does not match anything the client was shown.
+  //
+  // Read before the loop below: allocateClientOrder increments
+  // next_order_no, so asking afterwards would always say "not the first
+  // order" and the first-order discount would never once apply.
+  const priced = applyDiscount(listTotalUsd, await discountContextFor(caller.id));
+  const totalUsd = priced.chargeUsd;
+
+  /** Exactly one task, so its own receipt is the batch's receipt. */
+  const singleReceipt = !isBundle && tasks.length === 1;
 
   // Same gate as submit-task: an account paused for having no password
   // cannot buy anything new. Checked here too, not only there, because
@@ -112,7 +127,7 @@ export async function handleRequest(req: Request): Promise<Response> {
     return jsonResponse({ error: 'Could not process wallet payment. Please try again.' }, 500);
   }
   if (!debited) {
-    return jsonResponse({ error: `Insufficient wallet balance. This costs $${totalUsd}.` }, 402);
+    return jsonResponse({ error: `Insufficient wallet balance. This costs $${totalUsd.toFixed(2)}.` }, 402);
   }
 
   const bundleId = isBundle ? crypto.randomUUID() : null;
@@ -171,16 +186,18 @@ export async function handleRequest(req: Request): Promise<Response> {
       detail: { price_usd: isBundle ? null : calculatePriceUsd(t.type, t.payload), type: t.type, subtype: t.subtype, bundle: isBundle, conversationId }
     });
 
-    // One receipt per order, because each one has its own reference and
-    // its own revisions. A bundle is the exception: it is one purchase
-    // that happens to expand into eight tasks, and eight emails for one
-    // $20 payment is how a welcome becomes a spam report. It gets a single
-    // receipt below instead.
-    if (!isBundle) {
+    // A receipt per order only when the batch IS one order.
+    //
+    // Everything else -- a bundle, or several things confirmed together --
+    // is one purchase charged once, and a discount applies to that total.
+    // Splitting it back into per-task receipts would mean deciding each
+    // task's share of a rounded figure, and the shares would not add up to
+    // what was taken. One purchase, one receipt, stating the real number.
+    if (singleReceipt) {
       await queueEmailForUser(caller.id, 'order_placed', {
         publicId: task.public_id,
         productName: getSku(identity.sku)?.name ?? t.type,
-        priceUsd: calculatePriceUsd(t.type, t.payload) ?? 0
+        priceUsd: totalUsd
       });
     }
   }
@@ -201,15 +218,18 @@ export async function handleRequest(req: Request): Promise<Response> {
     await supabaseAdmin.from('forge_messages').insert({
       conversation_id: conversationId,
       role: 'assistant',
-      content: `Queued: ${publicIds.join(', ')} -- $${totalUsd.toFixed(2)} charged from the wallet. The team will notify you as each one is ready.`
+      content:
+        `Queued: ${publicIds.join(', ')} -- $${totalUsd.toFixed(2)} charged from the wallet` +
+        (priced.discountPct > 0 ? ` (${priced.discountPct}% off $${priced.listUsd.toFixed(2)})` : '') +
+        '. The team will notify you as each one is ready.'
     });
   }
 
-  // The bundle's one receipt, now that every task in it is in.
-  if (isBundle && publicIds.length > 0) {
+  // The batch's one receipt, now that every task in it is in.
+  if (!singleReceipt && publicIds.length > 0) {
     await queueEmailForUser(caller.id, 'order_placed', {
       publicId: publicIds[0],
-      productName: 'Full Business Setup',
+      productName: isBundle ? 'Full Business Setup' : `${publicIds.length} orders`,
       priceUsd: totalUsd
     });
   }
@@ -219,7 +239,12 @@ export async function handleRequest(req: Request): Promise<Response> {
     headers: { Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`, 'Content-Type': 'application/json' }
   }).catch((err) => console.error('forge-submit: dispatch trigger failed', err));
 
-  return jsonResponse({ publicIds, totalCharged: totalUsd });
+  return jsonResponse({
+    publicIds,
+    totalCharged: totalUsd,
+    listTotal: priced.listUsd,
+    discountPct: priced.discountPct
+  });
 }
 
 Deno.serve(handleRequest);

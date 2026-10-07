@@ -20,7 +20,8 @@ import { describeOffer, clientCatalogue, suggestTopUp, TOPUP_TIERS, usd, WALLET_
 import { createUsdtInvoice, tierForAmount } from './usdtInvoice.ts';
 import { listAccountOrders } from './orders.ts';
 import { calculatePriceUsd } from './pricing.ts';
-import { placeOrder, walletBalance } from './placeOrder.ts';
+import { placeOrder, quoteFor, walletBalance } from './placeOrder.ts';
+import { discountLine } from './discount.ts';
 import { CODE_TTL_DAYS, daysLeft } from './signinCode.ts';
 import {
   claimNotice,
@@ -211,8 +212,8 @@ async function quoteOrder(
     return { reply: asReply(categoriesScreen()), pending: null };
   }
 
-  const priceUsd = calculatePriceUsd(expanded.type, expanded.payload);
-  if (priceUsd === null) {
+  const priced = await quoteFor(userId, expanded.type, expanded.payload);
+  if (priced === null) {
     // A real product whose payload does not price is a missing choice --
     // most often a website with no tier. Ask rather than guess the
     // cheaper one, which would quote $10 for a $20 job.
@@ -228,10 +229,11 @@ async function quoteOrder(
   const balanceUsd = await walletBalance(userId);
   const offer = describeOffer({
     productName: item.name,
-    priceUsd,
+    priceUsd: priced.chargeUsd,
     balanceUsd,
     brief: intent.brief,
-    revisions: item.revisions
+    revisions: item.revisions,
+    discountNote: discountLine(priced)
   });
 
   return {
@@ -243,7 +245,7 @@ async function quoteOrder(
       brief: intent.brief,
       details: intent.details ?? {},
       productName: item.name,
-      quotedUsd: priceUsd,
+      quotedUsd: priced.chargeUsd,
       quotedAt: new Date().toISOString()
     }
   };
@@ -272,7 +274,8 @@ async function confirmOrder(
   // so if the two disagree the order stops and is re-quoted. Rare -- it
   // takes a price change between the quote and the yes -- and the one
   // case where being slow is obviously right.
-  const livePrice = calculatePriceUsd(expanded.type, expanded.payload);
+  const livePriced = await quoteFor(userId, expanded.type, expanded.payload);
+  const livePrice = livePriced?.chargeUsd ?? null;
   if (livePrice !== null && Math.round(livePrice * 100) !== Math.round(order.quotedUsd * 100)) {
     console.warn(`confirmOrder: ${order.productName} quoted at ${order.quotedUsd}, now ${livePrice}`);
     return {
@@ -317,7 +320,9 @@ async function confirmOrder(
     reply: [
       `Ordered — ${result.publicId}.`,
       '',
-      `${result.productName}, ${usd(result.priceUsd)} taken from your wallet.`,
+      result.discountPct > 0
+        ? `${result.productName}, ${usd(result.priceUsd)} taken from your wallet — ${result.discountPct}% off ${usd(result.listUsd)}.`
+        : `${result.productName}, ${usd(result.priceUsd)} taken from your wallet.`,
       `Wallet now: ${usd(await walletBalance(userId))}`,
       '',
       'I will message you here the moment it is ready, and it lands in your',
@@ -659,8 +664,8 @@ async function quoteSku(
   }
 
   const expanded = expandSku(sku, { brief, description: brief });
-  const priceUsd = expanded ? calculatePriceUsd(expanded.type, expanded.payload) : null;
-  if (!expanded || priceUsd === null) {
+  const priced = expanded ? await quoteFor(userId, expanded.type, expanded.payload) : null;
+  if (!expanded || !priced) {
     return {
       reply: withMenu(`I could not price ${item.name} from that. Try the menu again.`),
       pending: null
@@ -670,10 +675,11 @@ async function quoteSku(
   const balanceUsd = await walletBalance(userId);
   const offer = describeOffer({
     productName: item.name,
-    priceUsd,
+    priceUsd: priced.chargeUsd,
     balanceUsd,
     brief,
-    revisions: item.revisions
+    revisions: item.revisions,
+    discountNote: discountLine(priced)
   });
 
   return {
@@ -685,7 +691,7 @@ async function quoteSku(
       brief,
       details: {},
       productName: item.name,
-      quotedUsd: priceUsd,
+      quotedUsd: priced.chargeUsd,
       quotedAt: new Date().toISOString()
     }
   };

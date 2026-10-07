@@ -217,6 +217,14 @@ export interface ChatTurn {
 export interface ChatState {
   signup?: SignupState;
   pendingOrder?: PendingOrder | null;
+  /**
+   * A product picked from the buttons, waiting on a brief.
+   *
+   * Buttons can say WHICH product. They cannot say "warm and handmade,
+   * for a bakery called Pixel & Pine", so the tap is remembered here and
+   * the next thing the client types or speaks becomes the brief.
+   */
+  awaitingBriefForSku?: number | null;
   history?: ChatTurn[];
 }
 

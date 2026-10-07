@@ -13,6 +13,82 @@ const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}`;
 const TELEGRAM_FILE_API = `https://api.telegram.org/file/bot${TELEGRAM_BOT_TOKEN}`;
 const MAX_TELEGRAM_MESSAGE_LENGTH = 4000;
 
+/**
+ * A message with buttons under it.
+ *
+ * Telegram calls these an inline keyboard: the buttons live on the
+ * message, not on the chat, so an old message's buttons stay tappable
+ * forever. That is why _shared/tgMenu.ts decodes an unrecognised code as
+ * "unknown" rather than throwing -- somebody will tap a button from
+ * before a deploy.
+ */
+export async function sendTelegramKeyboard(
+  chatId: number,
+  text: string,
+  keyboard: { text: string; data?: string; url?: string }[][]
+): Promise<void> {
+  const truncated = text.length > MAX_TELEGRAM_MESSAGE_LENGTH ? text.slice(0, MAX_TELEGRAM_MESSAGE_LENGTH) + '…' : text;
+  const resp = await fetch(`${TELEGRAM_API}/sendMessage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chat_id: chatId,
+      text: truncated,
+      reply_markup: {
+        inline_keyboard: keyboard.map((row) =>
+          row.map((b) => (b.url ? { text: b.text, url: b.url } : { text: b.text, callback_data: b.data }))
+        )
+      }
+    })
+  });
+  if (!resp.ok) {
+    console.error(`Telegram sendMessage (keyboard) failed (${resp.status}):`, await resp.text().catch(() => ''));
+  }
+}
+
+/**
+ * Stops the spinner on a tapped button.
+ *
+ * Telegram shows a loading state on a button until this is called, and
+ * gives roughly ten seconds before it decides the bot is broken. So it is
+ * called first, before any work -- not after, when a model call or a
+ * chain read has already spent the budget.
+ */
+export async function answerCallbackQuery(callbackQueryId: string, text?: string): Promise<void> {
+  const resp = await fetch(`${TELEGRAM_API}/answerCallbackQuery`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ callback_query_id: callbackQueryId, ...(text ? { text } : {}) })
+  });
+  if (!resp.ok) {
+    console.error(`Telegram answerCallbackQuery failed (${resp.status}):`, await resp.text().catch(() => ''));
+  }
+}
+
+/**
+ * Registers the command list behind Telegram's Menu button.
+ *
+ * Scoped to private chats so the owner's commands and a client's are not
+ * both advertised to everybody. Telegram rejects the whole call if any
+ * single command is malformed -- one bad entry costs the entire menu, not
+ * just its own line -- which is what tgMenu's test checks.
+ */
+export async function setMyCommands(
+  commands: { command: string; description: string }[],
+  scope: 'all_private_chats' | 'default' = 'all_private_chats'
+): Promise<boolean> {
+  const resp = await fetch(`${TELEGRAM_API}/setMyCommands`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ commands, scope: { type: scope } })
+  });
+  if (!resp.ok) {
+    console.error(`Telegram setMyCommands failed (${resp.status}):`, await resp.text().catch(() => ''));
+    return false;
+  }
+  return true;
+}
+
 export async function sendTelegramText(chatId: number, text: string): Promise<void> {
   const truncated = text.length > MAX_TELEGRAM_MESSAGE_LENGTH ? text.slice(0, MAX_TELEGRAM_MESSAGE_LENGTH) + '…' : text;
   const resp = await fetch(`${TELEGRAM_API}/sendMessage`, {

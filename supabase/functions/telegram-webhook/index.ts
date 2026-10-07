@@ -48,7 +48,8 @@ import { manualModeOn, setManualMode } from '../_shared/manualMode.ts';
 import { resolveOwnerTaskReference, getPlatformSnapshot, getTaskStatus } from '../_shared/accounts.ts';
 import { describeCandidates } from '../_shared/orderMatch.ts';
 import { claimUpdate } from '../_shared/tgAccounts.ts';
-import { routeClientMessage } from '../_shared/tgClient.ts';
+import { routeClientCallback, routeClientMessage } from '../_shared/tgClient.ts';
+import { answerCallbackQuery, sendTelegramKeyboard } from '../_shared/telegramApi.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
@@ -718,6 +719,24 @@ async function routeMessage(
   }
 }
 
+/**
+ * Sends a client Reply, with its buttons if it has any.
+ *
+ * One function so that "does this screen have buttons" is decided by the
+ * handler that built it, not re-decided at each of the two call sites.
+ */
+async function deliverReply(chatId: number, reply: { text: string; keyboard?: { text: string; data?: string; url?: string }[][] }): Promise<void> {
+  try {
+    if (reply.keyboard && reply.keyboard.length > 0) {
+      await sendTelegramKeyboard(chatId, reply.text, reply.keyboard);
+    } else {
+      await sendBotMessage(chatId, reply.text);
+    }
+  } catch (err) {
+    console.error('telegram-webhook: could not deliver a reply', err);
+  }
+}
+
 export async function handleRequest(req: Request): Promise<Response> {
   if (req.method !== 'POST') {
     return new Response('Method not allowed', { status: 405 });
@@ -733,6 +752,41 @@ export async function handleRequest(req: Request): Promise<Response> {
     update = await req.json();
   } catch {
     return new Response('Bad request', { status: 400 });
+  }
+
+  // A tapped button. Handled before `message`, because a callback_query
+  // update carries no `message` of its own in the sense the rest of this
+  // function means -- it carries the message the button was attached to.
+  const callback = update?.callback_query;
+  if (callback) {
+    // First, before any work. Telegram spins the button until this lands
+    // and gives about ten seconds before deciding the bot is broken; a
+    // model call or a chain read would spend that budget.
+    await answerCallbackQuery(String(callback.id)).catch(() => {});
+
+    const cbChatId = callback?.message?.chat?.id;
+    const cbFromId = callback?.from?.id;
+    if (typeof cbChatId !== 'number' || typeof cbFromId !== 'number') return new Response('ok');
+
+    // The owner's channel has no buttons; if one ever appears, it is not
+    // a client screen and must not be answered with one.
+    if (isOwner(cbFromId)) return new Response('ok');
+
+    let reply;
+    try {
+      reply = await routeClientCallback({
+        chatId: cbChatId,
+        tgUserId: cbFromId,
+        username: typeof callback?.from?.username === 'string' ? callback.from.username : undefined,
+        data: String(callback?.data ?? '')
+      });
+    } catch (err) {
+      console.error('telegram-webhook: callback failed', err);
+      reply = { text: 'Something went wrong on our side. Please try again in a moment.' };
+    }
+
+    await deliverReply(cbChatId, reply);
+    return new Response('ok');
   }
 
   const message = update?.message;
@@ -751,13 +805,25 @@ export async function handleRequest(req: Request): Promise<Response> {
 
   const fromId = message?.from?.id;
   if (!isOwner(fromId)) {
-    // A client. Text only -- the account flow asks for an email address,
-    // and there is nothing useful to do with a photo until ordering from
-    // the chat exists.
-    const clientText = typeof message?.text === 'string' ? message.text.trim() : '';
-    if (!clientText || typeof fromId !== 'number') return new Response('ok');
+    if (typeof fromId !== 'number') return new Response('ok');
 
-    let reply: string;
+    // A client may speak instead of typing -- a brief is easier said than
+    // thumbed. The reply is always text; only the listening half of voice
+    // exists anywhere in this product.
+    let clientText = typeof message?.text === 'string' ? message.text.trim() : '';
+    if (!clientText && message?.voice?.file_id) {
+      try {
+        const audioBytes = await downloadTelegramFile(message.voice.file_id);
+        clientText = (await transcribeAudio(audioBytes, 'voice.oga')).text.trim();
+      } catch (err) {
+        console.error('telegram-webhook: client voice note failed', err);
+        await sendBotMessage(chatId, 'I could not make out that voice note. Could you type it instead?').catch(() => {});
+        return new Response('ok');
+      }
+    }
+    if (!clientText) return new Response('ok');
+
+    let reply;
     try {
       reply = await routeClientMessage({
         chatId,
@@ -767,12 +833,10 @@ export async function handleRequest(req: Request): Promise<Response> {
       });
     } catch (err) {
       console.error('telegram-webhook: client message failed', err);
-      reply = 'Something went wrong on our side. Please try again in a moment.';
+      reply = { text: 'Something went wrong on our side. Please try again in a moment.' };
     }
 
-    await sendBotMessage(chatId, reply).catch((err) =>
-      console.error('telegram-webhook: client reply failed', err)
-    );
+    await deliverReply(chatId, reply);
     return new Response('ok');
   }
 

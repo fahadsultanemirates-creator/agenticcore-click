@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict';
 import { CATALOG, type CatalogItem } from './catalog.ts';
 import { calculatePriceUsd } from './pricing.ts';
+import { WALLET_PACKAGES } from './orderOffer.ts';
 import {
   CATEGORIES,
   CLIENT_COMMANDS,
@@ -134,7 +135,7 @@ test('every screen below the top has a way back', () => {
   const screens = [
     categoriesScreen(),
     ...CATEGORIES.map((c) => categoryScreen(c.service, priceOf)),
-    walletScreen(0, [10, 30]),
+    walletScreen(0, WALLET_PACKAGES),
   ];
   for (const screen of screens) {
     const codes = allButtons(screen.keyboard).map((b) => b.data);
@@ -166,14 +167,44 @@ test('both confirm screens offer a way out', () => {
   }
 });
 
-test('the wallet screen offers every tier it is given', () => {
-  const screen = walletScreen(5, [10, 30, 100, 200]);
-  for (const tier of [10, 30, 100, 200]) {
+test('the packages screen offers every package', () => {
+  const screen = walletScreen(5, WALLET_PACKAGES);
+  for (const pkg of WALLET_PACKAGES) {
     assert.ok(
-      allButtons(screen.keyboard).some((b) => b.data === encode({ kind: 'topup', amountUsd: tier })),
-      `missing $${tier}`
+      allButtons(screen.keyboard).some((b) => b.data === encode({ kind: 'topup', amountUsd: pkg.amountUsd })),
+      `missing $${pkg.amountUsd}`
     );
   }
+});
+
+// A client choosing a package in a chat should not be deciding on less
+// information than one choosing on the website's cards.
+test('every package states the discount it carries', () => {
+  const screen = walletScreen(0, WALLET_PACKAGES);
+  for (const pkg of WALLET_PACKAGES.filter((p) => p.routineDiscount > 0)) {
+    assert.ok(
+      screen.text.includes(`${pkg.routineDiscount}% off every order`),
+      `$${pkg.amountUsd} does not state its standing discount`
+    );
+    assert.ok(
+      allButtons(screen.keyboard).some((b) => b.text.includes(`${pkg.routineDiscount}%`)),
+      `the $${pkg.amountUsd} button does not show its discount`
+    );
+  }
+  // The $10 tier has none. Saying "0% off every order" would read as an
+  // offer; it has to say plainly that there is no standing discount.
+  // (Checked with a word boundary, because "20% off" ends in "0% off".)
+  assert.ok(!/\b0% off/.test(screen.text), screen.text);
+  assert.ok(screen.text.includes('no standing discount'), screen.text);
+});
+
+test('the first-order discount is stated, and says it covers the bundle', () => {
+  const screen = walletScreen(0, WALLET_PACKAGES);
+  for (const pkg of WALLET_PACKAGES) {
+    assert.ok(screen.text.includes(`${pkg.firstOrderDiscount}% on $${pkg.amountUsd}`), `missing $${pkg.amountUsd}`);
+  }
+  assert.ok(screen.text.includes('Full Business Setup'), 'does not say the bundle is included');
+  assert.ok(screen.text.includes('applies once'), 'does not say it is one-off');
 });
 
 // Telegram rejects a command with an uppercase letter or over 32 chars,
@@ -192,7 +223,7 @@ test('no button has both a code and a url, or neither', () => {
     homeScreen({ hasAccount: false }),
     categoriesScreen(),
     ...CATEGORIES.map((c) => categoryScreen(c.service, priceOf)),
-    walletScreen(0, [10]),
+    walletScreen(0, WALLET_PACKAGES),
     confirmScreen('x', { affordable: true, suggestedTopUpUsd: 10 }),
   ];
   for (const screen of screens) {

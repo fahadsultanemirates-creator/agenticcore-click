@@ -11,16 +11,16 @@
 import { allocateNonce, invoiceAmount, MAX_NONCE } from './usdtAmount.ts';
 import { currentBlock, RECEIVING_ADDRESS, USDT_CONTRACT, verifyContract } from './usdtChain.ts';
 import { supabaseAdmin } from './storage.ts';
+import { WALLET_PACKAGES } from './orderOffer.ts';
 
-// Mirrors src/data/packages.ts, kept in sync by hand since the frontend is
-// a static SPA with no shared build step with these functions. The dollars
-// credited, not a credit system with a bonus.
-export const WALLET_TIERS: Record<string, number> = {
-  'wallet-10': 10,
-  'wallet-30': 30,
-  'wallet-100': 100,
-  'wallet-200': 200
-};
+// The tier -> dollars map, built from the package list in orderOffer.ts.
+//
+// That list lives there rather than here so it can be tested under Node:
+// this module reaches the chain and the database, and a price list should
+// not need either of them to be checked.
+export const WALLET_TIERS: Record<string, number> = Object.fromEntries(
+  WALLET_PACKAGES.map((p) => [p.tier, p.amountUsd])
+);
 
 /** "30" or 30 -> "wallet-30". Null for anything we do not sell. */
 export function tierForAmount(amountUsd: number): string | null {

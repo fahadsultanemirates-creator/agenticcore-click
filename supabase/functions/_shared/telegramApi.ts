@@ -1,4 +1,5 @@
 import type { Bytes } from './bytes.ts';
+import type { WebhookInfo } from './tgWebhook.ts';
 // Low-level Telegram Bot API calls.
 //
 // Voice goes one way only: in. Telegram stores an incoming voice note as
@@ -84,6 +85,46 @@ export async function setMyCommands(
   });
   if (!resp.ok) {
     console.error(`Telegram setMyCommands failed (${resp.status}):`, await resp.text().catch(() => ''));
+    return false;
+  }
+  return true;
+}
+
+/**
+ * What Telegram currently believes about our webhook.
+ *
+ * Worth reading even when nothing looks wrong: `last_error_message` and
+ * `pending_update_count` are the only place a webhook that Telegram has
+ * given up on says so.
+ */
+export async function getWebhookInfo(): Promise<WebhookInfo | null> {
+  const resp = await fetch(`${TELEGRAM_API}/getWebhookInfo`);
+  if (!resp.ok) {
+    console.error(`Telegram getWebhookInfo failed (${resp.status}):`, await resp.text().catch(() => ''));
+    return null;
+  }
+  const body = await resp.json().catch(() => null);
+  return (body?.result ?? null) as WebhookInfo | null;
+}
+
+/**
+ * Re-registers the webhook, URL, secret and update subscription together.
+ *
+ * Telegram has no way to change `allowed_updates` on its own -- setWebhook
+ * is the whole registration or nothing -- so the secret has to be passed
+ * again here or the next update arrives without the header the webhook
+ * checks, and every message is rejected. drop_pending_updates is left at
+ * its default of false: a client's tap queued a moment ago should still
+ * be delivered.
+ */
+export async function setWebhook(url: string, secretToken: string, allowedUpdates: readonly string[]): Promise<boolean> {
+  const resp = await fetch(`${TELEGRAM_API}/setWebhook`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url, secret_token: secretToken, allowed_updates: allowedUpdates })
+  });
+  if (!resp.ok) {
+    console.error(`Telegram setWebhook failed (${resp.status}):`, await resp.text().catch(() => ''));
     return false;
   }
   return true;

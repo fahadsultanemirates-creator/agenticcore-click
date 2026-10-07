@@ -12,8 +12,30 @@ import { CORS_HEADERS, jsonResponse } from '../_shared/cors.ts';
 import { sendBotMessage } from '../_shared/botMessage.ts';
 import { supabaseAdmin } from '../_shared/storage.ts';
 import { accountRemindersDue, PAUSED_NOTICE } from '../_shared/tgClient.ts';
-import { setMyCommands } from '../_shared/telegramApi.ts';
+import { getWebhookInfo, setMyCommands, setWebhook } from '../_shared/telegramApi.ts';
 import { CLIENT_COMMANDS } from '../_shared/tgMenu.ts';
+import { checkWebhook, REQUIRED_UPDATES } from '../_shared/tgWebhook.ts';
+
+async function ensureWebhook(): Promise<string> {
+  const secret = Deno.env.get('TELEGRAM_WEBHOOK_SECRET');
+  const base = Deno.env.get('SUPABASE_URL');
+  if (!secret || !base) return 'skipped: TELEGRAM_WEBHOOK_SECRET or SUPABASE_URL unset';
+
+  const url = `${base}/functions/v1/telegram-webhook`;
+  const info = await getWebhookInfo().catch(() => null);
+  const verdict = checkWebhook(info, url);
+
+  // Telegram reports a webhook it has given up on here and nowhere else.
+  if (info?.last_error_message) {
+    console.error(`telegram-sweep: Telegram last failed to deliver: ${info.last_error_message}`);
+  }
+
+  if (!verdict.repair) return verdict.reason;
+
+  console.log(`telegram-sweep: re-registering webhook -- ${verdict.reason}`);
+  const ok = await setWebhook(url, secret, REQUIRED_UPDATES).catch(() => false);
+  return ok ? `repaired: ${verdict.reason}` : `repair FAILED: ${verdict.reason}`;
+}
 
 export async function handleRequest(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response(null, { headers: CORS_HEADERS });
@@ -26,6 +48,13 @@ export async function handleRequest(req: Request): Promise<Response> {
   // matches the commands this build answers, with no step anybody has to
   // remember after editing the list.
   await setMyCommands(CLIENT_COMMANDS).catch(() => {});
+
+  // And re-check the webhook subscription on the same schedule, for the
+  // same reason: Telegram holds it, not us. A webhook registered without
+  // callback_query drops every button tap before it reaches this project
+  // -- no request, no log line, nothing to find -- so the only way to
+  // notice is to ask Telegram what it thinks it is sending.
+  const webhook = await ensureWebhook();
 
   let reminded = 0;
   for (const reminder of await accountRemindersDue()) {
@@ -48,7 +77,7 @@ export async function handleRequest(req: Request): Promise<Response> {
     );
   }
 
-  return jsonResponse({ ok: true, reminded, paused: rows.length });
+  return jsonResponse({ ok: true, reminded, paused: rows.length, webhook });
 }
 
 Deno.serve(handleRequest);

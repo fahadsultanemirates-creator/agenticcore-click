@@ -170,23 +170,36 @@ export async function issueSigninCode(userId: string): Promise<{ code: string; e
   return { code: formatCode(code), expiresAt };
 }
 
-/** The message carrying a code. One place, so the wording cannot drift. */
+/**
+ * The message carrying a code. One place, so the wording cannot drift.
+ *
+ * On a first signup it leads with the NEXT STEP, not with the code.
+ * Somebody who has just opened an account wants to know what to do, and
+ * being handed a credential plus three paragraphs about a 30-day rule is
+ * not an answer to that. The code and the small print still matter, so
+ * they are still here -- underneath the thing they need now.
+ */
 export function signinCodeMessage(code: string, opts: { firstTime: boolean }): string {
+  if (!opts.firstTime) {
+    return [
+      'Here is a new sign-in code.',
+      '',
+      `Code: ${code}`,
+      '',
+      'Enter it with your email at https://agenticcore.click/claim and choose a password.',
+      `It works once and lasts ${CODE_TTL_DAYS} days.`
+    ].join('\n');
+  }
+
   return [
-    opts.firstTime ? 'Your account is open.' : 'Here is a new sign-in code.',
+    'Your account is open.',
     '',
-    `Code: ${code}`,
+    'Next: add funds, then tell me what you need. Two taps.',
     '',
-    `Go to https://agenticcore.click/claim, enter your email and this code, and choose a password.`,
-    `The code works once and lasts ${CODE_TTL_DAYS} days.`,
-    '',
-    'You can order from here in the meantime — you do not have to set the password first.',
-    opts.firstTime
-      ? `If you have not set one after ${CODE_TTL_DAYS} days the account pauses until you do. Nothing is lost.`
-      : ''
-  ]
-    .filter((line) => line !== '')
-    .join('\n');
+    `Your website sign-in code is ${code} — keep it somewhere. It sets a`,
+    `password at https://agenticcore.click/claim when you want one, works`,
+    `once, and lasts ${CODE_TTL_DAYS} days. You can order from here without it.`
+  ].join('\n');
 }
 
 // ---------------------------------------------------------------------------

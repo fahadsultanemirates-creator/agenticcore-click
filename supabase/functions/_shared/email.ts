@@ -21,14 +21,42 @@ const BREVO_API = 'https://api.brevo.com/v3/smtp/email';
 
 const SENDER = { name: 'AgenticCore Click', email: 'hello@agenticcore.click' };
 
+/**
+ * A send that will never succeed, however many times it is tried.
+ *
+ * 401 and 403 are configuration, not weather: a wrong key, or Brevo's IP
+ * allowlist refusing a Supabase edge function -- which runs from a
+ * different address every single call, so allowlisting can never pass.
+ * Retrying four more times gets four more identical failures a minute
+ * apart, and on the welcome path it got the owner five identical alerts.
+ *
+ * 400 is us: a malformed payload or an unverified sender. Also permanent.
+ *
+ * Everything else -- 429, 5xx, a dropped connection -- is worth retrying.
+ */
+export function isPermanentFailure(status: number): boolean {
+  return status === 400 || status === 401 || status === 403;
+}
+
+export interface SendResult {
+  ok: boolean;
+  /** True when retrying is pointless. See isPermanentFailure. */
+  permanent: boolean;
+  error?: string;
+}
+
 export async function sendEmail(to: string, email: Email): Promise<boolean> {
+  return (await sendEmailDetailed(to, email)).ok;
+}
+
+export async function sendEmailDetailed(to: string, email: Email): Promise<SendResult> {
   if (!BREVO_API_KEY) {
     console.log(`email skipped (BREVO_API_KEY not set): "${email.subject}" -> ${to}`);
-    return false;
+    return { ok: false, permanent: false, error: 'BREVO_API_KEY not set' };
   }
   if (!to.includes('@')) {
     console.error(`email skipped (not an address): ${to}`);
-    return false;
+    return { ok: false, permanent: true, error: 'not an email address' };
   }
 
   try {
@@ -45,15 +73,17 @@ export async function sendEmail(to: string, email: Email): Promise<boolean> {
     });
     if (!resp.ok) {
       // The body, not just the status. A 400 from Brevo names the field it
-      // rejected; without it every failure looks the same and the next
-      // person debugging this starts from nothing.
-      console.error(`Brevo send failed (${resp.status}) for "${email.subject}":`, await resp.text().catch(() => ''));
-      return false;
+      // rejected; a 401 names the IP it refused. Without it every failure
+      // looks the same and the next person debugging this starts from
+      // nothing -- which is exactly what happened the first time.
+      const body = await resp.text().catch(() => '');
+      console.error(`Brevo send failed (${resp.status}) for "${email.subject}":`, body);
+      return { ok: false, permanent: isPermanentFailure(resp.status), error: `${resp.status} ${body}`.slice(0, 400) };
     }
-    return true;
+    return { ok: true, permanent: false };
   } catch (err) {
     console.error(`Brevo send threw for "${email.subject}":`, err);
-    return false;
+    return { ok: false, permanent: false, error: String(err).slice(0, 400) };
   }
 }
 

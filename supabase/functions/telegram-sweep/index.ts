@@ -12,9 +12,20 @@ import { CORS_HEADERS, jsonResponse } from '../_shared/cors.ts';
 import { sendBotMessage } from '../_shared/botMessage.ts';
 import { supabaseAdmin } from '../_shared/storage.ts';
 import { accountRemindersDue, PAUSED_NOTICE } from '../_shared/tgClient.ts';
+import { setMyCommands } from '../_shared/telegramApi.ts';
+import { CLIENT_COMMANDS } from '../_shared/tgMenu.ts';
 
 export async function handleRequest(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response(null, { headers: CORS_HEADERS });
+
+  // Re-register the command menu on every sweep.
+  //
+  // Telegram stores this on its side, not ours, so it survives a deploy
+  // and would survive a change to the list -- which is the problem. Once
+  // an hour is free, idempotent, and means the menu a client sees always
+  // matches the commands this build answers, with no step anybody has to
+  // remember after editing the list.
+  await setMyCommands(CLIENT_COMMANDS).catch(() => {});
 
   let reminded = 0;
   for (const reminder of await accountRemindersDue()) {

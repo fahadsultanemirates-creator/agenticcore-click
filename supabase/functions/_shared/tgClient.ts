@@ -37,6 +37,43 @@ import {
   type TelegramAccount
 } from './tgAccounts.ts';
 import { signupTurn } from './tgSignup.ts';
+import {
+  backHome,
+  briefPromptScreen,
+  categoriesScreen,
+  categoryScreen,
+  confirmScreen,
+  decode,
+  homeScreen,
+  walletScreen,
+  type Keyboard,
+  type Screen
+} from './tgMenu.ts';
+
+/**
+ * What the bot sends back: words, and optionally buttons under them.
+ *
+ * Every handler returns this rather than a bare string, so adding
+ * buttons to a screen is a change in one place instead of a change to
+ * the webhook's idea of what a reply is.
+ */
+export interface Reply {
+  text: string;
+  keyboard?: Keyboard;
+}
+
+const asReply = (screen: Screen): Reply => ({ text: screen.text, keyboard: screen.keyboard });
+const withMenu = (text: string): Reply => ({ text, keyboard: backHome() });
+
+/** The price of a catalogue item, for the screens that list them. */
+const priceOf = (item: { service: string; selector: Record<string, string> }) =>
+  calculatePriceUsd(item.service, item.selector);
+
+/** Home, built from whatever we know about this chat right now. */
+async function homeFor(account: TelegramAccount | null): Promise<Reply> {
+  if (!account) return asReply(homeScreen({ hasAccount: false }));
+  return asReply(homeScreen({ hasAccount: true, balanceUsd: await walletBalance(account.userId) }));
+}
 
 export interface IncomingClientMessage {
   chatId: number;
@@ -159,22 +196,19 @@ function quoteIsStale(order: PendingOrder, now: Date = new Date()): boolean {
 async function quoteOrder(
   userId: string,
   intent: Extract<ClientIntent, { intent: 'order' }>
-): Promise<{ reply: string; pending: PendingOrder | null }> {
+): Promise<{ reply: Reply; pending: PendingOrder | null }> {
   const item = getSku(intent.sku);
   if (!item || item.ownerOnly) {
     // The model picked a number outside the catalogue, or an owner-only
     // one. Never quote it: the supervisor would refuse the task later,
     // after the client had been charged and had waited.
     console.error(`quoteOrder: refused sku ${intent.sku}`);
-    return {
-      reply: 'I am not sure which product that is. Send /services for the list, or describe it again.',
-      pending: null
-    };
+    return { reply: asReply(categoriesScreen()), pending: null };
   }
 
   const expanded = expandSku(intent.sku, { ...(intent.details ?? {}), brief: intent.brief, description: intent.brief });
   if (!expanded) {
-    return { reply: 'I could not work out what that would be. Send /services for the list.', pending: null };
+    return { reply: asReply(categoriesScreen()), pending: null };
   }
 
   const priceUsd = calculatePriceUsd(expanded.type, expanded.payload);
@@ -183,9 +217,10 @@ async function quoteOrder(
     // most often a website with no tier. Ask rather than guess the
     // cheaper one, which would quote $10 for a $20 job.
     return {
-      reply:
+      reply: withMenu(
         `For ${item.name} I need one more thing before I can quote it. ` +
-        'How many pages, or which option did you want?',
+          'How many pages, or which option did you want?'
+      ),
       pending: null
     };
   }
@@ -200,7 +235,9 @@ async function quoteOrder(
   });
 
   return {
-    reply: offer.text,
+    reply: asReply(
+      confirmScreen(offer.text, { affordable: offer.affordable, suggestedTopUpUsd: offer.suggestedTopUpUsd })
+    ),
     pending: {
       sku: intent.sku,
       brief: intent.brief,
@@ -368,7 +405,7 @@ async function handleTopUp(userId: string, amountUsd?: number): Promise<string> 
  * Returns the text to send back. Never throws: the caller is a webhook,
  * and a thrown error there is a message Telegram retries forever.
  */
-export async function routeClientMessage(message: IncomingClientMessage): Promise<string> {
+export async function routeClientMessage(message: IncomingClientMessage): Promise<Reply> {
   const { chatId, tgUserId, username, text } = message;
   const command = text.trim().toLowerCase().split(/\s+/)[0];
 
@@ -377,7 +414,7 @@ export async function routeClientMessage(message: IncomingClientMessage): Promis
     account = await findAccountByTelegramId(tgUserId);
   } catch (err) {
     console.error('routeClientMessage: account lookup failed', err);
-    return 'Something went wrong on our side. Please try again in a moment.';
+    return { text: 'Something went wrong on our side. Please try again in a moment.' };
   }
 
   // --- somebody we already know -------------------------------------------
@@ -388,12 +425,18 @@ export async function routeClientMessage(message: IncomingClientMessage): Promis
   // --- somebody new --------------------------------------------------------
   const state = await loadSignupState(chatId);
 
+  // A stranger sending /start gets the buttons, not a wall of commands
+  // they have no account to use.
+  if ((command === '/start' || command === '/menu' || command === '/help') && state.step === 'idle') {
+    return homeFor(null);
+  }
+
   // /login before there is an account is the single most likely wrong turn
   // here, and "unknown command" would be a dead end for the person it
   // happens to.
   if ((command === '/login' || command === '/account') && state.step === 'idle') {
     await saveSignupState(chatId, tgUserId, { step: 'email' });
-    return `You do not have an account yet — let us fix that.\n\n${signupTurn({ step: 'idle' }, '/start').reply}`;
+    return { text: `You do not have an account yet — let us fix that.\n\n${signupTurn({ step: 'idle' }, '/start').reply}` };
   }
 
   const turn = signupTurn(state, text);
@@ -404,18 +447,18 @@ export async function routeClientMessage(message: IncomingClientMessage): Promis
       // Cannot happen through the state machine, but an empty email here
       // would create an account nobody can ever sign in to.
       await saveSignupState(chatId, tgUserId, { step: 'email' });
-      return 'I lost track of your email address. What is it?';
+      return { text: 'I lost track of your email address. What is it?' };
     }
 
     const result = await createAccountFromTelegram({ tgUserId, chatId, username, email });
     await saveSignupState(chatId, tgUserId, { step: 'idle' });
 
     if (result.ok) {
-      return signinCodeMessage(result.code, { firstTime: true });
+      return { text: signinCodeMessage(result.code, { firstTime: true }), keyboard: backHome() };
     }
     switch (result.reason) {
       case 'email_taken':
-        return [
+        return withMenu([
           `${email} already has an account.`,
           '',
           'Sign in at https://agenticcore.click/login with that address.',
@@ -423,16 +466,16 @@ export async function routeClientMessage(message: IncomingClientMessage): Promis
           'or write to hello@agenticcore.click.',
           '',
           'To open a separate account here, send a different email address.'
-        ].join('\n');
+        ].join('\n'));
       case 'already_linked':
-        return 'This Telegram account is already connected to an account. Send /account.';
+        return withMenu('This Telegram account is already connected to an account.');
       default:
-        return 'Could not open the account just now. Please try again in a moment.';
+        return withMenu('Could not open the account just now. Please try again in a moment.');
     }
   }
 
   await saveSignupState(chatId, tgUserId, turn.state);
-  return turn.reply;
+  return { text: turn.reply };
 }
 
 
@@ -451,67 +494,82 @@ async function handleClientTurn(
   tgUserId: number,
   text: string,
   command: string
-): Promise<string> {
+): Promise<Reply> {
   const state = await loadChatState(chatId);
 
   switch (command) {
     case '/login':
     case '/signin':
-      return handleLogin(account);
+      return withMenu(await handleLogin(account));
     case '/account':
     case '/me':
-      return describeAccount(account);
+      return withMenu(await describeAccount(account));
     case '/services':
     case '/catalog':
     case '/catalogue':
-      return clientCatalogue((item) => calculatePriceUsd(item.service, item.selector));
+      return asReply(categoriesScreen());
     case '/orders':
-      return describeOrders(account.userId);
+      return withMenu(await describeOrders(account.userId));
     case '/wallet':
     case '/balance':
-      return describeWallet(account.userId);
+      return asReply(walletScreen(await walletBalance(account.userId), TOPUP_TIERS));
     case '/topup': {
       const amount = Number(text.trim().split(/\s+/)[1]);
-      return handleTopUp(account.userId, Number.isFinite(amount) ? amount : undefined);
+      if (Number.isFinite(amount) && amount > 0) {
+        return withMenu(await handleTopUp(account.userId, amount));
+      }
+      return asReply(walletScreen(await walletBalance(account.userId), TOPUP_TIERS));
     }
     case '/start':
     case '/help':
     case '/menu':
-      return `${await describeAccount(account)}\n\n${MENU}`;
+      return homeFor(account);
     case '/cancel':
-      await saveChatState(chatId, tgUserId, { ...state, signup: { step: 'idle' }, pendingOrder: null });
-      return 'Forgotten. Tell me what you need whenever you are ready.';
+      await saveChatState(chatId, tgUserId, {
+        ...state,
+        signup: { step: 'idle' },
+        pendingOrder: null,
+        awaitingBriefForSku: null
+      });
+      return homeFor(account);
   }
 
   const lower = text.trim().toLowerCase();
   const pending = state.pendingOrder ?? null;
+
+  // A brief for a product picked from the buttons.
+  //
+  // Checked before the classifier, because the product is already decided
+  // -- sending "a bakery, warm and handmade" to a model that might read it
+  // as a different product is how a tap on Logo becomes an order for a
+  // brand kit.
+  if (state.awaitingBriefForSku) {
+    const quote = await quoteSku(account.userId, state.awaitingBriefForSku, text.trim());
+    await saveChatState(chatId, tgUserId, {
+      ...state,
+      awaitingBriefForSku: null,
+      pendingOrder: quote.pending,
+      history: appendTurns(state, text, quote.reply.text)
+    });
+    return quote.reply;
+  }
 
   // A yes against an open quote is the one input that spends money, so it
   // is matched against a fixed list here rather than classified. A model
   // that reads "no, not that one" as a confirmation is a model that
   // charged somebody.
   if (pending && YES.has(lower)) {
-    if (quoteIsStale(pending)) {
-      await saveChatState(chatId, tgUserId, { ...state, pendingOrder: null });
-      return [
-        `That quote for ${pending.productName} is over an hour old, so I will not charge it blind.`,
-        '',
-        'Tell me what you need again and I will re-quote it.'
-      ].join('\n');
-    }
-    const { reply, keep } = await confirmOrder(account.userId, pending);
-    await saveChatState(chatId, tgUserId, { ...state, pendingOrder: keep, history: appendTurns(state, text, reply) });
-    return reply;
+    return settlePending(account, chatId, tgUserId, state, pending, text);
   }
 
   if (pending && NO.has(lower)) {
     await saveChatState(chatId, tgUserId, { ...state, pendingOrder: null });
-    return 'Dropped. Tell me what you would like instead.';
+    return homeFor(account);
   }
 
   const intent = await classifyClientMessage(text, state.history ?? []);
 
-  let reply: string;
+  let reply: Reply;
   let nextPending: PendingOrder | null = pending;
 
   switch (intent.intent) {
@@ -522,33 +580,114 @@ async function handleClientTurn(
       break;
     }
     case 'catalogue':
-      reply = clientCatalogue((item) => calculatePriceUsd(item.service, item.selector));
+      reply = asReply(categoriesScreen());
       break;
     case 'orders':
-      reply = await describeOrders(account.userId);
+      reply = withMenu(await describeOrders(account.userId));
       break;
     case 'wallet':
-      reply = await describeWallet(account.userId);
+      reply = asReply(walletScreen(await walletBalance(account.userId), TOPUP_TIERS));
       break;
     case 'topup':
-      reply = await handleTopUp(account.userId, intent.amountUsd);
+      reply = intent.amountUsd
+        ? withMenu(await handleTopUp(account.userId, intent.amountUsd))
+        : asReply(walletScreen(await walletBalance(account.userId), TOPUP_TIERS));
       break;
     case 'ask':
-      reply = intent.question;
+      reply = { text: intent.question };
       break;
     case 'chat':
-      reply = intent.reply;
+      reply = { text: intent.reply };
       break;
     default:
-      reply = `I did not follow that.\n\n${MENU}`;
+      reply = await homeFor(account);
   }
 
   await saveChatState(chatId, tgUserId, {
     ...state,
     pendingOrder: nextPending,
-    history: appendTurns(state, text, reply)
+    history: appendTurns(state, text, reply.text)
   });
   return reply;
+}
+
+/** Shared by the typed YES and the Confirm button -- one path to a charge. */
+async function settlePending(
+  account: TelegramAccount,
+  chatId: number,
+  tgUserId: number,
+  state: ChatState,
+  pending: PendingOrder,
+  trigger: string
+): Promise<Reply> {
+  if (quoteIsStale(pending)) {
+    await saveChatState(chatId, tgUserId, { ...state, pendingOrder: null });
+    return withMenu(
+      [
+        `That quote for ${pending.productName} is over an hour old, so I will not charge it blind.`,
+        '',
+        'Tell me what you need again and I will re-quote it.'
+      ].join('\n')
+    );
+  }
+
+  const { reply, keep } = await confirmOrder(account.userId, pending);
+  await saveChatState(chatId, tgUserId, {
+    ...state,
+    pendingOrder: keep,
+    history: appendTurns(state, trigger, reply)
+  });
+  return withMenu(reply);
+}
+
+/**
+ * A quote for a product chosen from the buttons.
+ *
+ * Separate from quoteOrder, which starts from a model's reading of free
+ * text. Here the product is not in question -- only the brief is -- so
+ * nothing re-decides it.
+ */
+async function quoteSku(
+  userId: string,
+  sku: number,
+  brief: string
+): Promise<{ reply: Reply; pending: PendingOrder | null }> {
+  const item = getSku(sku);
+  if (!item || item.ownerOnly) {
+    return { reply: await homeFor(null), pending: null };
+  }
+
+  const expanded = expandSku(sku, { brief, description: brief });
+  const priceUsd = expanded ? calculatePriceUsd(expanded.type, expanded.payload) : null;
+  if (!expanded || priceUsd === null) {
+    return {
+      reply: withMenu(`I could not price ${item.name} from that. Try the menu again.`),
+      pending: null
+    };
+  }
+
+  const balanceUsd = await walletBalance(userId);
+  const offer = describeOffer({
+    productName: item.name,
+    priceUsd,
+    balanceUsd,
+    brief,
+    revisions: item.revisions
+  });
+
+  return {
+    reply: asReply(
+      confirmScreen(offer.text, { affordable: offer.affordable, suggestedTopUpUsd: offer.suggestedTopUpUsd })
+    ),
+    pending: {
+      sku,
+      brief,
+      details: {},
+      productName: item.name,
+      quotedUsd: priceUsd,
+      quotedAt: new Date().toISOString()
+    }
+  };
 }
 
 function appendTurns(state: ChatState, userText: string, assistantText: string): ChatState['history'] {
@@ -557,6 +696,118 @@ function appendTurns(state: ChatState, userText: string, assistantText: string):
     { role: 'user' as const, content: userText },
     { role: 'assistant' as const, content: assistantText }
   ];
+}
+
+
+/**
+ * Somebody tapped a button.
+ *
+ * Mirrors routeClientMessage: same account lookup, same screens, same
+ * state. The two are separate entry points into one set of handlers,
+ * rather than a button path that quietly does something slightly
+ * different from the typed one -- which is how a Confirm button ends up
+ * charging on a rule the typed YES does not follow.
+ */
+export async function routeClientCallback(message: {
+  chatId: number;
+  tgUserId: number;
+  username?: string;
+  data: string;
+}): Promise<Reply> {
+  const { chatId, tgUserId, data } = message;
+  const action = decode(data);
+
+  let account: TelegramAccount | null;
+  try {
+    account = await findAccountByTelegramId(tgUserId);
+  } catch (err) {
+    console.error('routeClientCallback: account lookup failed', err);
+    return { text: 'Something went wrong on our side. Please try again in a moment.' };
+  }
+
+  // Everything below the front door needs an account. A stranger tapping
+  // a product gets offered one rather than an error.
+  if (!account && action.kind !== 'signup' && action.kind !== 'categories' && action.kind !== 'home') {
+    return homeFor(null);
+  }
+
+  const state = await loadChatState(chatId);
+
+  switch (action.kind) {
+    case 'home':
+      return homeFor(account);
+
+    case 'signup':
+      await saveSignupState(chatId, tgUserId, { step: 'email' });
+      return { text: signupTurn({ step: 'idle' }, '/start').reply };
+
+    case 'categories':
+      return asReply(categoriesScreen());
+
+    case 'category':
+      return asReply(categoryScreen(action.service, priceOf));
+
+    case 'product': {
+      const item = getSku(action.sku);
+      const expanded = item ? expandSku(action.sku, {}) : null;
+      const price = expanded ? calculatePriceUsd(expanded.type, expanded.payload) : null;
+      if (!item || price === null) return asReply(categoriesScreen());
+
+      // Remember the product, then ask for the one thing a button cannot
+      // carry. Any pending quote is dropped: they have moved on.
+      await saveChatState(chatId, tgUserId, { ...state, awaitingBriefForSku: action.sku, pendingOrder: null });
+      return asReply(briefPromptScreen(item, price));
+    }
+
+    case 'bundle':
+      return withMenu(
+        [
+          'Full Business Setup — $20',
+          '',
+          'A website, 15 images, 5 logo options, 3 documents, 3 short videos,',
+          'a social kit and a brand-kit piece.',
+          '',
+          'It takes a few answers to set up, so it is easiest on the website:',
+          'https://agenticcore.click/dashboard',
+          '',
+          'Or just tell me your business name and what it does, and I will',
+          'take it from there.'
+        ].join('\n')
+      );
+
+    case 'wallet':
+      return asReply(walletScreen(await walletBalance(account!.userId), TOPUP_TIERS));
+
+    case 'topup':
+      return withMenu(await handleTopUp(account!.userId, action.amountUsd));
+
+    case 'orders':
+      return withMenu(await describeOrders(account!.userId));
+
+    case 'account':
+      return withMenu(await describeAccount(account!));
+
+    case 'login':
+      return withMenu(await handleLogin(account!));
+
+    case 'confirm': {
+      const pending = state.pendingOrder ?? null;
+      if (!pending) {
+        // The button outlived its quote -- a tap on an old message, or a
+        // second tap on one already acted on. Not an error worth a scary
+        // word; just show them where they are.
+        return homeFor(account);
+      }
+      return settlePending(account!, chatId, tgUserId, state, pending, '(tapped Confirm)');
+    }
+
+    case 'cancel':
+      await saveChatState(chatId, tgUserId, { ...state, pendingOrder: null, awaitingBriefForSku: null });
+      return homeFor(account);
+
+    default:
+      return homeFor(account);
+  }
 }
 
 /**

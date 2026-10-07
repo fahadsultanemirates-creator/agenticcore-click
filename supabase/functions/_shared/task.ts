@@ -2,6 +2,13 @@ import { supabaseAdmin } from './storage.ts';
 import { getSku } from './catalog.ts';
 import { queueEmailForUser } from './email.ts';
 import { sendBotMessage } from './botMessage.ts';
+import {
+  sendTelegramAudio,
+  sendTelegramDocument,
+  sendTelegramPhoto,
+  sendTelegramVideo
+} from './telegramApi.ts';
+import { MAX_FILES_TO_CHAT, sendKindFor } from './deliverTo.ts';
 import { alertDelivered, alertFailed } from './ownerAlerts.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
@@ -70,9 +77,15 @@ export async function markDelivered(taskId: string): Promise<void> {
 async function notifyTheClient(taskId: string): Promise<void> {
   const { data: task, error } = await supabaseAdmin
     .from('tasks')
-    .select('user_id, public_id, sku, type')
+    .select('user_id, public_id, sku, type, version')
     .eq('id', taskId)
-    .maybeSingle<{ user_id: string | null; public_id: string; sku: number | null; type: string }>();
+    .maybeSingle<{
+      user_id: string | null;
+      public_id: string;
+      sku: number | null;
+      type: string;
+      version: number | null;
+    }>();
 
   if (error) {
     console.error(`markDelivered: could not read ${taskId} to notify`, error);
@@ -94,16 +107,7 @@ async function notifyTheClient(taskId: string): Promise<void> {
     .maybeSingle<{ chat_id: number }>();
 
   if (link?.chat_id) {
-    await sendBotMessage(
-      Number(link.chat_id),
-      [
-        `${productName} is ready — ${task.public_id}.`,
-        '',
-        'Download it from https://agenticcore.click/dashboard',
-        '',
-        'Send /orders to see everything you have ordered.'
-      ].join('\n')
-    ).catch((err) => console.error(`markDelivered: Telegram notice failed for ${taskId}`, err));
+    await sendFilesToChat(Number(link.chat_id), taskId, productName, task.public_id, task.version ?? 1);
   }
 
   // And a receipt to the owner. While orders are fulfilled by hand, the
@@ -116,6 +120,82 @@ async function notifyTheClient(taskId: string): Promise<void> {
     toEmail: true,
     toTelegram: Boolean(link?.chat_id)
   }).catch(() => {});
+}
+
+/**
+ * The deliverable itself, into the chat.
+ *
+ * A link to the dashboard is not a delivery for somebody who ordered
+ * here: a client who signed up in Telegram has no website password until
+ * they claim the account, so "download it from your dashboard" sends
+ * exactly the wrong person to a login screen. The same dead end /topup
+ * had.
+ *
+ * So the files go into the chat as files -- a logo as a picture, a
+ * brochure as a document, a clip that plays. They are in the dashboard
+ * too, which is where they stay: task_files is written before this runs,
+ * and nothing here can un-write it. This is the copy they get now; that
+ * is the copy they keep.
+ */
+async function sendFilesToChat(
+  chatId: number,
+  taskId: string,
+  productName: string,
+  publicId: string,
+  version: number
+): Promise<void> {
+  // This version only. A revised task keeps every version's files in
+  // task_files, and sending all of them would hand the client the thing
+  // they asked to have changed alongside the thing they asked for.
+  const { data: files, error } = await supabaseAdmin
+    .from('task_files')
+    .select('url, file_type, option_index')
+    .eq('task_id', taskId)
+    .eq('version', version)
+    .order('option_index', { ascending: true });
+
+  if (error) console.error(`markDelivered: could not read files for ${taskId}`, error);
+
+  const rows = (files ?? []) as { url: string; file_type: string | null; option_index: number | null }[];
+  const sendable = rows.filter((f) => typeof f.url === 'string' && f.url.startsWith('http'));
+
+  const header = [
+    `${productName} is ready — ${publicId}.`,
+    sendable.length > 1 ? `${sendable.length} files, pick the one you like best.` : '',
+    '',
+    'Also saved to your dashboard: https://agenticcore.click/dashboard',
+    'Send /orders any time to find it again.'
+  ]
+    .filter((line) => line !== '')
+    .join('\n');
+
+  await sendBotMessage(chatId, header).catch((err) =>
+    console.error(`markDelivered: Telegram notice failed for ${taskId}`, err)
+  );
+
+  // Capped: an image product returns five options, which is five
+  // pictures and exactly what they want. Beyond that it is a flood, and
+  // the rest are in the dashboard.
+  for (const file of sendable.slice(0, MAX_FILES_TO_CHAT)) {
+    const kind = sendKindFor({ fileType: file.file_type, url: file.url });
+    try {
+      if (kind === 'photo') await sendTelegramPhoto(chatId, file.url);
+      else if (kind === 'video') await sendTelegramVideo(chatId, file.url);
+      else if (kind === 'audio') await sendTelegramAudio(chatId, file.url);
+      else await sendTelegramDocument(chatId, file.url);
+    } catch (err) {
+      // One file failing must not stop the rest, and must not fail the
+      // delivery -- the work is done and the dashboard has it.
+      console.error(`markDelivered: could not send ${file.url} to ${chatId}`, err);
+    }
+  }
+
+  if (sendable.length > MAX_FILES_TO_CHAT) {
+    await sendBotMessage(
+      chatId,
+      `That is the first ${MAX_FILES_TO_CHAT} of ${sendable.length}. The rest are in your dashboard.`
+    ).catch(() => {});
+  }
 }
 
 export async function markFailed(taskId: string, reason: string): Promise<void> {

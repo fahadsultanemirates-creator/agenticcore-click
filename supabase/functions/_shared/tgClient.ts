@@ -17,6 +17,7 @@ import { supabaseAdmin } from './storage.ts';
 import { expandSku, getSku } from './catalog.ts';
 import { classifyClientMessage, type ClientIntent } from './clientConversation.ts';
 import { describeOffer, clientCatalogue, suggestTopUp, usd, WALLET_PACKAGES } from './orderOffer.ts';
+import { briefGap } from './briefGate.ts';
 import { createUsdtInvoice, tierForAmount } from './usdtInvoice.ts';
 import { listAccountOrders } from './orders.ts';
 import { calculatePriceUsd } from './pricing.ts';
@@ -208,6 +209,12 @@ async function quoteOrder(
     console.error(`quoteOrder: refused sku ${intent.sku}`);
     return { reply: asReply(categoriesScreen()), pending: null };
   }
+
+  // Before the quote, not after the charge. A brief that only restates the
+  // product ("Client wants a logo created") prices perfectly and cannot be
+  // built, and in manual mode no worker ever runs to notice.
+  const gap = briefGap({ productName: item.name, service: item.service, brief: intent.brief });
+  if (gap) return { reply: withMenu(gap), pending: null };
 
   const expanded = expandSku(intent.sku, { ...(intent.details ?? {}), brief: intent.brief, description: intent.brief });
   if (!expanded) {
@@ -546,7 +553,10 @@ async function handleClientTurn(
     const quote = await quoteSku(account.userId, state.awaitingBriefForSku, text.trim());
     await saveChatState(chatId, tgUserId, {
       ...state,
-      awaitingBriefForSku: null,
+      // Cleared unless the brief was too thin to quote: then the product
+      // stays chosen, so the answer to the question is read as the brief
+      // for the same product rather than re-classified from scratch.
+      awaitingBriefForSku: quote.keepAwaitingBrief ? state.awaitingBriefForSku : null,
       pendingOrder: quote.pending,
       history: appendTurns(state, text, quote.reply.text)
     });
@@ -648,11 +658,17 @@ async function quoteSku(
   userId: string,
   sku: number,
   brief: string
-): Promise<{ reply: Reply; pending: PendingOrder | null }> {
+): Promise<{ reply: Reply; pending: PendingOrder | null; keepAwaitingBrief?: boolean }> {
   const item = getSku(sku);
   if (!item || item.ownerOnly) {
     return { reply: await homeFor(null), pending: null };
   }
+
+  // Same gate as the free-text path. Here the product came from a tap, so
+  // only the brief can be thin -- and a tap on Logo followed by "a logo" is
+  // the likeliest way to get there.
+  const gap = briefGap({ productName: item.name, service: item.service, brief });
+  if (gap) return { reply: { text: gap }, pending: null, keepAwaitingBrief: true };
 
   const expanded = expandSku(sku, { brief, description: brief });
   const priced = expanded ? await quoteFor(userId, expanded.type, expanded.payload) : null;

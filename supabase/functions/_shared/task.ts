@@ -123,6 +123,58 @@ async function notifyTheClient(taskId: string): Promise<void> {
 }
 
 /**
+ * One more option, into the chat, with no second announcement.
+ *
+ * The manual path delivers a five-option logo as five separate /deliver
+ * commands. The first marks the task delivered and announces it; each one
+ * after is this -- the file, and a line saying which option it is. Running
+ * the full markDelivered per file instead sent five emails and re-sent
+ * every earlier option alongside each new one.
+ *
+ * Nothing here can fail the delivery: task_files is already written and the
+ * dashboard already has the file.
+ */
+export async function sendOneFileToClient(
+  taskId: string,
+  url: string,
+  fileType: string,
+  optionIndex: number
+): Promise<void> {
+  const { data: task, error } = await supabaseAdmin
+    .from('tasks')
+    .select('user_id, public_id')
+    .eq('id', taskId)
+    .maybeSingle<{ user_id: string | null; public_id: string }>();
+
+  if (error) {
+    console.error(`sendOneFileToClient: could not read ${taskId}`, error);
+    return;
+  }
+  if (!task?.user_id) return;
+
+  const { data: link } = await supabaseAdmin
+    .from('telegram_accounts')
+    .select('chat_id')
+    .eq('user_id', task.user_id)
+    .maybeSingle<{ chat_id: number }>();
+
+  if (!link?.chat_id) return;
+  const chatId = Number(link.chat_id);
+
+  await sendBotMessage(chatId, `${task.public_id} — option ${optionIndex}.`).catch(() => {});
+
+  const kind = sendKindFor({ fileType, url });
+  try {
+    if (kind === 'photo') await sendTelegramPhoto(chatId, url);
+    else if (kind === 'video') await sendTelegramVideo(chatId, url);
+    else if (kind === 'audio') await sendTelegramAudio(chatId, url);
+    else await sendTelegramDocument(chatId, url);
+  } catch (err) {
+    console.error(`sendOneFileToClient: could not send ${url} to ${chatId}`, err);
+  }
+}
+
+/**
  * The deliverable itself, into the chat.
  *
  * A link to the dashboard is not a delivery for somebody who ordered

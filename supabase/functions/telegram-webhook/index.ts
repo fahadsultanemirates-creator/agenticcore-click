@@ -43,7 +43,7 @@ import { sendBotMessage } from '../_shared/botMessage.ts';
 import { converse } from '../_shared/botConversation.ts';
 import { expandSku, getSku, CATALOG } from '../_shared/catalog.ts';
 import { applyRevision, findTaskReference, allocateOwnerTask } from '../_shared/orders.ts';
-import { markDelivered } from '../_shared/task.ts';
+import { markDelivered, sendOneFileToClient } from '../_shared/task.ts';
 import { manualModeOn, setManualMode } from '../_shared/manualMode.ts';
 import { resolveOwnerTaskReference, getPlatformSnapshot, getTaskStatus } from '../_shared/accounts.ts';
 import { describeCandidates } from '../_shared/orderMatch.ts';
@@ -234,7 +234,7 @@ async function handleDeliverCommand(
 
   const { data: task, error: fetchError } = await supabaseAdmin
     .from('tasks')
-    .select('id, version')
+    .select('id, version, status')
     .eq('public_id', publicId)
     .maybeSingle();
 
@@ -263,9 +263,28 @@ async function handleDeliverCommand(
     }
   }
 
+  // Options are numbered, not all called 1.
+  //
+  // A logo order asks for five of them, and five /deliver commands used to
+  // write option_index 1 five times: the dashboard showed "Option 1" five
+  // times over and sendFilesToChat, which orders by this column, sent them
+  // in whatever order the rows came back in.
+  const { count: already } = await supabaseAdmin
+    .from('task_files')
+    .select('id', { count: 'exact', head: true })
+    .eq('task_id', task.id)
+    .eq('version', task.version);
+  const optionIndex = (already ?? 0) + 1;
+
   const { error: fileError } = await supabaseAdmin
     .from('task_files')
-    .insert({ task_id: task.id, url: deliveredUrl, file_type: fileType, option_index: 1, version: task.version });
+    .insert({
+      task_id: task.id,
+      url: deliveredUrl,
+      file_type: fileType,
+      option_index: optionIndex,
+      version: task.version
+    });
   if (fileError) {
     console.error('telegram-webhook: /deliver file insert failed', fileError);
     return `Could not attach that file to ${publicId}.`;
@@ -275,7 +294,7 @@ async function handleDeliverCommand(
     task_id: task.id,
     event_type: 'delivered',
     actor: 'owner',
-    detail: { url: deliveredUrl, manual: true, uploaded: !!file }
+    detail: { url: deliveredUrl, manual: true, uploaded: !!file, optionIndex }
   });
 
   // markDelivered, not a bare status update.
@@ -286,9 +305,19 @@ async function handleDeliverCommand(
   // markDelivered is what emails them and messages their chat. Without
   // this the work lands in the dashboard and nobody ever learns it is
   // there.
-  await markDelivered(task.id);
+  //
+  // Once, though. markDelivered emails the client and re-sends every file
+  // the task has, so running it per option on a five-option logo meant
+  // five "your logo is ready" emails and fifteen photos. The second option
+  // onward is sent to the chat on its own, with no new email: it reads the
+  // way a person handing over work reads.
+  if (task.status === 'delivered') {
+    await sendOneFileToClient(task.id, deliveredUrl!, fileType, optionIndex);
+    return `${publicId} — option ${optionIndex} added (already delivered, so no second email).`;
+  }
 
-  return `${publicId} marked delivered with ${url}.`;
+  await markDelivered(task.id);
+  return `${publicId} marked delivered with ${deliveredUrl}.`;
 }
 
 /**

@@ -1,7 +1,7 @@
 // Run with: node --experimental-strip-types supabase/functions/_shared/ownerAlerts.test.ts
 
 import assert from 'node:assert/strict';
-import { formatBrief } from './ownerAlertText.ts';
+import { formatBrief, newOrderMessage } from './ownerAlertText.ts';
 
 let passed = 0;
 let failed = 0;
@@ -75,6 +75,49 @@ test('an empty brief says so out loud', () => {
 
 test('the literal string "undefined" is treated as absent', () => {
   assert.equal(formatBrief({ businessName: 'Acme', colors: 'undefined' }), 'Business Name: Acme');
+});
+
+// The first real manual order was a five-option logo, and the alert told
+// the owner to "attach the file" -- singular, with nothing saying that an
+// album carries one caption and so delivers one file.
+test('a multi-option order says to send them one at a time', () => {
+  const text = newOrderMessage({
+    publicId: 'AC-1002-01',
+    productName: 'Logo',
+    priceUsd: 0.85,
+    source: 'telegram',
+    payload: { description: 'logo for Noor Bakery', optionCount: 5 }
+  });
+  assert.match(text, /5 options/);
+  assert.match(text, /ONE AT A TIME/);
+  assert.match(text, /album/i);
+  assert.match(text, /\/deliver AC-1002-01/);
+});
+
+test('a single-file order keeps the short instruction', () => {
+  const text = newOrderMessage({
+    publicId: 'AC-1002-02',
+    productName: 'Brochure',
+    priceUsd: 6,
+    source: 'website',
+    payload: { description: 'brochure for Noor Bakery' }
+  });
+  assert.match(text, /attach the file here with \/deliver AC-1002-02 as the caption/);
+  assert.ok(!text.includes('ONE AT A TIME'));
+});
+
+// optionCount 1 is not "options"; neither is a missing or junk value.
+test('one option, or none stated, is not treated as many', () => {
+  for (const payload of [{ optionCount: 1 }, { optionCount: 'five' }, {}]) {
+    const text = newOrderMessage({
+      publicId: 'AC-1002-03',
+      productName: 'Logo',
+      priceUsd: 1,
+      source: 'telegram',
+      payload: { description: 'logo for Noor Bakery', ...payload }
+    });
+    assert.ok(!text.includes('ONE AT A TIME'), `should be singular: ${JSON.stringify(payload)}`);
+  }
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

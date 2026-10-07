@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ChatLauncher } from "../components/ChatLauncher";
 import { DashboardShell } from "../components/dashboard/DashboardShell";
+import { ShareButton } from "../components/dashboard/ShareButton";
 import { services } from "../data/services";
 import { deliverableFilename, forcedDownloadUrl } from "../lib/downloadUrl";
 import { renameProject, useProjects, type ProjectFile, type ProjectOrder } from "../lib/useProjects";
@@ -86,9 +87,18 @@ export function ProjectDetail() {
           </div>
         )}
 
-        <p className="mt-1.5 text-sm text-fg-muted">
-          {project.orders.length} {project.orders.length === 1 ? "order" : "orders"} in this project.
-        </p>
+        <div className="mt-2 flex flex-wrap items-center gap-3">
+          <p className="text-sm text-fg-muted">
+            {project.orders.length} {project.orders.length === 1 ? "order" : "orders"} in this project.
+          </p>
+          {/* The project page itself is behind a login, so what gets shared
+              is the finished files -- those open for anybody. */}
+          <ShareButton
+            title={project.name}
+            urls={project.files.map((file) => file.url)}
+            label="Share everything"
+          />
+        </div>
 
         {/* The whole point of a project: the next thing starts from this one,
             with what has already been made attached rather than re-uploaded. */}
@@ -170,18 +180,32 @@ function OrderCard({ order }: { order: ProjectOrder }) {
 
       {order.files.length > 0 ? (
         <div className="mt-3 flex flex-wrap gap-1.5">
+          <ShareButton
+            title={`${order.product} — ${order.publicId}`}
+            urls={order.files.map((file) => file.url)}
+          />
+          {/* Two actions per option, because "keep this one" and "send this
+              one to my partner" are different things and the card used to
+              offer only the first. A button cannot be nested inside the
+              download anchor, so the pill holds both side by side. */}
           {order.files.map((file) => {
             const href = save(file);
+            const name = order.files.length > 1 ? `Option ${file.optionIndex}` : order.product;
             return (
-              <a
-                key={`save-${file.optionIndex}-${file.url}`}
-                href={href ?? file.url}
-                {...(href ? {} : { target: "_blank", rel: "noreferrer" })}
-                className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs font-semibold text-fg-muted transition-colors hover:border-yellow-400/50 hover:text-fg"
+              <span
+                key={`file-${file.optionIndex}-${file.url}`}
+                className="inline-flex items-center gap-0.5 rounded-full border border-border py-1 pr-1 pl-3"
               >
-                {href ? <Download className="h-3 w-3" /> : <ExternalLink className="h-3 w-3" />}
-                {order.files.length > 1 ? `Option ${file.optionIndex}` : "Download"}
-              </a>
+                <a
+                  href={href ?? file.url}
+                  {...(href ? {} : { target: "_blank", rel: "noreferrer" })}
+                  className="inline-flex items-center gap-1.5 pr-1 text-xs font-semibold text-fg-muted transition-colors hover:text-fg"
+                >
+                  {href ? <Download className="h-3 w-3" /> : <ExternalLink className="h-3 w-3" />}
+                  {name}
+                </a>
+                <ShareButton compact title={`${name} — ${order.publicId}`} urls={[file.url]} />
+              </span>
             );
           })}
         </div>

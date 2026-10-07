@@ -40,9 +40,3 @@ export function aspectFor(payload: Record<string, unknown>): VideoAspect {
  * there. The website form has a picker; this is the same choice for everyone
  * else.
  */
-export function resolutionIn(text: string): '720p' | '1080p' | null {
-  const haystack = text.toLowerCase();
-  if (/\b(1080p?|full\s*hd|fhd|high\s*quality|best\s*quality)\b/.test(haystack)) return '1080p';
-  if (/\b(720p?|hd\s*ready|standard\s*quality|lower\s*quality)\b/.test(haystack)) return '720p';
-  return null;
-}

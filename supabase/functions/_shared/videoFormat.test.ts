@@ -1,7 +1,7 @@
 // Run with: node --experimental-strip-types supabase/functions/_shared/videoFormat.test.ts
 
 import assert from 'node:assert/strict';
-import { aspectFor, resolutionIn } from './videoFormat.ts';
+import { aspectFor } from './videoFormat.ts';
 
 let passed = 0;
 let failed = 0;
@@ -40,20 +40,10 @@ test('resolution does not change orientation', () => {
   assert.equal(aspectFor({ orientation: 'landscape', resolution: '720p' }), '16:9');
 });
 
-// A Telegram order is one line of free text with no structured fields, so
-// words are the only way to ask for a quality from there.
-test('a resolution asked for in words is recognised', () => {
-  assert.equal(resolutionIn('15 second intro, make it 1080p'), '1080p');
-  assert.equal(resolutionIn('short clip in full HD'), '1080p');
-  assert.equal(resolutionIn('keep it 720p, it is just for a story'), '720p');
-  assert.equal(resolutionIn('a 15 second intro for my agency'), null);
-});
-
-// "15 second" and "30 seconds" must never be read as a resolution.
-test('a length in the brief is not mistaken for a quality', () => {
-  assert.equal(resolutionIn('a 60 second video about our services'), null);
-  assert.equal(resolutionIn('10800 words'), null);
-});
+// resolutionIn and its tests are gone with it. It read a quality out of
+// the words of a brief, from when resolution was a priced tier. Every
+// clip is 1080p at one price now, so the only thing honouring "make it
+// 720p" could do is charge full price for a worse clip.
 
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

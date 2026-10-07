@@ -16,7 +16,7 @@
 import { supabaseAdmin } from './storage.ts';
 import { expandSku, getSku } from './catalog.ts';
 import { classifyClientMessage, type ClientIntent } from './clientConversation.ts';
-import { describeOffer, clientCatalogue, suggestTopUp, TOPUP_TIERS, usd } from './orderOffer.ts';
+import { describeOffer, clientCatalogue, suggestTopUp, TOPUP_TIERS, usd, WALLET_PACKAGES } from './orderOffer.ts';
 import { createUsdtInvoice, tierForAmount } from './usdtInvoice.ts';
 import { listAccountOrders } from './orders.ts';
 import { calculatePriceUsd } from './pricing.ts';
@@ -510,15 +510,16 @@ async function handleClientTurn(
       return asReply(categoriesScreen());
     case '/orders':
       return withMenu(await describeOrders(account.userId));
+    case '/packages':
     case '/wallet':
     case '/balance':
-      return asReply(walletScreen(await walletBalance(account.userId), TOPUP_TIERS));
+      return asReply(walletScreen(await walletBalance(account.userId), WALLET_PACKAGES));
     case '/topup': {
       const amount = Number(text.trim().split(/\s+/)[1]);
       if (Number.isFinite(amount) && amount > 0) {
         return withMenu(await handleTopUp(account.userId, amount));
       }
-      return asReply(walletScreen(await walletBalance(account.userId), TOPUP_TIERS));
+      return asReply(walletScreen(await walletBalance(account.userId), WALLET_PACKAGES));
     }
     case '/start':
     case '/help':
@@ -586,12 +587,12 @@ async function handleClientTurn(
       reply = withMenu(await describeOrders(account.userId));
       break;
     case 'wallet':
-      reply = asReply(walletScreen(await walletBalance(account.userId), TOPUP_TIERS));
+      reply = asReply(walletScreen(await walletBalance(account.userId), WALLET_PACKAGES));
       break;
     case 'topup':
       reply = intent.amountUsd
         ? withMenu(await handleTopUp(account.userId, intent.amountUsd))
-        : asReply(walletScreen(await walletBalance(account.userId), TOPUP_TIERS));
+        : asReply(walletScreen(await walletBalance(account.userId), WALLET_PACKAGES));
       break;
     case 'ask':
       reply = { text: intent.question };
@@ -776,7 +777,7 @@ export async function routeClientCallback(message: {
       );
 
     case 'wallet':
-      return asReply(walletScreen(await walletBalance(account!.userId), TOPUP_TIERS));
+      return asReply(walletScreen(await walletBalance(account!.userId), WALLET_PACKAGES));
 
     case 'topup':
       return withMenu(await handleTopUp(account!.userId, action.amountUsd));

@@ -148,7 +148,7 @@ export function homeScreen(opts: { hasAccount: boolean; balanceUsd?: number }): 
     keyboard: [
       [{ text: 'Order a service', data: encode({ kind: 'categories' }) }],
       [{ text: 'Full Business Setup — $20', data: encode({ kind: 'bundle' }) }],
-      [{ text: 'Top up wallet', data: encode({ kind: 'wallet' }) }],
+      [{ text: 'Packages / top up wallet', data: encode({ kind: 'wallet' }) }],
       [
         { text: 'My orders', data: encode({ kind: 'orders' }) },
         { text: 'My account', data: encode({ kind: 'account' }) }
@@ -231,15 +231,46 @@ export function confirmScreen(text: string, opts: { affordable: boolean; suggest
   };
 }
 
-export function walletScreen(balanceUsd: number, tiers: readonly number[]): Screen {
+/**
+ * The packages, with what each one actually buys you.
+ *
+ * "$100" on its own is a number, not an offer. The website's cards carry
+ * each tier's standing discount and they are most of the reason to pick
+ * a bigger one, so the buttons carry them too -- a client choosing in a
+ * chat should not be deciding on less information than one choosing on
+ * the site.
+ */
+export function walletScreen(
+  balanceUsd: number,
+  packages: readonly { amountUsd: number; routineDiscount: number; firstOrderDiscount: number }[]
+): Screen {
+  const firstOrder = packages.map((p) => `${p.firstOrderDiscount}% on $${p.amountUsd}`).join(', ');
+
   return {
     text: [
       `Wallet: $${balanceUsd.toFixed(2)}`,
       '',
-      'How much would you like to add? Paid in USDT on BNB Smart Chain.'
+      'Top up and the tier sets a discount on every order you place, for good:',
+      '',
+      ...packages.map((p) =>
+        p.routineDiscount > 0
+          ? `$${p.amountUsd} — ${p.routineDiscount}% off every order`
+          : `$${p.amountUsd} — no standing discount (minimum to start)`
+      ),
+      '',
+      `Your first order after your first top-up is discounted too — ${firstOrder}.`,
+      'That one applies to everything, the $20 Full Business Setup included,',
+      'and it applies once.',
+      '',
+      'Paid in USDT on BNB Smart Chain.'
     ].join('\n'),
     keyboard: [
-      ...pairs(tiers.map((t) => ({ text: `$${t}`, data: encode({ kind: 'topup', amountUsd: t }) }))),
+      ...pairs(
+        packages.map((p) => ({
+          text: p.routineDiscount > 0 ? `$${p.amountUsd} · ${p.routineDiscount}% off` : `$${p.amountUsd}`,
+          data: encode({ kind: 'topup', amountUsd: p.amountUsd })
+        }))
+      ),
       [{ text: '‹ Back', data: encode({ kind: 'home' }) }]
     ]
   };
@@ -263,6 +294,7 @@ export const CLIENT_COMMANDS: { command: string; description: string }[] = [
   { command: 'menu', description: 'Show the menu' },
   { command: 'services', description: 'Everything we make, with prices' },
   { command: 'orders', description: 'Your orders and where they are' },
+  { command: 'packages', description: 'Wallet packages and their discounts' },
   { command: 'wallet', description: 'Your balance' },
   { command: 'topup', description: 'Add funds (USDT on BNB Smart Chain)' },
   { command: 'account', description: 'Your account and password status' },

@@ -7,8 +7,38 @@
 // somebody orders two things with $7.50 in their wallet.
 import { CATALOG, type CatalogItem } from './catalog.ts';
 
-/** The wallet tiers, smallest first. Mirrors src/data/packages.ts. */
-export const TOPUP_TIERS = [10, 30, 100, 200] as const;
+/**
+ * The wallet packages, smallest first. Mirrors src/data/packages.ts,
+ * kept in sync by hand since the frontend is a static SPA with no shared
+ * build step with these functions.
+ *
+ * The discounts are here, not only on the website, because the bot sells
+ * these too: "$100" on its own is a number, not an offer, and a client
+ * choosing in a chat should not be deciding on less information than one
+ * choosing on the site.
+ *
+ * It lives in this module rather than usdtInvoice.ts so it can be tested
+ * under Node -- usdtInvoice reaches the chain and the database, and this
+ * is just a price list.
+ */
+export interface WalletPackage {
+  tier: string;
+  amountUsd: number;
+  /** Standing discount on every order, for good. */
+  routineDiscount: number;
+  /** One-off, on the first order after the first top-up. */
+  firstOrderDiscount: number;
+}
+
+export const WALLET_PACKAGES: readonly WalletPackage[] = [
+  { tier: 'wallet-10', amountUsd: 10, routineDiscount: 0, firstOrderDiscount: 15 },
+  { tier: 'wallet-30', amountUsd: 30, routineDiscount: 10, firstOrderDiscount: 30 },
+  { tier: 'wallet-100', amountUsd: 100, routineDiscount: 20, firstOrderDiscount: 50 },
+  { tier: 'wallet-200', amountUsd: 200, routineDiscount: 30, firstOrderDiscount: 65 }
+] as const;
+
+/** Just the amounts, for the places that only need those. */
+export const TOPUP_TIERS = WALLET_PACKAGES.map((p) => p.amountUsd);
 
 export interface Offer {
   /** What to send the client. */

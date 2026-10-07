@@ -9,10 +9,17 @@ export type SubmitTaskResult =
 // submit-task function (price computed and wallet debited server-side,
 // never trusted from the client) instead of the old local-only "submitted"
 // mock state.
+/** Everything about an order that is not the product or the brief. */
+export type SubmitOptions = {
+  subtype?: string;
+  /** Join an existing project. The server re-checks that it is the caller's. */
+  projectId?: string | null;
+};
+
 export async function submitTask(
   type: string,
   payload: Record<string, unknown>,
-  subtype?: string,
+  options: SubmitOptions = {},
 ): Promise<SubmitTaskResult> {
   const { data: sessionData } = await supabase.auth.getSession();
   const accessToken = sessionData.session?.access_token;
@@ -25,7 +32,7 @@ export async function submitTask(
     priceUsd?: number;
     error?: string;
   }>("submit-task", {
-    body: { type, payload, subtype },
+    body: { type, payload, subtype: options.subtype ?? null, projectId: options.projectId ?? null },
     headers: { Authorization: `Bearer ${accessToken}` },
   });
 

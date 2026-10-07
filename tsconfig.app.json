@@ -22,5 +22,9 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  // *.test.ts under src/ runs under Node, like the edge-function tests, not
+  // in the browser. Type-checking it here would demand @types/node across
+  // the whole SPA for two imports in one file.
+  "exclude": ["src/**/*.test.ts"]
 }

@@ -3,6 +3,8 @@ import { useState, type FormEvent } from "react";
 import { DashboardShell } from "../../components/dashboard/DashboardShell";
 import { ErrorNote, inputClass, SectionCard, ServicePageHeader, SubmitBar, SubmittedNote, BrandUrlField } from "../../components/dashboard/form";
 import { submitTask } from "../../lib/submitTask";
+import { useProjectContext } from "../../lib/useProjectContext";
+import { ProjectBanner } from "../../components/dashboard/ProjectBanner";
 
 const DOC_TYPES = [
   { id: "invoice", label: "Invoice / quotation template", blurb: "Your branding, ready to send." },
@@ -13,6 +15,7 @@ const DOC_TYPES = [
 ];
 
 export function BusinessDocumentsPage() {
+  const project = useProjectContext();
   const [docType, setDocType] = useState("invoice");
   const [description, setDescription] = useState("");
   const [websiteUrl, setWebsiteUrl] = useState("");
@@ -31,7 +34,7 @@ export function BusinessDocumentsPage() {
     setDescError(false);
     setSubmitError("");
     setSubmitting(true);
-    const result = await submitTask("documents", { docType, description: description.trim(), websiteUrl: websiteUrl.trim() || undefined });
+    const result = await submitTask("documents", { docType, description: description.trim(), websiteUrl: websiteUrl.trim() || undefined }, { projectId: project.projectId });
     setSubmitting(false);
 
     if (!result.ok) {
@@ -45,6 +48,7 @@ export function BusinessDocumentsPage() {
   return (
     <DashboardShell title="Business Documents">
       <div className="mx-auto max-w-3xl py-8 sm:py-10">
+        <ProjectBanner projectId={project.projectId} name={project.name} />
         <ServicePageHeader
           serviceId="documents"
           title="Which document do you need?"

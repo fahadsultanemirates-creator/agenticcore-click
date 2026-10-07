@@ -1,5 +1,6 @@
-import { Download, Eye } from "lucide-react";
+import { Download, ExternalLink, Eye } from "lucide-react";
 import { services } from "../../data/services";
+import { deliverableFilename, forcedDownloadUrl } from "../../lib/downloadUrl";
 import type { Order } from "../../lib/useOrders";
 
 type Props = {
@@ -40,6 +41,23 @@ export function DeliverablesSection({ orders, loading, onOpen }: Props) {
             // -- choosing between them IS the revision for these products.
             const alternates = isSite ? [] : order.files.slice(1);
 
+            // "Download" has to download. Supabase answers with
+            // Content-Disposition: attachment when asked, and names the
+            // file after the order rather than the Telegram id it was
+            // stored under. A link we do not host cannot be forced, so
+            // that button says "Open" instead of lying.
+            const saveUrl = (file: { url: string; optionIndex: number }) =>
+              forcedDownloadUrl(
+                file.url,
+                deliverableFilename(order.publicId, file.optionIndex, file.url, order.files.length)
+              );
+            const first = order.files[0] ?? null;
+            const primarySave = isSite || !first ? null : saveUrl(first);
+
+            // Five logos look identical as five links. Showing them is
+            // the difference between choosing and guessing.
+            const thumbnails = isSite ? [] : order.files.filter((f) => f.fileType?.startsWith("image/"));
+
             return (
               <div
                 key={order.id}
@@ -69,12 +87,34 @@ export function DeliverablesSection({ orders, loading, onOpen }: Props) {
                   </p>
                 ) : null}
 
+                {thumbnails.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {thumbnails.map((file) => (
+                      <a
+                        key={`thumb-${file.optionIndex}-${file.url}`}
+                        href={file.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        onClick={() => onOpen(order.id)}
+                        title={`Option ${file.optionIndex} — open full size`}
+                        className="block h-16 w-16 overflow-hidden rounded-xl border border-border transition-colors hover:border-yellow-400/60"
+                      >
+                        <img
+                          src={file.url}
+                          alt={`Option ${file.optionIndex}`}
+                          loading="lazy"
+                          className="h-full w-full object-cover"
+                        />
+                      </a>
+                    ))}
+                  </div>
+                ) : null}
+
                 <div className="mt-auto flex gap-2 pt-1">
                   {primary ? (
                     <a
-                      href={primary}
-                      target="_blank"
-                      rel="noreferrer"
+                      href={primarySave ?? primary}
+                      {...(primarySave ? {} : { target: "_blank", rel: "noreferrer" })}
                       onClick={() => onOpen(order.id)}
                       className="flex flex-1 items-center justify-center gap-1.5 rounded-full bg-yellow-400 px-3 py-2 text-xs font-semibold text-void transition-transform hover:-translate-y-0.5"
                     >
@@ -82,9 +122,14 @@ export function DeliverablesSection({ orders, loading, onOpen }: Props) {
                         <>
                           <Eye className="h-3.5 w-3.5" /> Open site
                         </>
+                      ) : primarySave ? (
+                        <>
+                          <Download className="h-3.5 w-3.5" />
+                          {order.files.length > 1 ? "Download option 1" : "Download"}
+                        </>
                       ) : (
                         <>
-                          <Download className="h-3.5 w-3.5" /> Download
+                          <ExternalLink className="h-3.5 w-3.5" /> Open
                         </>
                       )}
                     </a>
@@ -100,18 +145,21 @@ export function DeliverablesSection({ orders, loading, onOpen }: Props) {
 
                 {alternates.length > 0 ? (
                   <div className="flex flex-wrap gap-1.5">
-                    {alternates.map((file, index) => (
-                      <a
-                        key={file.url}
-                        href={file.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        onClick={() => onOpen(order.id)}
-                        className="rounded-full border border-border px-3 py-1.5 text-xs font-semibold text-fg-muted transition-colors hover:border-yellow-400/50 hover:text-fg"
-                      >
-                        Option {index + 2}
-                      </a>
-                    ))}
+                    {alternates.map((file) => {
+                      const save = saveUrl(file);
+                      return (
+                        <a
+                          key={`save-${file.optionIndex}-${file.url}`}
+                          href={save ?? file.url}
+                          {...(save ? {} : { target: "_blank", rel: "noreferrer" })}
+                          onClick={() => onOpen(order.id)}
+                          className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs font-semibold text-fg-muted transition-colors hover:border-yellow-400/50 hover:text-fg"
+                        >
+                          {save ? <Download className="h-3 w-3" /> : <ExternalLink className="h-3 w-3" />}
+                          Option {file.optionIndex}
+                        </a>
+                      );
+                    })}
                   </div>
                 ) : null}
               </div>

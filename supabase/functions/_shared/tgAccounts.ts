@@ -186,19 +186,29 @@ export function signinCodeMessage(code: string, opts: { firstTime: boolean }): s
       '',
       `Code: ${code}`,
       '',
-      'Enter it with your email at https://agenticcore.click/claim and choose a password.',
+      'It is not a password — enter it with your email here and choose one:',
+      'https://agenticcore.click/claim',
       `It works once and lasts ${CODE_TTL_DAYS} days.`
     ].join('\n');
   }
 
+  // The code and the link each get their own line.
+  //
+  // They had them, then a rewrite folded both into a paragraph about
+  // what to do next -- and the first real client read straight past the
+  // link, took the code to be a password, and met "Invalid login
+  // credentials" at /login. A credential and the one page it works on
+  // are not prose.
   return [
     'Your account is open.',
     '',
     'Next: add funds, then tell me what you need. Two taps.',
     '',
-    `Your website sign-in code is ${code} — keep it somewhere. It sets a`,
-    `password at https://agenticcore.click/claim when you want one, works`,
-    `once, and lasts ${CODE_TTL_DAYS} days. You can order from here without it.`
+    `Your website sign-in code: ${code}`,
+    '',
+    'It is not a password — it SETS one, here:',
+    'https://agenticcore.click/claim',
+    `Works once, lasts ${CODE_TTL_DAYS} days. You can order from this chat without it.`
   ].join('\n');
 }
 

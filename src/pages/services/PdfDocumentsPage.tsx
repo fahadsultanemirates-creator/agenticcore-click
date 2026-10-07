@@ -2,6 +2,8 @@ import { useState, type FormEvent } from "react";
 import { DashboardShell } from "../../components/dashboard/DashboardShell";
 import { ChipToggle, ErrorNote, Field, inputClass, SectionCard, ServicePageHeader, SubmitBar, SubmittedNote, UploadDropzone } from "../../components/dashboard/form";
 import { submitTask } from "../../lib/submitTask";
+import { useProjectContext } from "../../lib/useProjectContext";
+import { ProjectBanner } from "../../components/dashboard/ProjectBanner";
 import { useReferenceFiles } from "../../lib/useReferenceFiles";
 
 const DOC_TYPES = [
@@ -21,7 +23,8 @@ export function PdfDocumentsPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [publicId, setPublicId] = useState("");
-  const references = useReferenceFiles();
+  const project = useProjectContext();
+  const references = useReferenceFiles(project.files);
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -39,7 +42,7 @@ export function PdfDocumentsPage() {
       description: description.trim(),
       websiteUrl: formData.get("websiteUrl") ?? "",
       referenceFiles: references.urls,
-    });
+    }, { projectId: project.projectId });
     setSubmitting(false);
 
     if (!result.ok) {
@@ -53,6 +56,7 @@ export function PdfDocumentsPage() {
   return (
     <DashboardShell title="PDF & Documents">
       <div className="mx-auto max-w-3xl py-8 sm:py-10">
+        <ProjectBanner projectId={project.projectId} name={project.name} />
         <ServicePageHeader
           serviceId="pdf"
           title="What should we design?"

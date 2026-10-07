@@ -3,6 +3,8 @@ import { useState, type FormEvent } from "react";
 import { DashboardShell } from "../../components/dashboard/DashboardShell";
 import { ErrorNote, inputClass, SectionCard, ServicePageHeader, SubmitBar, SubmittedNote, BrandUrlField, UploadDropzone } from "../../components/dashboard/form";
 import { submitTask } from "../../lib/submitTask";
+import { useProjectContext } from "../../lib/useProjectContext";
+import { ProjectBanner } from "../../components/dashboard/ProjectBanner";
 import { useReferenceFiles } from "../../lib/useReferenceFiles";
 
 // One length, two styles.
@@ -36,7 +38,8 @@ export function VideoPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [publicId, setPublicId] = useState("");
-  const references = useReferenceFiles();
+  const project = useProjectContext();
+  const references = useReferenceFiles(project.files);
 
   const price = `$${PRICE_USD}`;
 
@@ -61,7 +64,7 @@ export function VideoPage() {
       description: description.trim(),
       websiteUrl: websiteUrl.trim() || undefined,
       referenceFiles: references.urls,
-    });
+    }, { projectId: project.projectId });
     setSubmitting(false);
 
     if (!result.ok) {
@@ -75,6 +78,7 @@ export function VideoPage() {
   return (
     <DashboardShell title="Video">
       <div className="mx-auto max-w-3xl py-8 sm:py-10">
+        <ProjectBanner projectId={project.projectId} name={project.name} />
         <ServicePageHeader
           serviceId="video"
           eta="~10 min"

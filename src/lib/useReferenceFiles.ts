@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { supabase } from "./supabase";
 import { functionErrorMessage } from "./functionError";
 
@@ -36,8 +36,32 @@ async function uploadOne(file: File): Promise<string> {
   return data.url;
 }
 
-export function useReferenceFiles() {
+/**
+ * `seed` pre-attaches files the client already owns -- the finished work in
+ * the project they came from. They arrive as ordinary attachments, so "a
+ * flyer using this logo" needs no download-and-re-upload round trip.
+ *
+ * Seeded in an effect rather than as useState's initial value: the project
+ * loads a moment after the form renders, and an initial value is read once
+ * and then ignored forever.
+ */
+export function useReferenceFiles(seed: UploadedFile[] = []) {
   const [files, setFiles] = useState<UploadedFile[]>([]);
+
+  const seedKey = seed.map((file) => file.url).join("|");
+  useEffect(() => {
+    if (!seedKey) return;
+    setFiles((current) => {
+      const have = new Set(current.map((file) => file.url));
+      const added = seedKey.split("|").filter((url) => !have.has(url));
+      if (added.length === 0) return current;
+      const byUrl = new Map(seed.map((file) => [file.url, file]));
+      return [...current, ...added.map((url) => byUrl.get(url)!)];
+    });
+    // seedKey, not seed: the caller rebuilds the array on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seedKey]);
+
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
 

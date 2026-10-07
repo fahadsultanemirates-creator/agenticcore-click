@@ -3,6 +3,8 @@ import { useState, type FormEvent } from "react";
 import { DashboardShell } from "../components/dashboard/DashboardShell";
 import { ChipToggle, ErrorNote, Field, inputClass, SectionCard, ServicePageHeader, SubmitBar, SubmittedNote } from "../components/dashboard/form";
 import { submitTask } from "../lib/submitTask";
+import { useProjectContext } from "../lib/useProjectContext";
+import { ProjectBanner } from "../components/dashboard/ProjectBanner";
 
 const PAGE_SECTIONS = [
   "About",
@@ -31,6 +33,7 @@ const TIERS = [
 ] as const;
 
 export function WebsiteIntake() {
+  const project = useProjectContext();
   const [businessName, setBusinessName] = useState("");
   const [logoChoice, setLogoChoice] = useState<"upload" | "generate">("generate");
   const [sections, setSections] = useState<string[]>(["About", "Services", "Contact form"]);
@@ -89,7 +92,7 @@ export function WebsiteIntake() {
     };
 
     setSubmitting(true);
-    const result = await submitTask("website", payload);
+    const result = await submitTask("website", payload, { projectId: project.projectId });
     setSubmitting(false);
 
     if (!result.ok) {
@@ -103,6 +106,7 @@ export function WebsiteIntake() {
   return (
     <DashboardShell title="Website">
       <div className="mx-auto max-w-3xl py-8 sm:py-10">
+        <ProjectBanner projectId={project.projectId} name={project.name} />
         <ServicePageHeader
           serviceId="website"
           title="Let's build your website"

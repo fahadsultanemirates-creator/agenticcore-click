@@ -64,6 +64,10 @@ export async function handleRequest(req: Request): Promise<Response> {
   const type = body?.type;
   const payload = body?.payload;
   const subtype = typeof body?.subtype === 'string' ? body.subtype : null;
+  // Which project this order joins, if the client came from one.
+  // Taken on trust only as far as the shape: placeOrder checks it
+  // belongs to this caller before filing anything under it.
+  const projectId = typeof body?.projectId === 'string' && body.projectId !== '' ? body.projectId : null;
 
   if (typeof type !== 'string' || !TASK_TYPES.has(type)) {
     return jsonResponse({ error: 'Invalid or missing type' }, 400);
@@ -76,7 +80,7 @@ export async function handleRequest(req: Request): Promise<Response> {
   // Telegram bot (_shared/placeOrder.ts). This used to be written out
   // here in full, and the copies drifted: the paused-account check landed
   // in two of the three only because all three were edited in one sitting.
-  const result = await placeOrder({ userId: caller.id, type, payload, subtype, source: 'website' });
+  const result = await placeOrder({ userId: caller.id, type, payload, subtype, source: 'website', projectId });
 
   if (!result.ok) {
     // The status matters to the dashboard: 402 puts up the top-up prompt,

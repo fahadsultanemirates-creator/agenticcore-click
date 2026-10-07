@@ -2,6 +2,8 @@ import { useState, type FormEvent } from "react";
 import { DashboardShell } from "../../components/dashboard/DashboardShell";
 import { ChipToggle, ErrorNote, inputClass, SectionCard, ServicePageHeader, SubmitBar, SubmittedNote, BrandUrlField } from "../../components/dashboard/form";
 import { submitTask } from "../../lib/submitTask";
+import { useProjectContext } from "../../lib/useProjectContext";
+import { ProjectBanner } from "../../components/dashboard/ProjectBanner";
 
 const REQUEST_TYPES = [
   { id: "posts", label: "Post pack (3 designs)", blurb: "3 ready-to-publish post designs for your platforms." },
@@ -13,6 +15,7 @@ const REQUEST_TYPES = [
 const PLATFORMS = ["Instagram", "Facebook", "LinkedIn", "X", "TikTok", "YouTube"];
 
 export function SocialMediaPage() {
+  const project = useProjectContext();
   const [requestType, setRequestType] = useState("posts");
   const [platforms, setPlatforms] = useState<string[]>(["Instagram", "Facebook"]);
   const [description, setDescription] = useState("");
@@ -36,7 +39,7 @@ export function SocialMediaPage() {
     setDescError(false);
     setSubmitError("");
     setSubmitting(true);
-    const result = await submitTask("social", { requestType, platforms, description: description.trim(), websiteUrl: websiteUrl.trim() || undefined });
+    const result = await submitTask("social", { requestType, platforms, description: description.trim(), websiteUrl: websiteUrl.trim() || undefined }, { projectId: project.projectId });
     setSubmitting(false);
 
     if (!result.ok) {
@@ -50,6 +53,7 @@ export function SocialMediaPage() {
   return (
     <DashboardShell title="Social Media">
       <div className="mx-auto max-w-3xl py-8 sm:py-10">
+        <ProjectBanner projectId={project.projectId} name={project.name} />
         <ServicePageHeader
           serviceId="social"
           title="What do you need for social?"

@@ -2,6 +2,8 @@ import { useState, type FormEvent } from "react";
 import { DashboardShell } from "../../components/dashboard/DashboardShell";
 import { ChipToggle, ErrorNote, inputClass, SectionCard, ServicePageHeader, SubmitBar, SubmittedNote, BrandUrlField, UploadDropzone } from "../../components/dashboard/form";
 import { submitTask } from "../../lib/submitTask";
+import { useProjectContext } from "../../lib/useProjectContext";
+import { ProjectBanner } from "../../components/dashboard/ProjectBanner";
 import { useReferenceFiles } from "../../lib/useReferenceFiles";
 
 const IMAGE_TYPES = ["Avatar", "Business visual", "Product shot", "Illustration", "Other"];
@@ -15,7 +17,8 @@ export function ImagePage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [publicId, setPublicId] = useState("");
-  const references = useReferenceFiles();
+  const project = useProjectContext();
+  const references = useReferenceFiles(project.files);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -26,7 +29,7 @@ export function ImagePage() {
     setDescError(false);
     setSubmitError("");
     setSubmitting(true);
-    const result = await submitTask("image", { imageType, description: description.trim(), websiteUrl: websiteUrl.trim() || undefined, referenceFiles: references.urls });
+    const result = await submitTask("image", { imageType, description: description.trim(), websiteUrl: websiteUrl.trim() || undefined, referenceFiles: references.urls }, { projectId: project.projectId });
     setSubmitting(false);
 
     if (!result.ok) {
@@ -40,6 +43,7 @@ export function ImagePage() {
   return (
     <DashboardShell title="Image">
       <div className="mx-auto max-w-3xl py-8 sm:py-10">
+        <ProjectBanner projectId={project.projectId} name={project.name} />
         <ServicePageHeader
           serviceId="image"
           title="What image do you need?"

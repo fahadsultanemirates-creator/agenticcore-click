@@ -13,6 +13,8 @@ import { Signup } from "./pages/Signup";
 // have an account. The three routes a logged-out visitor actually touches
 // stay eager; the rest arrive when they're needed.
 const Dashboard = lazy(() => import("./pages/Dashboard").then((m) => ({ default: m.Dashboard })));
+const Projects = lazy(() => import("./pages/Projects").then((m) => ({ default: m.Projects })));
+const ProjectDetail = lazy(() => import("./pages/ProjectDetail").then((m) => ({ default: m.ProjectDetail })));
 const Forge = lazy(() => import("./pages/Forge").then((m) => ({ default: m.Forge })));
 const WebsiteIntake = lazy(() => import("./pages/WebsiteIntake").then((m) => ({ default: m.WebsiteIntake })));
 const BrandKitPage = lazy(() => import("./pages/services/BrandKitPage").then((m) => ({ default: m.BrandKitPage })));
@@ -56,6 +58,9 @@ export default function App() {
         <Route path="/privacy" element={<Privacy />} />
         <Route path="/refunds" element={<Refunds />} />
         <Route path="/dashboard" element={<Protected><Dashboard /></Protected>} />
+        {/* Finished work lives here, not at the bottom of the dashboard. */}
+        <Route path="/projects" element={<Protected><Projects /></Protected>} />
+        <Route path="/projects/:id" element={<Protected><ProjectDetail /></Protected>} />
         <Route path="/dashboard/website" element={<Protected><WebsiteIntake /></Protected>} />
         <Route path="/dashboard/pdf" element={<Protected><PdfDocumentsPage /></Protected>} />
         <Route path="/dashboard/image" element={<Protected><ImagePage /></Protected>} />

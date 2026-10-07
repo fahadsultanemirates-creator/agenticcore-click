@@ -19,6 +19,7 @@ import { getSku } from './catalog.ts';
 import { applyDiscount, type DiscountContext, type PricedOrder } from './discount.ts';
 import { queueEmailForUser } from './email.ts';
 import { allocateClientOrder } from './orders.ts';
+import { resolveProjectId } from './projects.ts';
 import { calculatePriceUsd, REAL_TASK_TYPES } from './pricing.ts';
 import { supabaseAdmin } from './storage.ts';
 import { triggerDispatch } from './task.ts';
@@ -53,6 +54,8 @@ export interface PlaceOrderInput {
   payload: Record<string, unknown>;
   subtype?: string | null;
   source: OrderSource;
+  /** Join this existing project. Verified against userId before it is used. */
+  projectId?: string | null;
 }
 
 export const PAUSED_MESSAGE =
@@ -178,10 +181,21 @@ export async function placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResu
     };
   }
 
+  // After the charge, so it can never be the reason an order is refused:
+  // resolveProjectId returns null rather than throwing, and a task with no
+  // project is still a task the client paid for and will receive.
+  const projectId = await resolveProjectId({
+    userId,
+    requestedId: input.projectId ?? null,
+    productName: getSku(identity.sku)?.name ?? type,
+    payload
+  });
+
   const { data: task, error: insertError } = await supabaseAdmin
     .from('tasks')
     .insert({
       public_id: identity.publicId,
+      project_id: projectId,
       source,
       type,
       subtype,

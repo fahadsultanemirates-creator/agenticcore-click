@@ -1,4 +1,4 @@
-import { ArrowRight, MousePointerClick, Sparkles } from "lucide-react";
+import { ArrowRight, Layers, MousePointerClick, Sparkles } from "lucide-react";
 import { TelegramIcon } from "../icons/TelegramIcon";
 import { Link } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
@@ -72,6 +72,23 @@ export function Hero() {
             >
               See all 7 services
             </a>
+            {/* Forge and the projects page were both reachable only from
+                inside the dashboard, which is behind a login. Both are
+                reasons to sign up, so both say so here. */}
+            <Link
+              to={user ? "/dashboard/forge" : "/signup"}
+              className="inline-flex items-center gap-2 rounded-full border-2 border-border px-7 py-3.5 text-base font-semibold text-fg transition-colors hover:border-yellow-400/60"
+            >
+              <Sparkles className="h-4 w-4 text-yellow-400" />
+              Talk to Forge
+            </Link>
+            <Link
+              to={user ? "/projects" : "/signup"}
+              className="inline-flex items-center gap-2 rounded-full border-2 border-border px-7 py-3.5 text-base font-semibold text-fg transition-colors hover:border-yellow-400/60"
+            >
+              <Layers className="h-4 w-4 text-yellow-400" />
+              {user ? "Your projects" : "How projects work"}
+            </Link>
           </div>
 
           <p className="mt-4 text-xs text-fg-faint">

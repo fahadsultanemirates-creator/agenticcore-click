@@ -2,6 +2,8 @@ import { useState, type FormEvent } from "react";
 import { DashboardShell } from "../../components/dashboard/DashboardShell";
 import { ChipToggle, ErrorNote, inputClass, SectionCard, ServicePageHeader, SubmitBar, SubmittedNote, BrandUrlField } from "../../components/dashboard/form";
 import { submitTask } from "../../lib/submitTask";
+import { useProjectContext } from "../../lib/useProjectContext";
+import { ProjectBanner } from "../../components/dashboard/ProjectBanner";
 
 const KIT_ITEMS = [
   "Business name + tagline generator",
@@ -15,6 +17,7 @@ const KIT_ITEMS = [
 ];
 
 export function BrandKitPage() {
+  const project = useProjectContext();
   const [item, setItem] = useState(KIT_ITEMS[0]);
   const [description, setDescription] = useState("");
   const [websiteUrl, setWebsiteUrl] = useState("");
@@ -33,7 +36,7 @@ export function BrandKitPage() {
     setDescError(false);
     setSubmitError("");
     setSubmitting(true);
-    const result = await submitTask("brand-kit", { item, description: description.trim(), websiteUrl: websiteUrl.trim() || undefined });
+    const result = await submitTask("brand-kit", { item, description: description.trim(), websiteUrl: websiteUrl.trim() || undefined }, { projectId: project.projectId });
     setSubmitting(false);
 
     if (!result.ok) {
@@ -47,6 +50,7 @@ export function BrandKitPage() {
   return (
     <DashboardShell title="Brand & Marketing Kit">
       <div className="mx-auto max-w-3xl py-8 sm:py-10">
+        <ProjectBanner projectId={project.projectId} name={project.name} />
         <ServicePageHeader
           serviceId="brand-kit"
           title="What are we building for your brand?"

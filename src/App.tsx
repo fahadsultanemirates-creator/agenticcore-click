@@ -1,5 +1,6 @@
 import { lazy, Suspense, type ReactNode } from "react";
 import { Route, Routes } from "react-router-dom";
+import { useTrackVisit } from "./lib/useTrackVisit";
 import { RequireAuth } from "./components/auth/RequireAuth";
 import { Landing } from "./pages/Landing";
 import { Login } from "./pages/Login";
@@ -44,6 +45,11 @@ function Protected({ children }: { children: ReactNode }) {
 }
 
 export default function App() {
+  // One count per page view, fired from inside the router so it sees
+  // client-side navigation too -- on a single-page app the server only
+  // ever hears about the first page somebody lands on.
+  useTrackVisit();
+
   return (
     <Suspense fallback={LOADING}>
       <Routes>

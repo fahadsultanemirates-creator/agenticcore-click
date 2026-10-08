@@ -82,3 +82,10 @@ verify_jwt = false
 #
 # They are unauthenticated endpoints nobody is maintaining; worth deleting
 # from the project once they are confirmed unused.
+
+# The visit beacon. Public by necessity: most visitors have no account,
+# and the ones worth counting are the people deciding whether to open
+# one. It takes a path and a referrer and nothing else -- who the visitor
+# is comes from the request's own headers, server-side.
+[functions.track-visit]
+verify_jwt = false

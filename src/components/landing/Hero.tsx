@@ -1,8 +1,8 @@
 import { ArrowRight, Layers, MousePointerClick, Sparkles } from "lucide-react";
+import dashboardPreview from "../../assets/dashboard-preview.webp";
 import { TelegramIcon } from "../icons/TelegramIcon";
 import { Link } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
-import { services } from "../../data/services";
 
 export function Hero() {
   const { user } = useAuth();
@@ -96,7 +96,7 @@ export function Hero() {
           </p>
         </div>
 
-        <BrowserPreview />
+        <DashboardPreview />
         <TelegramCallout />
       </div>
     </section>
@@ -137,55 +137,31 @@ function TelegramCallout() {
   );
 }
 
-function BrowserPreview() {
+/**
+ * The dashboard, as a picture.
+ *
+ * This was a hand-built mock of the real dashboard in markup: a fake
+ * browser chrome, four service cards read from the live catalogue, a
+ * sample brief. It looked like the product because it WAS the product's
+ * components, which is also why it had to be maintained like the product
+ * -- the service list changed under it, the wallet figure was invented,
+ * and the "preview" slowly stopped matching what anybody actually sees.
+ *
+ * An illustration makes no claim to be a screenshot, so it cannot go
+ * stale. It is also 78KB of webp against a few hundred lines of markup
+ * that re-rendered on every catalogue change.
+ */
+function DashboardPreview() {
   return (
-    <div
-      className="animate-fade-up mx-auto mt-16 max-w-3xl rounded-2xl border border-border bg-surface p-2 shadow-glow transition-transform duration-300 md:mt-20"
-      style={{ animationDelay: "150ms" }}
-    >
-      <div className="flex items-center gap-1.5 px-2 pb-2">
-        <span className="h-2.5 w-2.5 rounded-full bg-yellow-400/70" />
-        <span className="h-2.5 w-2.5 rounded-full bg-fg-faint/40" />
-        <span className="h-2.5 w-2.5 rounded-full bg-fg-faint/40" />
-        <span className="ml-3 flex-1 truncate rounded-full bg-void px-3 py-1 text-center text-xs text-fg-faint">
-          agenticcore.click/dashboard
-        </span>
-      </div>
-      {/* Mirrors the real dashboard: a grid of services, not a side rail. */}
-      <div className="overflow-hidden rounded-xl border border-border bg-void p-4 sm:p-6">
-        <div className="flex items-center justify-between gap-3">
-          <p className="font-display text-base font-medium text-fg sm:text-lg">
-            Welcome back — what are we building?
-          </p>
-          <span className="hidden rounded-full border border-border px-2.5 py-1 text-[11px] font-semibold text-fg-muted sm:inline">
-            Wallet $30.00
-          </span>
-        </div>
-
-        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-          {services.slice(0, 4).map((service, i) => (
-            <div
-              key={service.id}
-              className={`flex flex-col gap-2 rounded-lg border p-2.5 ${
-                i === 0 ? "border-yellow-400/60 bg-yellow-400/10" : "border-border bg-surface"
-              }`}
-            >
-              <div className="flex items-center justify-between gap-1.5">
-                <service.icon className="h-4 w-4 text-yellow-400" strokeWidth={2.25} />
-                <span className="text-[10px] font-semibold text-yellow-400">{service.price}</span>
-              </div>
-              <span className="truncate text-[11px] font-semibold text-fg">{service.label}</span>
-            </div>
-          ))}
-        </div>
-
-        <div className="mt-3 flex items-center gap-2 rounded-lg border border-dashed border-yellow-400/30 bg-surface px-3 py-2.5">
-          <Sparkles className="h-3.5 w-3.5 shrink-0 text-yellow-400" />
-          <span className="truncate text-xs text-fg-faint">
-            A one-page site for my dog-walking business, warm and friendly...
-          </span>
-        </div>
-      </div>
+    <div className="animate-fade-up mx-auto mt-16 max-w-3xl md:mt-20" style={{ animationDelay: "150ms" }}>
+      <img
+        src={dashboardPreview}
+        alt=""
+        aria-hidden
+        width={1100}
+        height={867}
+        className="h-auto w-full"
+      />
     </div>
   );
 }

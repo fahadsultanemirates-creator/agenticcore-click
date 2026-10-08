@@ -46,6 +46,8 @@ import { applyRevision, findTaskReference, allocateOwnerTask } from '../_shared/
 import { markDelivered, sendOneFileToClient } from '../_shared/task.ts';
 import { manualModeOn, setManualMode } from '../_shared/manualMode.ts';
 import { resolveOwnerTaskReference, getPlatformSnapshot, getTaskStatus } from '../_shared/accounts.ts';
+import { readVisitorStats } from '../_shared/visitorStats.ts';
+import { visitorStatsText } from '../_shared/visitors.ts';
 import { describeCandidates } from '../_shared/orderMatch.ts';
 import { claimUpdate } from '../_shared/tgAccounts.ts';
 import { routeClientCallback, routeClientMessage } from '../_shared/tgClient.ts';
@@ -91,6 +93,7 @@ function helpText(): string {
     'Commands:',
     '/queue — list queued/in-progress tasks',
     '/stats — accounts, balances and volume, today and all-time',
+    '/visitors — who came to the site, and what they turned into',
     '/status <task id> — how a task is doing, and why it is stuck if it is',
     '/products — list every product and its number',
     '/new <product number> <brief> — create an owner task (e.g. /new 72 letterhead for agenticcore.agency)',
@@ -668,6 +671,9 @@ async function routeMessage(
   if (QUEUE_PATTERN.test(text)) return handleQueueCommand();
   if (/^\/products(?:@\S+)?$/i.test(text)) return handleProductsCommand();
   if (/^\/stats(?:@\S+)?$/i.test(text)) return handleStatsCommand();
+  // /stats was already the money one. Who came to the site is a
+  // different question with a different answer, so it gets its own word.
+  if (/^\/visitors(?:@\S+)?$/i.test(text)) return visitorStatsText(await readVisitorStats());
 
   const statusMatch = text.match(/^\/status(?:@\S+)?\s+(AC-\d{4}-\d{2,}|AC-CLICK-\d{4})\s*$/i);
   if (statusMatch) return handleStatusCommand(statusMatch[1].toUpperCase());

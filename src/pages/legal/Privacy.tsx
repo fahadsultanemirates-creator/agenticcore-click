@@ -14,10 +14,12 @@ export function Privacy() {
             "Deliverables — the work produced for you, stored so your dashboard can serve it.",
             "Payment records — the amount, time and status of wallet top-ups, and the public blockchain transaction that paid each one. Top-ups are made in USDT on BNB Smart Chain, which means we never see a card number or hold any payment credential.",
             "Basic technical data — the requests your browser makes, kept in server logs for security and debugging.",
+            "Visit counts — which page was opened and which site you came from, so we know whether anyone is finding us. No cookie is set and your IP address is never stored: visits are grouped by a one-way code built from a secret that changes every day, which means we can count how many people came today and cannot tell whether any of them came back tomorrow.",
           ]}
         />
         <p>
-          We don't run advertising trackers, and we don't sell or rent personal data to anyone.
+          We don't run advertising trackers, we don't set cookies for analytics, and we don't sell
+          or rent personal data to anyone.
         </p>
       </Section>
 

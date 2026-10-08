@@ -228,7 +228,9 @@ export async function handleRequest(req: Request): Promise<Response> {
 
     let transfers;
     try {
-      transfers = await recentTransfers();
+      // This invoice's own window, which is the narrowest correct scan
+      // there is -- the matcher already ignores anything mined before it.
+      transfers = await recentTransfers(invoice.from_block == null ? null : BigInt(invoice.from_block));
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);
       console.error('usdt-check: could not list transfers', detail);
@@ -257,14 +259,25 @@ export async function handleRequest(req: Request): Promise<Response> {
 
   if (!pending || pending.length === 0) return jsonResponse({ ok: true, checked: 0, paid: 0 });
 
-  // One call to the explorer for the whole sweep.
+  // One read for the whole sweep, narrowed to the window the open
+  // invoices actually need.
+  //
+  // Nothing mined before the oldest pending invoice can settle anything --
+  // every invoice is bounded by its own from_block -- so scanning earlier
+  // is work that cannot pay. On .agency that wasted budget was the whole
+  // bug: the scan never reached the blocks holding a real payment.
   //
   // Wrapped, because an unhandled throw here is a bare 500 with the reason
   // only in a log this project does not expose -- which is exactly how the
   // contract read cost two round trips to diagnose.
+  const oldestPendingBlock = (pending as InvoiceRow[])
+    .map((i) => (i.from_block == null ? null : BigInt(i.from_block)))
+    .filter((b): b is bigint => b !== null)
+    .reduce<bigint | null>((lowest, b) => (lowest === null || b < lowest ? b : lowest), null);
+
   let transfers;
   try {
-    transfers = await recentTransfers();
+    transfers = await recentTransfers(oldestPendingBlock);
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
     console.error('usdt-check: could not list transfers', detail);

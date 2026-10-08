@@ -9,7 +9,7 @@
 // subtle enough that a second copy of them in the bot would be a second
 // place for a payment to go unattributed.
 import { allocateNonce, invoiceAmount, MAX_NONCE } from './usdtAmount.ts';
-import { currentBlock, RECEIVING_ADDRESS, USDT_CONTRACT, verifyContract } from './usdtChain.ts';
+import { currentBlock, INVOICE_MINUTES, RECEIVING_ADDRESS, USDT_CONTRACT, verifyContract } from './usdtChain.ts';
 import { supabaseAdmin } from './storage.ts';
 import { WALLET_PACKAGES } from './orderOffer.ts';
 
@@ -31,12 +31,12 @@ export function tierForAmount(amountUsd: number): string | null {
 /**
  * How long an invoice stays payable.
  *
- * Long enough to open a wallet, find the address and send; short enough
- * that an abandoned invoice gives its amount back rather than holding a
- * nonce forever. An expired invoice is not a lost payment -- money that
- * arrives late still appears in the sweep and is reported.
+ * Defined in usdtChain because the scan window is derived from it, and a
+ * second copy here is exactly how the window ended up sized for an
+ * invoice length that had changed. Re-exported so callers that already
+ * import it from this module keep working.
  */
-export const INVOICE_MINUTES = 60;
+export { INVOICE_MINUTES };
 
 export interface OpenInvoice {
   invoiceId: string;

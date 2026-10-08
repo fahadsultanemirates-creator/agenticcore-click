@@ -4,7 +4,17 @@
 // is, because both decide whether somebody's money is credited.
 
 import assert from 'node:assert/strict';
-import { decodeStringResult, toLogTransfer } from './usdtChain.ts';
+import {
+  chunkRanges,
+  decodeStringResult,
+  looksLikeHttpUrl,
+  lookbackBlocks,
+  safeHost,
+  scanStart,
+  toLogTransfer,
+  INVOICE_MINUTES,
+  MAX_RANGE_BLOCKS
+} from './usdtChain.ts';
 
 let passed = 0;
 let failed = 0;
@@ -118,6 +128,106 @@ test('the recipient is read off the end of the topic', () => {
   const t = toLogTransfer(log(), 200n);
   assert.equal(t?.to.length, 42);
   assert.equal(t?.to.toLowerCase(), US.toLowerCase());
+});
+
+
+// ---- the scan window --------------------------------------------------
+//
+// This is the bug .agency hit with real money in it, and .click had the
+// same shape. The window was a hard-coded 1500 blocks, commented as
+// "~75 minutes at BNB's three-second blocks" and "comfortably past the
+// sixty-minute invoice window". Both halves went stale: BNB mines at
+// about 0.75 seconds since Lorentz, so 1500 blocks is under twenty
+// minutes, and an invoice payable for an hour was being matched against a
+// twenty-minute window. A payment that landed later was never looked at.
+//
+// The number is derived now. These tests are what stop it rotting again.
+
+test('the window covers the whole invoice, even at double the block speed', () => {
+  // The guarantee, stated as arithmetic rather than as a comment: however
+  // fast the chain is mined, the lookback must still span an invoice's
+  // entire payable life.
+  const fastestPlausibleSeconds = 0.5;
+  const blocksInAnInvoiceWindow = (INVOICE_MINUTES * 60) / fastestPlausibleSeconds;
+  assert.ok(
+    lookbackBlocks() >= blocksInAnInvoiceWindow,
+    `${lookbackBlocks()} blocks does not cover ${blocksInAnInvoiceWindow}`
+  );
+});
+
+test('the old 1500 would now fail that guarantee', () => {
+  // The regression, pinned. If someone reinstates a fixed window this is
+  // the test that argues with them.
+  assert.ok(1500 < (INVOICE_MINUTES * 60) / 0.75, '1500 blocks is under an hour at 0.75s');
+  assert.ok(lookbackBlocks() > 1500);
+});
+
+test('the oldest open invoice narrows the scan', () => {
+  // A fresh invoice means a scan of minutes, not of the whole window --
+  // which is most of why this stays inside what a free node will serve.
+  const head = 60_000_000n;
+  assert.equal(scanStart({ oldestPendingBlock: head - 80n, head }), head - 80n);
+  assert.equal(chunkRanges(scanStart({ oldestPendingBlock: head - 80n, head }), head).length, 1);
+});
+
+test('an invoice older than the window does not cause an unbounded scan', () => {
+  // It has expired anyway, and honouring it would mean scanning forever.
+  const head = 60_000_000n;
+  assert.equal(scanStart({ oldestPendingBlock: 1n, head }), head - BigInt(lookbackBlocks()));
+});
+
+test('with nothing pending it falls back to the full window', () => {
+  const head = 60_000_000n;
+  assert.equal(scanStart({ oldestPendingBlock: null, head }), head - BigInt(lookbackBlocks()));
+});
+
+// There is no cursor here -- every sweep re-reads the window -- so a scan
+// that stops before the head would never see a new payment. The ceiling
+// clamps where the scan STARTS, never how far it goes.
+test('every scan reaches the chain head', () => {
+  const head = 60_000_000n;
+  for (const oldest of [null, 1n, head - 10_000n, head - 80n, head]) {
+    const ranges = chunkRanges(scanStart({ oldestPendingBlock: oldest, head }), head);
+    assert.ok(ranges.length > 0, 'a scan with no ranges reads nothing');
+    assert.equal(ranges[ranges.length - 1].to, head, `last range stopped at ${ranges[ranges.length - 1].to}`);
+  }
+});
+
+test('chunks abut exactly -- no block scanned twice, none skipped', () => {
+  const ranges = chunkRanges(0n, 2500n, 1000);
+  assert.deepEqual(ranges, [
+    { from: 0n, to: 999n },
+    { from: 1000n, to: 1999n },
+    { from: 2000n, to: 2500n }
+  ]);
+  for (let i = 1; i < ranges.length; i++) assert.equal(ranges[i].from, ranges[i - 1].to + 1n);
+});
+
+test('no chunk is wider than a node will serve', () => {
+  for (const r of chunkRanges(0n, 10_000n)) {
+    assert.ok(r.to - r.from + 1n <= BigInt(MAX_RANGE_BLOCKS));
+  }
+});
+
+// ---- never publish the RPC key ----------------------------------------
+
+test('a keyed endpoint is reduced to its origin', () => {
+  assert.equal(safeHost('https://bsc-mainnet.nodereal.io/v1/abc123def'), 'https://bsc-mainnet.nodereal.io');
+  assert.equal(safeHost('https://example.org/rpc?apikey=sekret'), 'https://example.org');
+  assert.equal(safeHost('https://user:pass@example.org/rpc'), 'https://example.org');
+});
+
+test('a bare API key is never echoed back, and is not a usable host', () => {
+  assert.equal(safeHost('abc123def456'), '<malformed BSC_RPC_URL>');
+  assert.equal(looksLikeHttpUrl('abc123def456'), false);
+  assert.equal(looksLikeHttpUrl('bsc-mainnet.nodereal.io/v1/abc'), false, 'no scheme is not a URL');
+  assert.equal(looksLikeHttpUrl('https://bsc-mainnet.nodereal.io/v1/abc'), true);
+});
+
+test('a plain public host stays readable', () => {
+  // Redaction must not cost the diagnostics that made the node failures
+  // legible in the first place.
+  assert.equal(safeHost('https://bsc.drpc.org'), 'https://bsc.drpc.org');
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

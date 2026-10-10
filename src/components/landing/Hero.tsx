@@ -2,6 +2,7 @@ import { ArrowRight, Layers, MousePointerClick, Sparkles } from "lucide-react";
 import dashboardPreview from "../../assets/dashboard-preview.webp";
 import { TelegramIcon } from "../icons/TelegramIcon";
 import { Link } from "react-router-dom";
+import { CLAIM_SHORT, HEADLINE_PRICE, HEADLINE_TURNAROUND } from "../../data/claims";
 import { useAuth } from "../../context/AuthContext";
 
 export function Hero() {
@@ -32,9 +33,14 @@ export function Hero() {
 
           <h1 className="font-display text-5xl leading-[1.05] font-semibold tracking-tight text-fg sm:text-6xl md:text-7xl">
             Start a business in{" "}
-            <span className="text-yellow-400">20 minutes</span> for{" "}
-            <span className="text-yellow-400">$20</span>.
+            <span className="text-yellow-400">{HEADLINE_TURNAROUND}</span> for{" "}
+            <span className="text-yellow-400">{HEADLINE_PRICE}</span>.
           </h1>
+
+          {/* The qualifier belongs with the claim. StatsBand footnotes these
+              two numbers properly, but that asterisk is most of a page below
+              the headline -- and the headline is what gets screenshotted. */}
+          <p className="mt-3 text-sm text-fg-faint">{CLAIM_SHORT}</p>
 
           <p className="mx-auto mt-6 max-w-xl text-lg text-fg-muted md:text-xl">
             Website, documents, social media, video, brand kit — the whole

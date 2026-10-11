@@ -1,5 +1,6 @@
 import { Mail } from "lucide-react";
 import type { ComponentType, ReactNode } from "react";
+import { TELEGRAM_URL } from "../../data/contact";
 import { Link } from "react-router-dom";
 import { Logo } from "../Logo";
 import { TelegramIcon } from "../icons/TelegramIcon";
@@ -60,6 +61,7 @@ export function Footer() {
               <Link to="/terms" className="transition-colors hover:text-fg">Terms</Link>
               <Link to="/privacy" className="transition-colors hover:text-fg">Privacy</Link>
               <Link to="/refunds" className="transition-colors hover:text-fg">Refunds</Link>
+              <Link to="/contact" className="transition-colors hover:text-fg">Contact</Link>
             </nav>
           </div>
 
@@ -72,7 +74,7 @@ export function Footer() {
                 <IconLink href="mailto:hello@agenticcore.click" label="Email hello@agenticcore.click" filled>
                   <Mail className="h-4 w-4" />
                 </IconLink>
-                <IconLink href="https://t.me/AgenticCoreAgency" label="Support on Telegram" filled>
+                <IconLink href={TELEGRAM_URL} label="Support on Telegram" filled>
                   <TelegramIcon className="h-4 w-4" />
                 </IconLink>
               </div>

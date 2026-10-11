@@ -1,8 +1,8 @@
 import { Reveal } from "../Reveal";
-import { CLAIM_FOOTNOTE, HEADLINE_PRICE, HEADLINE_TURNAROUND } from "../../data/claims";
+import { CLAIM_FOOTNOTE, HEADLINE_PRICE, STAT_TURNAROUND } from "../../data/claims";
 
 const stats = [
-  { value: HEADLINE_TURNAROUND.replace("minutes", "min"), label: "average turnaround*" },
+  { value: STAT_TURNAROUND, label: "typical turnaround*" },
   { value: HEADLINE_PRICE, label: "starting price*" },
   { value: "7", label: "services (and counting)" },
   { value: "0", label: "meetings required" },

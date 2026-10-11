@@ -44,6 +44,11 @@ const pages = [
       "What we collect, why we hold it, who else sees it. No analytics cookies, and your IP is never stored.",
   },
   {
+    path: "contact",
+    title: "Contact",
+    description: "Telegram or email — no account needed to ask a question first.",
+  },
+  {
     path: "refunds",
     title: "Refunds",
     description: "When an order is refunded, how to ask, and how long it takes.",

@@ -18,15 +18,20 @@ export const TELEGRAM_URL = `https://t.me/${TELEGRAM_HANDLE}`;
 /**
  * WhatsApp support account.
  *
- * WhatsApp's own click-to-chat documentation only describes
- * https://wa.me/<phone number>; the username form is not in their docs,
- * and wa.me is unreachable from the build environment so it could not be
- * verified there either. If the username link turns out not to open a
- * chat, set WHATSAPP_PHONE to the number in international format, digits
- * only -- it takes precedence and nothing else needs changing.
+ * The number is what the link uses. WhatsApp's own click-to-chat
+ * documentation describes exactly one form, https://wa.me/<number> with
+ * the number in international format and no plus, spaces or leading
+ * zeroes -- so that is the form a stranger's phone is guaranteed to
+ * open. The username is kept because it is the same account and is what
+ * a person would search for inside WhatsApp, but it is deliberately not
+ * what the button points at: the username link form appears in no
+ * WhatsApp documentation, and wa.me is unreachable from the build
+ * environment, so it could not be verified either way.
+ *
+ * Clear WHATSAPP_PHONE to fall back to the username link.
  */
 export const WHATSAPP_USERNAME: string | null = "agenticcore.biz";
-export const WHATSAPP_PHONE: string | null = null;
+export const WHATSAPP_PHONE: string | null = "971585227837";
 
 /** The link to open a WhatsApp chat, or null if neither is configured. */
 export function whatsAppUrl(): string | null {
@@ -35,10 +40,20 @@ export function whatsAppUrl(): string | null {
   return null;
 }
 
-/** How the WhatsApp account is shown to a reader. */
+/**
+ * How the WhatsApp account is shown to a reader.
+ *
+ * Shows whatever the link actually opens, so the two cannot disagree --
+ * and a number is the more useful of the two on a contact page, because
+ * it can be saved as a contact rather than only tapped.
+ */
 export function whatsAppLabel(): string | null {
+  if (WHATSAPP_PHONE) {
+    const d = WHATSAPP_PHONE;
+    // +971 58 522 7837 -- grouped for reading, never for the link.
+    return d.length === 12 ? `+${d.slice(0, 3)} ${d.slice(3, 5)} ${d.slice(5, 8)} ${d.slice(8)}` : `+${d}`;
+  }
   if (WHATSAPP_USERNAME) return `@${WHATSAPP_USERNAME}`;
-  if (WHATSAPP_PHONE) return `+${WHATSAPP_PHONE}`;
   return null;
 }
 

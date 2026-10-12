@@ -78,19 +78,40 @@ test("the support accounts are the ones the owner gave", () => {
   assert.equal(TELEGRAM_HANDLE, "AgenticCorebiz");
   assert.equal(TELEGRAM_URL, "https://t.me/AgenticCorebiz");
   assert.equal(WHATSAPP_USERNAME, "agenticcore.biz");
-  assert.equal(whatsAppUrl(), "https://wa.me/agenticcore.biz");
-  assert.equal(whatsAppLabel(), "@agenticcore.biz");
+  assert.equal(WHATSAPP_PHONE, "971585227837");
   assert.match(SUPPORT_EMAIL, /^hello@agenticcore\.(agency|biz|click)$/);
 });
 
-test("a phone number, once set, wins over the username", () => {
-  // The username link form is not in WhatsApp's documentation. If it does
-  // not work, the fix must be one line -- so the fallback is exercised
-  // here rather than discovered under pressure.
-  assert.equal(WHATSAPP_PHONE, null, "a number is set; update this test and the expectation above");
+test("the link uses the number, in the only form WhatsApp documents", () => {
+  // wa.me/<number>, international format, no plus, no spaces, no leading
+  // zero. The username form appears in no WhatsApp documentation, so it
+  // is not what a stranger's phone is pointed at.
+  assert.equal(whatsAppUrl(), `https://wa.me/${WHATSAPP_PHONE}`);
+  assert.match(whatsAppUrl() as string, /^https:\/\/wa\.me\/[1-9]\d{7,14}$/);
+  assert.ok(!(whatsAppUrl() as string).includes("+"), "a plus sign breaks a wa.me link");
+  assert.ok(!/\s/.test(whatsAppUrl() as string), "whitespace breaks a wa.me link");
+});
+
+test("the number is a real UAE mobile, not a placeholder", () => {
+  const d = WHATSAPP_PHONE as string;
+  assert.equal(d.length, 12, `expected 971 + 9 digits, got ${d.length}`);
+  assert.ok(d.startsWith("971"), "country code should be 971");
+  assert.equal(d[3], "5", "UAE mobile numbers start 5x");
+  assert.ok(!/^(\d)\1+$/.test(d.slice(3)), "looks like a repeated-digit placeholder");
+});
+
+test("what is displayed is what the link opens", () => {
+  // A label saying one account while the button opens another is the
+  // kind of thing nobody notices until a customer messages the wrong
+  // place.
+  const label = whatsAppLabel() as string;
+  assert.equal(label.replace(/[^0-9]/g, ""), WHATSAPP_PHONE);
+});
+
+test("clearing the number falls back to the username, not to nothing", () => {
   const url = (phone: string | null, user: string | null) =>
     phone ? `https://wa.me/${phone}` : user ? `https://wa.me/${user}` : null;
-  assert.equal(url("971500000000", "agenticcore.biz"), "https://wa.me/971500000000");
+  assert.equal(url(WHATSAPP_PHONE, WHATSAPP_USERNAME), "https://wa.me/971585227837");
   assert.equal(url(null, "agenticcore.biz"), "https://wa.me/agenticcore.biz");
   assert.equal(url(null, null), null);
 });

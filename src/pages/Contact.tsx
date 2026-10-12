@@ -1,7 +1,7 @@
 import { ArrowRight, Mail, MessageCircle, Phone, Send } from "lucide-react";
 import { Link } from "react-router-dom";
 import { LegalLayout } from "./legal/LegalLayout";
-import { SUPPORT_EMAIL, TELEGRAM_HANDLE, TELEGRAM_URL, whatsAppUrl } from "../data/contact";
+import { SUPPORT_EMAIL, TELEGRAM_HANDLE, TELEGRAM_URL, whatsAppLabel, whatsAppUrl } from "../data/contact";
 
 /**
  * There was no contact page on this site at all.
@@ -43,7 +43,7 @@ export function Contact() {
           <Channel
             icon={<Phone className="h-5 w-5" aria-hidden />}
             title="WhatsApp"
-            detail="Message us"
+            detail={whatsAppLabel() as string}
             body="Same team as Telegram, if WhatsApp is easier for you."
             href={whatsapp}
             external

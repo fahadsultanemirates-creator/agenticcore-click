@@ -1,33 +1,45 @@
 /**
- * Where customers reach us, in one place.
+ * Support contacts, in one place.
  *
- * The footer's "Support on Telegram" link pointed at t.me/AgenticCoreAgency
- * -- the sister brand's handle, on the .click site. The same wrong-brand
- * link was in the .biz footer and has been fixed there too.
+ * These are SUPPORT channels only. They are deliberately NOT the ordering
+ * bot: .click's hero links to t.me/AgenticcoreClickManagerbot, which
+ * creates projects and places orders. That is a different job with a
+ * different destination, and routing it through here would send someone
+ * with a billing question into an order flow.
  *
- * The manager bot (t.me/AgenticcoreClickManagerbot) is deliberately NOT in
- * here: it is a bot that places orders for this site specifically, not the
- * support account, and the two should not be collapsed.
+ * All three sites use the same two accounts, so a customer who finds one
+ * brand and asks about another reaches the same people.
  */
-export const TELEGRAM_HANDLE = "agenticCoreHQ";
+
+/** Telegram support account. Changed from agenticCoreHQ, per the owner. */
+export const TELEGRAM_HANDLE = "AgenticCorebiz";
 export const TELEGRAM_URL = `https://t.me/${TELEGRAM_HANDLE}`;
 
-export const SUPPORT_EMAIL = "hello@agenticcore.click";
-
 /**
- * WhatsApp, once there is a number.
+ * WhatsApp support account.
  *
- * Deliberately null. The owner asked for a WhatsApp button that stays
- * hidden until they supply the number, and a placeholder number on a
- * contact page is worse than no button: somebody will dial it.
- *
- * Set this to the number in international format with no spaces or plus
- * sign -- wa.me wants "971501234567" -- and the button appears.
+ * WhatsApp's own click-to-chat documentation only describes
+ * https://wa.me/<phone number>; the username form is not in their docs,
+ * and wa.me is unreachable from the build environment so it could not be
+ * verified there either. If the username link turns out not to open a
+ * chat, set WHATSAPP_PHONE to the number in international format, digits
+ * only -- it takes precedence and nothing else needs changing.
  */
-export const WHATSAPP_NUMBER: string | null = null;
+export const WHATSAPP_USERNAME: string | null = "agenticcore.biz";
+export const WHATSAPP_PHONE: string | null = null;
 
-/** The wa.me link, or null while there is no number. */
+/** The link to open a WhatsApp chat, or null if neither is configured. */
 export function whatsAppUrl(): string | null {
-  if (!WHATSAPP_NUMBER) return null;
-  return `https://wa.me/${WHATSAPP_NUMBER}`;
+  if (WHATSAPP_PHONE) return `https://wa.me/${WHATSAPP_PHONE}`;
+  if (WHATSAPP_USERNAME) return `https://wa.me/${WHATSAPP_USERNAME}`;
+  return null;
 }
+
+/** How the WhatsApp account is shown to a reader. */
+export function whatsAppLabel(): string | null {
+  if (WHATSAPP_USERNAME) return `@${WHATSAPP_USERNAME}`;
+  if (WHATSAPP_PHONE) return `+${WHATSAPP_PHONE}`;
+  return null;
+}
+
+export const SUPPORT_EMAIL = "hello@agenticcore.click";

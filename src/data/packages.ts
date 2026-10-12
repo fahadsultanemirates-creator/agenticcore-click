@@ -36,20 +36,12 @@ export const walletPackages: WalletPackage[] = [
   },
 ];
 
-// The two discounts are not the same offer, and a card that lists them as
-// two bullets reads as though they stack. The routine discount is a
-// property of the tier -- it is on every order you place, forever, so it
-// belongs on the card. The first-order discount happens once, applies to
-// every service including the $20 Full Business Setup, and needs a
-// sentence rather than a bullet. It lives below the cards instead.
-//
-// Built from walletPackages so the numbers in the prose cannot drift from
-// the numbers on the cards.
-export function firstOrderDiscountLine(): string {
-  return walletPackages
-    .map((pkg) => `${pkg.firstTimeDiscount}% on ${pkg.price}`)
-    .join(", ");
-}
+// The two wallet discounts are separate offers and never stack: the
+// first-order one happens once, the routine one is standing. They used to
+// be joined into one sentence by firstOrderDiscountLine(), which read
+// "15% on $10, 30% on $30, ..." and left it genuinely unclear whether the
+// percentage followed the TOP-UP or the ORDER. It follows the top-up.
+// components/DiscountTable.tsx shows both columns instead.
 
 export const flagshipPackage = {
   id: "full-business-setup",

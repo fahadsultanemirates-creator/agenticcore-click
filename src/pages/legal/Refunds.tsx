@@ -7,9 +7,22 @@ export function Refunds() {
       intro="When you get your money back, when you get a revision instead, and how to ask."
     >
       <Section heading="Unused wallet balance">
+        {/* OWNER TO CONFIRM -- see the PR. This page described refunds
+            going back to "the method you paid with" and a Chargebacks
+            section about disputing with "your bank or card issuer". There
+            is no bank and no card: top-ups are USDT on BNB Smart Chain.
+            The wording below is what the payment method actually permits,
+            but the operational detail (which address we send to) is the
+            owner's call, not an assumption to ship. */}
         <p>
-          Money sitting in your wallet that you haven't spent is yours. Ask and we'll return it to
-          the method you paid with. No time limit and no reason needed.
+          Money sitting in your wallet that you haven't spent is yours. Ask and we'll send it back
+          as USDT on BNB Smart Chain (BEP-20), to a BEP-20 address you confirm with us. No time
+          limit and no reason needed.
+        </p>
+        <p className="text-sm text-fg-faint">
+          We'll ask you to confirm the destination address before sending. A blockchain transfer
+          cannot be undone once it leaves, so we would rather ask twice than send to the wrong
+          place. Network fees for the return transfer come out of the amount sent.
         </p>
       </Section>
 
@@ -64,16 +77,18 @@ export function Refunds() {
           dashboard. Tell us what's wrong. We aim to answer within two working days.
         </p>
         <p>
-          Refunds go back to your wallet by default, which is instant. Ask if you'd rather have it
-          returned to your original payment method; that takes longer and depends on the provider.
+          Refunds go back to your wallet balance by default, which is instant and has no network
+          fee. Ask if you'd rather have it sent out as USDT instead; that is an on-chain transfer
+          to a BEP-20 address you confirm with us, and the network fee comes out of the amount.
         </p>
       </Section>
 
-      <Section heading="Chargebacks">
+      <Section heading="If you think something has gone wrong">
         <p>
-          Please talk to us before raising a dispute with your bank or card issuer. A chargeback
-          costs us a fee and freezes the account while it's investigated, and almost everything
-          people dispute is something we'd have refunded on request.
+          Talk to us first, and talk to us early. A USDT payment on BNB Smart Chain is final once
+          it is confirmed — there is no bank, card issuer or payment provider who can reverse it,
+          so we are the only route to getting money back. Almost everything anyone would want to
+          dispute is something we would have refunded on request.
         </p>
       </Section>
     </LegalLayout>

@@ -1,6 +1,7 @@
 import { ArrowRight, Clock } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
+import { WALLET_EXPLAINER_SHORT } from "../../data/claims";
 import { services } from "../../data/services";
 import { Reveal } from "../Reveal";
 
@@ -17,6 +18,11 @@ export function ServicesGrid() {
           <p className="mt-4 text-lg text-fg-muted">
             Seven services. Each one gets its own page to scope properly — not a one-line prompt box.
           </p>
+          {/* The website card reads "from $10", which is a price, not a
+              checkout -- and $10 is also the minimum top-up, which made the
+              two easy to confuse. The grid says how paying works once,
+              above every price in it. */}
+          <p className="mt-2 text-sm text-fg-faint">{WALLET_EXPLAINER_SHORT}</p>
         </div>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">

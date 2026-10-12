@@ -49,6 +49,11 @@ export function Privacy() {
           Where an order is handed to an external agent, they receive only the job reference, the
           product and the brief — not your name, your email or your account.
         </p>
+        <p>
+          That list is the whole list. Nothing else loads from anywhere else — the fonts and every
+          other asset on this page come from our own domain, so simply opening the site does not
+          announce your visit to a third party.
+        </p>
       </Section>
 
       <Section heading="How long we keep it">

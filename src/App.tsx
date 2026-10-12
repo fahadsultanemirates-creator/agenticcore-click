@@ -33,6 +33,7 @@ const ClaimAccount = lazy(() => import("./pages/ClaimAccount").then((m) => ({ de
 const Terms = lazy(() => import("./pages/legal/Terms").then((m) => ({ default: m.Terms })));
 const Privacy = lazy(() => import("./pages/legal/Privacy").then((m) => ({ default: m.Privacy })));
 const Refunds = lazy(() => import("./pages/legal/Refunds").then((m) => ({ default: m.Refunds })));
+const Contact = lazy(() => import("./pages/Contact").then((m) => ({ default: m.Contact })));
 const NotFound = lazy(() => import("./pages/NotFound").then((m) => ({ default: m.NotFound })));
 
 // Deliberately blank rather than a spinner. These chunks load in a fraction
@@ -63,6 +64,7 @@ export default function App() {
         <Route path="/terms" element={<Terms />} />
         <Route path="/privacy" element={<Privacy />} />
         <Route path="/refunds" element={<Refunds />} />
+        <Route path="/contact" element={<Contact />} />
         <Route path="/dashboard" element={<Protected><Dashboard /></Protected>} />
         {/* Finished work lives here, not at the bottom of the dashboard. */}
         <Route path="/projects" element={<Protected><Projects /></Protected>} />

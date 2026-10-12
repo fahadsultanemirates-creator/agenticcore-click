@@ -1,6 +1,7 @@
 import { Check, Sparkles } from "lucide-react";
 import { Link } from "react-router-dom";
-import { firstOrderDiscountLine, flagshipPackage, walletPackages } from "../../data/packages";
+import { flagshipPackage, walletPackages } from "../../data/packages";
+import { DiscountTable } from "../DiscountTable";
 import { Reveal } from "../Reveal";
 
 export function PackagesSection() {
@@ -78,12 +79,8 @@ export function PackagesSection() {
           the thing that matters most: it covers the $20 Full Business Setup
           too. */}
       <div className="mt-6 rounded-2xl border border-dashed border-yellow-400/40 bg-yellow-400/5 p-5">
-        <p className="text-sm text-fg">
-          <span className="font-semibold text-yellow-400">Your first order is discounted too.</span>{" "}
-          After your first top-up, your first order takes {firstOrderDiscountLine()} off. It applies
-          to every service — the $20 Full Business Setup included — and it applies once. The tier
-          discount above is the standing one, on every order after that.
-        </p>
+        <p className="text-sm font-semibold text-yellow-400">How the wallet discounts work</p>
+        <DiscountTable className="mt-3" />
       </div>
     </section>
   );

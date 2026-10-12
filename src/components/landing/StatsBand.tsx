@@ -1,8 +1,9 @@
 import { Reveal } from "../Reveal";
+import { CLAIM_FOOTNOTE, HEADLINE_PRICE, STAT_TURNAROUND } from "../../data/claims";
 
 const stats = [
-  { value: "20 min", label: "average turnaround*" },
-  { value: "$20", label: "starting price*" },
+  { value: STAT_TURNAROUND, label: "typical turnaround*" },
+  { value: HEADLINE_PRICE, label: "starting price*" },
   { value: "7", label: "services (and counting)" },
   { value: "0", label: "meetings required" },
 ];
@@ -31,7 +32,7 @@ export function StatsBand() {
             ))}
           </div>
           <p className="relative mt-10 text-center text-xs text-fg-faint">
-            *Targets we build against — updated as real volume comes in.
+            *{CLAIM_FOOTNOTE}
           </p>
         </div>
       </Reveal>

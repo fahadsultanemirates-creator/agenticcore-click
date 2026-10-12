@@ -5,6 +5,7 @@ import { RequireAuth } from "./components/auth/RequireAuth";
 import { Landing } from "./pages/Landing";
 import { Login } from "./pages/Login";
 import { Signup } from "./pages/Signup";
+import { ScrollToHash } from "./components/ScrollToHash";
 
 // Eager above, lazy below.
 //
@@ -53,6 +54,7 @@ export default function App() {
 
   return (
     <Suspense fallback={LOADING}>
+      <ScrollToHash />
       <Routes>
         <Route path="/" element={<Landing />} />
         <Route path="/login" element={<Login />} />

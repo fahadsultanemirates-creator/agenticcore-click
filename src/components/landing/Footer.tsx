@@ -1,9 +1,10 @@
 import { Mail } from "lucide-react";
 import type { ComponentType, ReactNode } from "react";
-import { TELEGRAM_URL } from "../../data/contact";
+import { SUPPORT_EMAIL, TELEGRAM_URL, whatsAppUrl } from "../../data/contact";
 import { Link } from "react-router-dom";
 import { Logo } from "../Logo";
 import { TelegramIcon } from "../icons/TelegramIcon";
+import { WhatsAppIcon } from "../icons/WhatsAppIcon";
 import { FacebookIcon, InstagramIcon, TikTokIcon, XIcon, YouTubeIcon } from "../icons/SocialIcons";
 
 // Two rows, deliberately not one. The social accounts are where we post;
@@ -71,12 +72,19 @@ export function Footer() {
                 Need help?
               </span>
               <div className="flex items-center gap-2">
-                <IconLink href="mailto:hello@agenticcore.click" label="Email hello@agenticcore.click" filled>
+                <IconLink href={`mailto:${SUPPORT_EMAIL}`} label={`Email ${SUPPORT_EMAIL}`} filled>
                   <Mail className="h-4 w-4" />
                 </IconLink>
                 <IconLink href={TELEGRAM_URL} label="Support on Telegram" filled>
                   <TelegramIcon className="h-4 w-4" />
                 </IconLink>
+                {/* Support only. The order/project bot is linked from the
+                    hero and is a different destination on purpose. */}
+                {whatsAppUrl() ? (
+                  <IconLink href={whatsAppUrl() as string} label="Support on WhatsApp" filled>
+                    <WhatsAppIcon className="h-4 w-4" />
+                  </IconLink>
+                ) : null}
               </div>
             </div>
 

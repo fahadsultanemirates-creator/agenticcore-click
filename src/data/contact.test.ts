@@ -239,5 +239,45 @@ test("the ordering bot is linked here, and is not a social account", () => {
   );
 });
 
+test("every in-page anchor points at a section that exists", () => {
+  // Checked because the owner asked whether the footer and nav anchors
+  // go anywhere. They all do today -- this keeps it that way. A nav link
+  // to a section somebody later renamed is a link that silently does
+  // nothing: no error, no 404, the page just sits there.
+  const ids = new Set<string>();
+  const anchors: { file: string; hash: string }[] = [];
+  for (const file of FILES) {
+    const body = readFileSync(file, "utf8");
+    for (const m of body.matchAll(/\bid="([A-Za-z][\w-]*)"/g)) ids.add(m[1]);
+    for (const m of body.matchAll(/(?:href|to)=(?:"|\{`|`)#([A-Za-z][\w-]*)/g)) {
+      anchors.push({ file: file.replace(SRC, "src/"), hash: m[1] });
+    }
+  }
+  assert.ok(anchors.length > 0, "no anchors found — this test is vacuous");
+  const dangling = anchors.filter((a) => !ids.has(a.hash)).map((a) => `${a.file} → #${a.hash}`);
+  assert.deepEqual(dangling, []);
+});
+
+test("a placeholder email is never shown as a real contact detail", () => {
+  // you@business.com / accounts@yourbusiness.com are example text. They
+  // are fine greyed out inside an input, and a disaster rendered as the
+  // address someone should write to.
+  const offenders: string[] = [];
+  for (const file of FILES) {
+    const body = readFileSync(file, "utf8");
+    for (const m of body.matchAll(/[\w.]*@(?:business\.com|yourbusiness\.com)/g)) {
+      const start = Math.max(0, m.index! - 220);
+      const near = body.slice(start, m.index! + m[0].length + 40);
+      // Allowed only as the value of a placeholder/locationHint, which is
+      // what renders it as greyed-out example text inside a field.
+      const asPlaceholder = /placeholder\s*=\s*["'`{]?[^;]{0,40}$|locationHint:\s*$/.test(
+        body.slice(start, m.index!),
+      );
+      if (!asPlaceholder) offenders.push(`${file.replace(SRC, "src/")} → ${m[0]}`);
+    }
+  }
+  assert.deepEqual(offenders, []);
+});
+
 console.log(`\n${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

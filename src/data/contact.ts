@@ -31,7 +31,7 @@ export const TELEGRAM_URL = `https://t.me/${TELEGRAM_HANDLE}`;
  * Clear WHATSAPP_PHONE to fall back to the username link.
  */
 export const WHATSAPP_USERNAME: string | null = "agenticcore.biz";
-export const WHATSAPP_PHONE: string | null = "971585227837";
+export const WHATSAPP_PHONE: string | null = "18089985226";
 
 /** The link to open a WhatsApp chat, or null if neither is configured. */
 export function whatsAppUrl(): string | null {
@@ -50,8 +50,18 @@ export function whatsAppUrl(): string | null {
 export function whatsAppLabel(): string | null {
   if (WHATSAPP_PHONE) {
     const d = WHATSAPP_PHONE;
-    // +971 58 522 7837 -- grouped for reading, never for the link.
-    return d.length === 12 ? `+${d.slice(0, 3)} ${d.slice(3, 5)} ${d.slice(5, 8)} ${d.slice(8)}` : `+${d}`;
+    // Grouped for reading, never for the link. Two shapes, because the
+    // number has already moved once: 1 + 10 digits reads as
+    // +1 808 998 5226, and 971 + 9 as +971 58 522 7837. Anything else
+    // is shown unformatted rather than chopped into the wrong groups --
+    // a misgrouped number still dials, but it looks like a typo.
+    if (d.length === 11 && d.startsWith("1")) {
+      return `+1 ${d.slice(1, 4)} ${d.slice(4, 7)} ${d.slice(7)}`;
+    }
+    if (d.length === 12 && d.startsWith("971")) {
+      return `+971 ${d.slice(3, 5)} ${d.slice(5, 8)} ${d.slice(8)}`;
+    }
+    return `+${d}`;
   }
   if (WHATSAPP_USERNAME) return `@${WHATSAPP_USERNAME}`;
   return null;

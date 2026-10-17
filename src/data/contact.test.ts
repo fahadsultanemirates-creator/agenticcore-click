@@ -78,7 +78,7 @@ test("the support accounts are the ones the owner gave", () => {
   assert.equal(TELEGRAM_HANDLE, "AgenticCorebiz");
   assert.equal(TELEGRAM_URL, "https://t.me/AgenticCorebiz");
   assert.equal(WHATSAPP_USERNAME, "agenticcore.biz");
-  assert.equal(WHATSAPP_PHONE, "971585227837");
+  assert.equal(WHATSAPP_PHONE, "18089985226");
   assert.match(SUPPORT_EMAIL, /^hello@agenticcore\.(agency|biz|click)$/);
 });
 
@@ -92,12 +92,15 @@ test("the link uses the number, in the only form WhatsApp documents", () => {
   assert.ok(!/\s/.test(whatsAppUrl() as string), "whitespace breaks a wa.me link");
 });
 
-test("the number is a real UAE mobile, not a placeholder", () => {
+test("the number is the one the owner gave, not a placeholder", () => {
+  // Pinned to the exact value, because this has now changed twice and
+  // each time the old one stayed live somewhere. A shape check alone
+  // would have passed both numbers.
   const d = WHATSAPP_PHONE as string;
-  assert.equal(d.length, 12, `expected 971 + 9 digits, got ${d.length}`);
-  assert.ok(d.startsWith("971"), "country code should be 971");
-  assert.equal(d[3], "5", "UAE mobile numbers start 5x");
-  assert.ok(!/^(\d)\1+$/.test(d.slice(3)), "looks like a repeated-digit placeholder");
+  assert.equal(d, "18089985226");
+  assert.equal(d.length, 11, `expected 1 + 10 digits, got ${d.length}`);
+  assert.ok(d.startsWith("1"), "country code should be 1");
+  assert.ok(!/^(\d)\1+$/.test(d.slice(1)), "looks like a repeated-digit placeholder");
 });
 
 test("what is displayed is what the link opens", () => {
@@ -111,7 +114,7 @@ test("what is displayed is what the link opens", () => {
 test("clearing the number falls back to the username, not to nothing", () => {
   const url = (phone: string | null, user: string | null) =>
     phone ? `https://wa.me/${phone}` : user ? `https://wa.me/${user}` : null;
-  assert.equal(url(WHATSAPP_PHONE, WHATSAPP_USERNAME), "https://wa.me/971585227837");
+  assert.equal(url(WHATSAPP_PHONE, WHATSAPP_USERNAME), "https://wa.me/18089985226");
   assert.equal(url(null, "agenticcore.biz"), "https://wa.me/agenticcore.biz");
   assert.equal(url(null, null), null);
 });

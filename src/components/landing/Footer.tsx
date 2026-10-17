@@ -1,6 +1,6 @@
 import { Mail } from "lucide-react";
 import type { ComponentType, ReactNode } from "react";
-import { SUPPORT_EMAIL, TELEGRAM_URL, whatsAppUrl } from "../../data/contact";
+import { SOCIAL_LINKS, SUPPORT_EMAIL, TELEGRAM_URL, whatsAppUrl, type SocialKey } from "../../data/contact";
 import { Link } from "react-router-dom";
 import { Logo } from "../Logo";
 import { TelegramIcon } from "../icons/TelegramIcon";
@@ -11,12 +11,28 @@ import { FacebookIcon, InstagramIcon, TikTokIcon, XIcon, YouTubeIcon } from "../
 // the support channels are where someone with a problem goes. Mixing them
 // into a single strip of circles means a client with a broken deliverable
 // has to guess which of seven identical buttons reaches a human.
-const SOCIALS: { href: string; label: string; Icon: ComponentType<{ className?: string }> }[] = [
-  { href: "https://x.com/AgenticCoreHQ", label: "X", Icon: XIcon },
-  { href: "https://www.facebook.com/share/19vitDyQWB/", label: "Facebook", Icon: FacebookIcon },
-  { href: "https://instagram.com/agenticcore.agency", label: "Instagram", Icon: InstagramIcon },
-  { href: "https://youtube.com/@AgenticcoreAgency", label: "YouTube", Icon: YouTubeIcon },
-  { href: "https://tiktok.com/@agenticcore.agency", label: "TikTok", Icon: TikTokIcon },
+// The accounts themselves live in data/contact.ts, shared with .agency
+// and .biz so the three footers cannot drift apart. Only the drawing of
+// them is local.
+//
+// Record<SocialKey, ...> rather than a loose lookup: adding an account to
+// that list without giving it an icon here fails the build instead of
+// rendering a hole.
+const ICONS: Record<SocialKey, ComponentType<{ className?: string }>> = {
+  x: XIcon,
+  facebook: FacebookIcon,
+  instagram: InstagramIcon,
+  youtube: YouTubeIcon,
+  tiktok: TikTokIcon,
+  "telegram-channel": TelegramIcon,
+};
+
+// The sister brands. .click was the only one of the three with no way
+// back out to the other two, which left it a dead end for anyone who
+// landed here wanting custom work or back-office support.
+const ELSEWHERE = [
+  { href: "https://agenticcore.agency", label: "agenticcore.agency — custom websites, apps and AI systems" },
+  { href: "https://agenticcore.biz", label: "agenticcore.biz — business setup and back-office" },
 ];
 
 function IconLink({
@@ -93,14 +109,25 @@ export function Footer() {
                 Follow us
               </span>
               <div className="flex items-center gap-2">
-                {SOCIALS.map(({ href, label, Icon }) => (
-                  <IconLink key={label} href={href} label={label}>
-                    <Icon className="h-4 w-4" />
-                  </IconLink>
-                ))}
+                {SOCIAL_LINKS.map((social) => {
+                  const Icon = ICONS[social.key];
+                  return (
+                    <IconLink key={social.key} href={social.href} label={social.label}>
+                      <Icon className="h-4 w-4" />
+                    </IconLink>
+                  );
+                })}
               </div>
             </div>
           </div>
+        </div>
+
+        <div className="flex flex-col items-center gap-1.5 text-xs text-fg-faint">
+          {ELSEWHERE.map((site) => (
+            <a key={site.href} href={site.href} className="transition-colors hover:text-fg-muted">
+              {site.label}
+            </a>
+          ))}
         </div>
 
         <p className="text-sm text-fg-faint">

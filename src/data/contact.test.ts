@@ -17,6 +17,7 @@ import process from "node:process";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import {
+  SOCIAL_LINKS,
   SUPPORT_EMAIL,
   TELEGRAM_HANDLE,
   TELEGRAM_URL,
@@ -159,6 +160,123 @@ test("the ordering bot is never used as a support contact", () => {
       `${file.replace(SRC, "src/")} labels the ordering bot as support`,
     );
   }
+});
+
+// ---------------------------------------------------------------------
+// The public accounts.
+//
+// All three sites post to the same six. They are asserted by exact URL
+// rather than by shape: the two Facebook links that used to be here were
+// both well-formed facebook.com URLs, and both were wrong.
+// ---------------------------------------------------------------------
+
+test("the six public accounts are exactly the ones the owner gave", () => {
+  assert.deepEqual(
+    SOCIAL_LINKS.map((s) => [s.key, s.href]),
+    [
+      ["x", "https://x.com/AgenticCoreHQ"],
+      ["facebook", "https://www.facebook.com/people/AgenticCore/61593981579304/"],
+      ["instagram", "https://www.instagram.com/agenticcore.agency"],
+      ["youtube", "https://www.youtube.com/@AgenticcoreAgency"],
+      ["tiktok", "https://www.tiktok.com/@agenticcore.agency"],
+      ["telegram-channel", "https://t.me/agenticCoreHQ"],
+    ],
+  );
+});
+
+test("this site's own business email is the right one", () => {
+  assert.equal(SUPPORT_EMAIL, "hello@agenticcore.click");
+});
+
+test("no Facebook share-link survives anywhere", () => {
+  // /share/<id> links are opaque: you cannot tell by reading one whether
+  // it points at the right Page, which is exactly how the three sites
+  // drifted onto two different ones.
+  const offenders: string[] = [];
+  const scan = (name: string, body: string) => {
+    for (const m of body.matchAll(/facebook\.com\/share\/[A-Za-z0-9]+/g)) {
+      offenders.push(`${name} → ${m[0]}`);
+    }
+  };
+  for (const file of FILES) {
+    scan(file.replace(SRC, "src/").replace(FUNCTIONS, "supabase/functions"), readFileSync(file, "utf8"));
+  }
+
+  assert.deepEqual(offenders, []);
+});
+
+test("every account in the list is actually drawn in the footer", () => {
+  // The footer maps key -> icon. A key with no icon is a hole in the
+  // row; TypeScript catches it at build time and this catches it here,
+  // where the failure names the missing account.
+  const footer = readFileSync(new URL("../components/landing/Footer.tsx", import.meta.url).pathname, "utf8");
+  const icons = footer.slice(footer.indexOf("const ICONS"), footer.indexOf("};", footer.indexOf("const ICONS")));
+  assert.ok(icons.length > 0, "the footer no longer has an ICONS map — this test is stale");
+  const missing = SOCIAL_LINKS.filter((s) => !new RegExp(`(^|\\s)"?${s.key}"?:`, "m").test(icons));
+  assert.deepEqual(missing.map((s) => s.key), []);
+});
+
+test("no component writes a social URL by hand", () => {
+  const hosts = /(facebook|instagram|tiktok)\.com|youtube\.com|x\.com\/Agentic/;
+  const offenders: string[] = [];
+  for (const file of FILES) {
+    if (file.endsWith("/data/contact.ts")) continue;
+    const body = code(readFileSync(file, "utf8"));
+    if (hosts.test(body)) {
+      offenders.push(file.replace(SRC, "src/").replace(FUNCTIONS, "supabase/functions"));
+    }
+  }
+  assert.deepEqual(offenders, []);
+});
+
+test("the ordering bot is linked here, and is not a social account", () => {
+  // .click is the only site with a public ordering bot.
+  const linked = FILES.some((f) => readFileSync(f, "utf8").includes(ORDER_BOT));
+  assert.ok(linked, "the ordering bot is not linked anywhere on .click");
+  assert.ok(
+    !SOCIAL_LINKS.some((s) => s.href.includes(ORDER_BOT)),
+    "the ordering bot is listed as a social account",
+  );
+});
+
+test("every in-page anchor points at a section that exists", () => {
+  // Checked because the owner asked whether the footer and nav anchors
+  // go anywhere. They all do today -- this keeps it that way. A nav link
+  // to a section somebody later renamed is a link that silently does
+  // nothing: no error, no 404, the page just sits there.
+  const ids = new Set<string>();
+  const anchors: { file: string; hash: string }[] = [];
+  for (const file of FILES) {
+    const body = readFileSync(file, "utf8");
+    for (const m of body.matchAll(/\bid="([A-Za-z][\w-]*)"/g)) ids.add(m[1]);
+    for (const m of body.matchAll(/(?:href|to)=(?:"|\{`|`)#([A-Za-z][\w-]*)/g)) {
+      anchors.push({ file: file.replace(SRC, "src/"), hash: m[1] });
+    }
+  }
+  assert.ok(anchors.length > 0, "no anchors found — this test is vacuous");
+  const dangling = anchors.filter((a) => !ids.has(a.hash)).map((a) => `${a.file} → #${a.hash}`);
+  assert.deepEqual(dangling, []);
+});
+
+test("a placeholder email is never shown as a real contact detail", () => {
+  // you@business.com / accounts@yourbusiness.com are example text. They
+  // are fine greyed out inside an input, and a disaster rendered as the
+  // address someone should write to.
+  const offenders: string[] = [];
+  for (const file of FILES) {
+    const body = readFileSync(file, "utf8");
+    for (const m of body.matchAll(/[\w.]*@(?:business\.com|yourbusiness\.com)/g)) {
+      const start = Math.max(0, m.index! - 220);
+      const near = body.slice(start, m.index! + m[0].length + 40);
+      // Allowed only as the value of a placeholder/locationHint, which is
+      // what renders it as greyed-out example text inside a field.
+      const asPlaceholder = /placeholder\s*=\s*["'`{]?[^;]{0,40}$|locationHint:\s*$/.test(
+        body.slice(start, m.index!),
+      );
+      if (!asPlaceholder) offenders.push(`${file.replace(SRC, "src/")} → ${m[0]}`);
+    }
+  }
+  assert.deepEqual(offenders, []);
 });
 
 console.log(`\n${passed} passed, ${failed} failed`);

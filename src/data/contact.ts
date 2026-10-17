@@ -68,3 +68,43 @@ export function whatsAppLabel(): string | null {
 }
 
 export const SUPPORT_EMAIL = "hello@agenticcore.click";
+
+/**
+ * The Telegram CHANNEL -- where announcements get posted.
+ *
+ * Deliberately separate from TELEGRAM_HANDLE above. That one is a person
+ * you message when something is wrong; this one is a feed you read. They
+ * are different accounts doing different jobs, and collapsing them would
+ * send someone with a broken order into a broadcast channel that cannot
+ * reply.
+ */
+export const TELEGRAM_CHANNEL_HANDLE = "agenticCoreHQ";
+export const TELEGRAM_CHANNEL_URL = `https://t.me/${TELEGRAM_CHANNEL_HANDLE}`;
+
+/**
+ * The public accounts, identical on all three sites.
+ *
+ * One list, so .agency, .biz and .click cannot drift apart again -- they
+ * had two different Facebook links and TikTok on only one site before
+ * this. Order is the order they are shown in.
+ *
+ * These are PAGES, not support channels: see TELEGRAM_HANDLE,
+ * whatsAppUrl() and SUPPORT_EMAIL for the ways to reach a human.
+ */
+export const SOCIAL_LINKS = [
+  { key: "x", label: "X", href: "https://x.com/AgenticCoreHQ" },
+  {
+    key: "facebook",
+    label: "Facebook",
+    // The Page's own canonical address. The /share/ short links that
+    // used to be here differed per site and are opaque -- you cannot
+    // tell from one whether it points at the right Page.
+    href: "https://www.facebook.com/people/AgenticCore/61593981579304/",
+  },
+  { key: "instagram", label: "Instagram", href: "https://www.instagram.com/agenticcore.agency" },
+  { key: "youtube", label: "YouTube", href: "https://www.youtube.com/@AgenticcoreAgency" },
+  { key: "tiktok", label: "TikTok", href: "https://www.tiktok.com/@agenticcore.agency" },
+  { key: "telegram-channel", label: "Telegram channel", href: TELEGRAM_CHANNEL_URL },
+] as const;
+
+export type SocialKey = (typeof SOCIAL_LINKS)[number]["key"];

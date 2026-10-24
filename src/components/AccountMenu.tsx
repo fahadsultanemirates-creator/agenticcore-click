@@ -119,8 +119,8 @@ function SignedInMenu() {
             <MenuLink to="/dashboard" icon={LayoutGrid} onClick={() => setOpen(false)}>
               Dashboard
             </MenuLink>
-            <MenuLink to="/dashboard/forge" icon={Sparkles} onClick={() => setOpen(false)}>
-              Talk to Forge
+            <MenuLink to="/dashboard/maya" icon={Sparkles} onClick={() => setOpen(false)}>
+              Talk to Maya
             </MenuLink>
             <MenuLink to="/dashboard#billing" icon={Wallet} onClick={() => setOpen(false)}>
               Wallet &amp; billing

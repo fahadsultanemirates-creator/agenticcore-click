@@ -1,24 +1,24 @@
 import { functionErrorMessage } from "./functionError";
 import { supabase } from "./supabase";
 
-export interface ForgeTaskDraft {
+export interface MayaTaskDraft {
   type: string;
   subtype?: string | null;
   payload: Record<string, unknown>;
   priceUsd: number | null;
 }
 
-export interface ForgeChatResult {
+export interface MayaChatResult {
   conversationId: string;
   reply: string;
   action: "ask" | "submit_tasks" | "submit_bundle";
-  tasks: ForgeTaskDraft[];
+  tasks: MayaTaskDraft[];
   totalUsd: number | null;
   isBundle: boolean;
   walletBalanceUsd: number;
 }
 
-export interface ForgeMessageRow {
+export interface MayaMessageRow {
   id: string;
   role: "user" | "assistant";
   content: string;
@@ -34,8 +34,8 @@ async function authHeader(): Promise<Record<string, string>> {
 }
 
 // Resumes the client's most recent open conversation, if any, along with
-// its history -- so reloading Forge doesn't lose the thread.
-export async function fetchActiveConversation(): Promise<{ conversationId: string; messages: ForgeMessageRow[] } | null> {
+// its history -- so reloading Maya doesn't lose the thread.
+export async function fetchActiveConversation(): Promise<{ conversationId: string; messages: MayaMessageRow[] } | null> {
   const { data: convo } = await supabase
     .from("forge_conversations")
     .select("id")
@@ -54,22 +54,22 @@ export async function fetchActiveConversation(): Promise<{ conversationId: strin
   return { conversationId: convo.id, messages: messages ?? [] };
 }
 
-export async function sendForgeMessage(
+export async function sendMayaMessage(
   conversationId: string | null,
   message: string,
   attachmentUrls: string[],
-): Promise<ForgeChatResult> {
+): Promise<MayaChatResult> {
   const headers = await authHeader();
-  const { data, error } = await supabase.functions.invoke<ForgeChatResult & { error?: string }>("forge-chat", {
+  const { data, error } = await supabase.functions.invoke<MayaChatResult & { error?: string }>("forge-chat", {
     body: { conversationId, message, attachmentUrls },
     headers,
   });
-  if (error || !data) throw new Error(await functionErrorMessage(error, "Could not reach Forge. Please try again."));
+  if (error || !data) throw new Error(await functionErrorMessage(error, "Could not reach Maya. Please try again."));
   if (data.error) throw new Error(data.error);
   return data;
 }
 
-export async function uploadForgeFile(conversationId: string, file: File): Promise<{ url: string; mimeType: string }> {
+export async function uploadMayaFile(conversationId: string, file: File): Promise<{ url: string; mimeType: string }> {
   const headers = await authHeader();
   const form = new FormData();
   form.set("conversationId", conversationId);
@@ -84,7 +84,7 @@ export async function uploadForgeFile(conversationId: string, file: File): Promi
   return { url: data.url, mimeType: data.mimeType ?? "" };
 }
 
-export async function submitForgeTasks(
+export async function submitMayaTasks(
   conversationId: string,
   tasks: { type: string; subtype?: string | null; payload: Record<string, unknown> }[],
   bundle: boolean,
@@ -100,7 +100,7 @@ export async function submitForgeTasks(
   return { publicIds: data.publicIds, totalCharged: data.totalCharged ?? 0 };
 }
 
-export async function transcribeForgeVoice(blob: Blob): Promise<string> {
+export async function transcribeMayaVoice(blob: Blob): Promise<string> {
   const headers = await authHeader();
   const form = new FormData();
   form.set("audio", blob, "voice.webm");

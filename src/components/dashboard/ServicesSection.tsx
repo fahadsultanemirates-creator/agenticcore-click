@@ -16,10 +16,10 @@ export function ServicesSection() {
           </p>
         </div>
         <Link
-          to="/dashboard/forge"
+          to="/dashboard/maya"
           className="text-sm font-semibold text-yellow-400 transition-colors hover:text-yellow-300"
         >
-          Not sure? Ask Forge →
+          Not sure? Ask Maya →
         </Link>
       </div>
 

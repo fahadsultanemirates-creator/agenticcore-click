@@ -58,20 +58,20 @@ export function Hero() {
             hand back the real thing, not a template.
           </p>
 
-          {/* Forge, named and explained above the fold. The floating button
+          {/* Maya, named and explained above the fold. The floating button
               was the only thing pointing at it, and a circle in the corner
               does not tell anyone that they can simply describe the job and
               have it ordered for them. */}
           <p className="mx-auto mt-5 max-w-xl text-base text-fg-muted">
             Or skip the forms —{" "}
             <Link
-              to={user ? "/dashboard/forge" : "/signup"}
+              to={user ? "/dashboard/maya" : "/signup"}
               className="font-semibold text-yellow-400 underline decoration-yellow-400/40 underline-offset-4 transition-colors hover:decoration-yellow-400"
             >
-              talk to Forge
+              talk to Maya
             </Link>
             , our assistant. Describe what you want in your own words and it
-            places the order for you.
+            prepares a task proposal for you to review and confirm.
           </p>
 
           <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
@@ -88,15 +88,15 @@ export function Hero() {
             >
               See all 7 services
             </a>
-            {/* Forge and the projects page were both reachable only from
+            {/* Maya and the projects page were both reachable only from
                 inside the dashboard, which is behind a login. Both are
                 reasons to sign up, so both say so here. */}
             <Link
-              to={user ? "/dashboard/forge" : "/signup"}
+              to={user ? "/dashboard/maya" : "/signup"}
               className="inline-flex items-center gap-2 rounded-full border-2 border-border px-7 py-3.5 text-base font-semibold text-fg transition-colors hover:border-yellow-400/60"
             >
               <Sparkles className="h-4 w-4 text-yellow-400" />
-              Talk to Forge
+              Talk to Maya
             </Link>
             <Link
               to={user ? "/projects" : "/signup"}

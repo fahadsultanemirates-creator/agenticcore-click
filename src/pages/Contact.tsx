@@ -51,10 +51,10 @@ export function Contact() {
         ) : null}
         <Channel
           icon={<MessageCircle className="h-5 w-5" aria-hidden />}
-          title="Ask Forge"
+          title="Ask Maya"
           detail="In your dashboard"
-          body="Describe what you want in your own words and Forge places the order for you."
-          href="/dashboard/forge"
+          body="Describe what you want in your own words and Maya places the order for you."
+          href="/dashboard/maya"
         />
         <Channel
           icon={<ArrowRight className="h-5 w-5" aria-hidden />}

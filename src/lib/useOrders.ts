@@ -9,7 +9,7 @@ import { getSku, resolveSku } from "../../supabase/functions/_shared/catalog.ts"
 // The product catalog is imported straight from the edge functions rather than
 // mirrored into src/. It is plain data with no server dependency, and a second
 // copy would drift: the dashboard would start calling something a "Brand kit"
-// while Forge and the worker called it a "Letterhead". One list, three readers.
+// while Maya and the worker called it a "Letterhead". One list, three readers.
 
 export type OrderFile = {
   url: string;

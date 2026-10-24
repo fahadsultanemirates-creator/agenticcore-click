@@ -50,9 +50,7 @@ export function Privacy() {
           product and the brief — not your name, your email or your account.
         </p>
         <p>
-          That list is the whole list. Nothing else loads from anywhere else — the fonts and every
-          other asset on this page come from our own domain, so simply opening the site does not
-          announce your visit to a third party.
+          Fonts and most assets are served from this site. Shared team artwork is loaded from our AgenticCore Group domain (agenticcore.group), which receives the normal browser request for that image. No additional advertising or social tracking asset is loaded by this change.
         </p>
       </Section>
 

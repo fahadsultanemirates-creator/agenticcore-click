@@ -25,7 +25,7 @@ import { join } from "node:path";
 const DIST = new URL("../dist/", import.meta.url).pathname;
 
 /** Hosts the privacy page already names, plus our own. */
-const ALLOWED = ["agenticcore.click", "supabase.co", "supabase.in"];
+const ALLOWED = ["agenticcore.click", "agenticcore.group", "supabase.co", "supabase.in"];
 
 function filesIn(dir, out = []) {
   for (const entry of readdirSync(dir)) {

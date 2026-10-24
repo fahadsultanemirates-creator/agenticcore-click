@@ -10,8 +10,8 @@ import { functionErrorMessage } from "./functionError";
 // the task went to the worker with no reference, so a client who attached
 // their logo got back something that ignored it and had no way to tell why.
 //
-// This is the same storage path Forge's chat attachments already use, so a
-// file attached on a service page and one dropped into Forge arrive at the
+// This is the same storage path Maya's chat attachments already use, so a
+// file attached on a service page and one dropped into Maya arrive at the
 // worker identically, as payload.referenceFiles.
 
 export type UploadedFile = {

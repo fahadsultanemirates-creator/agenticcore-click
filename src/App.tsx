@@ -10,14 +10,14 @@ import { ScrollToHash } from "./components/ScrollToHash";
 // Eager above, lazy below.
 //
 // Everything used to ship in one 597 kB chunk, so a first-time visitor
-// downloaded the whole dashboard, every intake form and Forge before the
+// downloaded the whole dashboard, every intake form and Maya before the
 // landing page could paint -- none of which they can even reach until they
 // have an account. The three routes a logged-out visitor actually touches
 // stay eager; the rest arrive when they're needed.
 const Dashboard = lazy(() => import("./pages/Dashboard").then((m) => ({ default: m.Dashboard })));
 const Projects = lazy(() => import("./pages/Projects").then((m) => ({ default: m.Projects })));
 const ProjectDetail = lazy(() => import("./pages/ProjectDetail").then((m) => ({ default: m.ProjectDetail })));
-const Forge = lazy(() => import("./pages/Forge").then((m) => ({ default: m.Forge })));
+const Maya = lazy(() => import("./pages/Maya").then((m) => ({ default: m.Maya })));
 const WebsiteIntake = lazy(() => import("./pages/WebsiteIntake").then((m) => ({ default: m.WebsiteIntake })));
 const BrandKitPage = lazy(() => import("./pages/services/BrandKitPage").then((m) => ({ default: m.BrandKitPage })));
 const BusinessDocumentsPage = lazy(() =>
@@ -78,7 +78,8 @@ export default function App() {
         <Route path="/dashboard/social" element={<Protected><SocialMediaPage /></Protected>} />
         <Route path="/dashboard/documents" element={<Protected><BusinessDocumentsPage /></Protected>} />
         <Route path="/dashboard/brand-kit" element={<Protected><BrandKitPage /></Protected>} />
-        <Route path="/dashboard/forge" element={<Protected><Forge /></Protected>} />
+        <Route path="/dashboard/maya" element={<Protected><Maya /></Protected>} />
+        <Route path="/dashboard/forge" element={<Protected><Maya /></Protected>} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </Suspense>

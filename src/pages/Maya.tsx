@@ -4,11 +4,11 @@ import { Link } from "react-router-dom";
 import { AccountMenu } from "../components/AccountMenu";
 import {
   fetchActiveConversation,
-  sendForgeMessage,
-  submitForgeTasks,
-  transcribeForgeVoice,
-  uploadForgeFile,
-  type ForgeTaskDraft,
+  sendMayaMessage,
+  submitMayaTasks,
+  transcribeMayaVoice,
+  uploadMayaFile,
+  type MayaTaskDraft,
 } from "../lib/forge";
 
 interface ChatMessage {
@@ -27,7 +27,7 @@ interface StagedFile {
 }
 
 interface PendingSubmission {
-  tasks: ForgeTaskDraft[];
+  tasks: MayaTaskDraft[];
   totalUsd: number | null;
   isBundle: boolean;
   walletBalanceUsd: number;
@@ -37,7 +37,7 @@ const SUGGESTIONS = [
   "Set up my full business for $20",
   "I need a website for my bakery",
   "Attach my logo and build me a brand kit",
-  "What can Forge actually do?",
+  "What can Maya actually do?",
 ];
 
 let idCounter = 0;
@@ -46,7 +46,7 @@ function nextId(): string {
   return `m-${Date.now()}-${idCounter}`;
 }
 
-export function Forge() {
+export function Maya() {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -80,7 +80,7 @@ export function Forge() {
             id: nextId(),
             role: "assistant",
             content:
-              "Hi, I'm Forge 👋 Tell me what your business needs — a website, a logo, images, a whole Full Business Setup — in your own words, in any language, and I'll ask what I need to know, then queue it for the team.",
+              "Hi, I'm Maya 👋 Tell me what your business needs — a website, a logo, images, a whole Full Business Setup — in your own words, in any language, and I'll ask what I need to know, then queue it for the team.",
           },
         ]);
       }
@@ -98,7 +98,7 @@ export function Forge() {
       const key = nextId();
       setStagedFiles((prev) => [...prev, { key, name: file.name, uploading: true }]);
       try {
-        const { url } = await uploadForgeFile(uploadScopeId.current, file);
+        const { url } = await uploadMayaFile(uploadScopeId.current, file);
         setStagedFiles((prev) => prev.map((f) => (f.key === key ? { ...f, uploading: false, url } : f)));
       } catch (err) {
         setStagedFiles((prev) =>
@@ -127,7 +127,7 @@ export function Forge() {
     setStagedFiles([]);
 
     try {
-      const result = await sendForgeMessage(conversationId, trimmed, readyAttachments);
+      const result = await sendMayaMessage(conversationId, trimmed, readyAttachments);
       setConversationId(result.conversationId);
       setMessages((prev) => [...prev, { id: nextId(), role: "assistant", content: result.reply }]);
       if ((result.action === "submit_tasks" || result.action === "submit_bundle") && result.tasks.length > 0) {
@@ -187,7 +187,7 @@ export function Forge() {
         const blob = new Blob(chunksRef.current, { type: "audio/webm" });
         setTranscribing(true);
         try {
-          const text = await transcribeForgeVoice(blob);
+          const text = await transcribeMayaVoice(blob);
           if (text.trim()) await doSend(text);
         } catch (err) {
           setError(err instanceof Error ? err.message : "Could not understand that voice message.");
@@ -208,7 +208,7 @@ export function Forge() {
     setSubmitting(true);
     setError("");
     try {
-      const { publicIds, totalCharged } = await submitForgeTasks(
+      const { publicIds, totalCharged } = await submitMayaTasks(
         conversationId,
         pending.tasks.map((t) => ({ type: t.type, subtype: t.subtype ?? null, payload: t.payload })),
         pending.isBundle,
@@ -245,10 +245,10 @@ export function Forge() {
           </Link>
           <div className="flex items-center gap-2.5">
             <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-yellow-400 text-void">
-              <Sparkles className="h-4.5 w-4.5" />
+              <img src="/team/maya.webp" alt="" width={36} height={36} className="h-9 w-9 rounded-full object-cover" />
             </span>
             <div>
-              <p className="font-display text-base font-semibold text-fg">Forge</p>
+              <p className="font-display text-base font-semibold text-fg">Maya</p>
               <p className="text-xs text-fg-faint">Your task assistant</p>
             </div>
           </div>
@@ -414,7 +414,7 @@ export function Forge() {
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleComposerKeyDown}
               rows={3}
-              placeholder={transcribing ? "Transcribing..." : "Tell Forge what you need — the more detail, the better the brief."}
+              placeholder={transcribing ? "Transcribing..." : "Tell Maya what you need — the more detail, the better the brief."}
               disabled={sending || transcribing}
               className="max-h-60 w-full resize-none bg-transparent px-2 py-1.5 text-sm leading-relaxed text-fg placeholder:text-fg-faint focus:outline-none"
             />

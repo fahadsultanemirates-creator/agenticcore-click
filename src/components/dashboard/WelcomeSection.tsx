@@ -13,7 +13,7 @@ type Props = {
 // It used to carry four more things, every one of them a second copy of
 // something already on the page: a wallet card above the billing section
 // that states the same balance, a Full Business Setup tile above the
-// package that sells it, a "Talk to Forge" button above the Forge bubble
+// package that sells it, a "Talk to Maya" button above the Maya bubble
 // that floats on every screen, and "Pick a service" above the service
 // grid itself. A dashboard that says everything twice is how the thing
 // you came back for ends up below the fold.

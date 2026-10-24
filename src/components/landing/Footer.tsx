@@ -31,8 +31,9 @@ const ICONS: Record<SocialKey, ComponentType<{ className?: string }>> = {
 // back out to the other two, which left it a dead end for anyone who
 // landed here wanting custom work or back-office support.
 const ELSEWHERE = [
-  { href: "https://agenticcore.agency", label: "agenticcore.agency — custom websites, apps and AI systems" },
-  { href: "https://agenticcore.biz", label: "agenticcore.biz — business setup and back-office" },
+  { href: "https://agenticcore.group/services.html", label: "agenticcore.group — managed offices and framework builds" },
+  { href: "https://agenticcore.agency", label: "agenticcore.agency — websites, applications and design" },
+  { href: "https://agenticcore.biz", label: "agenticcore.biz — business plans, documents and setup" },
 ];
 
 function IconLink({

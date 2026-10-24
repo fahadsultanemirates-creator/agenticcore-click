@@ -1,3 +1,4 @@
+import { TeamSection } from "../components/landing/TeamSection";
 import { ChatLauncher } from "../components/ChatLauncher";
 import { CtaBanner } from "../components/landing/CtaBanner";
 import { Footer } from "../components/landing/Footer";
@@ -19,6 +20,7 @@ export function Landing() {
         <ServicesGrid />
         <PackagesSection />
         <StatsBand />
+        <TeamSection />
         <TermsSummary />
         <CtaBanner />
       </main>

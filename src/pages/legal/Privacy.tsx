@@ -74,8 +74,8 @@ export function Privacy() {
         />
         <p>
           Email{" "}
-          <a className="text-yellow-400 hover:underline" href="mailto:hello@agenticcore.click">
-            hello@agenticcore.click
+          <a className="text-yellow-400 hover:underline" href="mailto:hello@agenticcore.group">
+            hello@agenticcore.group
           </a>{" "}
           and we'll action it. Deleting an account removes its orders and files; that can't be
           undone, so download anything you want to keep first.
@@ -97,7 +97,7 @@ export function Privacy() {
           current version.
         </p>
         <p>
-          Questions: <a className="text-yellow-400 hover:underline" href="mailto:hello@agenticcore.click">hello@agenticcore.click</a>
+          Questions: <a className="text-yellow-400 hover:underline" href="mailto:hello@agenticcore.group">hello@agenticcore.group</a>
         </p>
       </Section>
     </LegalLayout>

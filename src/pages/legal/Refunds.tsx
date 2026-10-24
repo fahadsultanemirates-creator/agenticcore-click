@@ -70,8 +70,8 @@ export function Refunds() {
       <Section heading="How to ask">
         <p>
           Email{" "}
-          <a className="text-yellow-400 hover:underline" href="mailto:hello@agenticcore.click">
-            hello@agenticcore.click
+          <a className="text-yellow-400 hover:underline" href="mailto:hello@agenticcore.group">
+            hello@agenticcore.group
           </a>{" "}
           with the order reference — it looks like AC-1007-03 and is on the order in your
           dashboard. Tell us what's wrong. We aim to answer within two working days.

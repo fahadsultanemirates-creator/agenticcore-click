@@ -120,7 +120,7 @@ export function Terms() {
           means you accept it.
         </p>
         <p>
-          Questions: <a className="text-yellow-400 hover:underline" href="mailto:hello@agenticcore.click">hello@agenticcore.click</a>
+          Questions: <a className="text-yellow-400 hover:underline" href="mailto:hello@agenticcore.group">hello@agenticcore.group</a>
         </p>
       </Section>
     </LegalLayout>

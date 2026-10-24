@@ -167,7 +167,7 @@ async function handleLogin(account: TelegramAccount): Promise<string> {
     return (
       `That is ${CODES_PER_HOUR} codes in an hour, which is as many as I send. ` +
       'Use the most recent one, or try again shortly.\n\n' +
-      'If none of them worked, write to hello@agenticcore.click.'
+      'If none of them worked, write to hello@agenticcore.group.'
     );
   }
   const issued = await issueSigninCode(account.userId);
@@ -468,7 +468,7 @@ export async function routeClientMessage(message: IncomingClientMessage): Promis
           '',
           'Sign in at https://agenticcore.click/login with that address.',
           'If it is yours and you cannot get in, use "forgot password" there,',
-          'or write to hello@agenticcore.click.',
+          'or write to hello@agenticcore.group.',
           '',
           'To open a separate account here, send a different email address.'
         ].join('\n'));

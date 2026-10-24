@@ -19,7 +19,7 @@ export interface Email {
 
 const SITE = 'https://agenticcore.click';
 const DASHBOARD = `${SITE}/dashboard`;
-const SUPPORT_EMAIL = 'hello@agenticcore.click';
+const SUPPORT_EMAIL = 'hello@agenticcore.group';
 
 export function escapeHtml(value: string): string {
   return value

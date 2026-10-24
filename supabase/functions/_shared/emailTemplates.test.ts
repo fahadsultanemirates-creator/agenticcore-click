@@ -58,7 +58,7 @@ test('both parts of an email carry the same reference', () => {
 // with no way back is how a complaint becomes a chargeback.
 test('every email says how to reach a human', () => {
   for (const email of ALL) {
-    assert.ok(email.html.includes('hello@agenticcore.click'), 'no support address in html');
+    assert.ok(email.html.includes('hello@agenticcore.group'), 'no support address in html');
   }
 });
 

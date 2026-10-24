@@ -80,7 +80,7 @@ test("the support accounts are the ones the owner gave", () => {
   assert.equal(TELEGRAM_URL, "https://t.me/AgenticCorebiz");
   assert.equal(WHATSAPP_USERNAME, "agenticcore.biz");
   assert.equal(WHATSAPP_PHONE, "18089985226");
-  assert.match(SUPPORT_EMAIL, /^hello@agenticcore\.(agency|biz|click)$/);
+  assert.equal(SUPPORT_EMAIL, "hello@agenticcore.group");
 });
 
 test("the link uses the number, in the only form WhatsApp documents", () => {
@@ -185,7 +185,7 @@ test("the six public accounts are exactly the ones the owner gave", () => {
 });
 
 test("this site's own business email is the right one", () => {
-  assert.equal(SUPPORT_EMAIL, "hello@agenticcore.click");
+  assert.equal(SUPPORT_EMAIL, "hello@agenticcore.group");
 });
 
 test("no Facebook share-link survives anywhere", () => {

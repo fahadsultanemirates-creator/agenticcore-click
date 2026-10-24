@@ -27,7 +27,7 @@ const MIN_PASSWORD_LENGTH = 8;
 // Said to the client whatever actually went wrong.
 const REFUSED =
   'That email and code do not match an account, or the code has already been used or expired. ' +
-  'Send /login to the bot for a new code, or write to hello@agenticcore.click.';
+  'Send /login to the bot for a new code, or write to hello@agenticcore.group.';
 
 export async function handleRequest(req: Request): Promise<Response> {
   if (req.method === 'OPTIONS') return new Response(null, { headers: CORS_HEADERS });

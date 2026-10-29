@@ -1,0 +1,5 @@
+import assert from 'node:assert/strict';
+import {groupCommand,frameworkNotice} from './frameworkFormat.ts';
+const id='11111111-1111-4111-8111-111111111111';assert.deepEqual(groupCommand('/deliver GRP-'+id),{action:'deliver',orderId:id});assert.equal(groupCommand('/deliver AC-1001-01'),null);assert.equal(groupCommand('/deliver GRP-not-a-uuid'),null);assert.deepEqual(groupCommand('/gprogress GRP-'+id+' in_progress'),{action:'progress',orderId:id,status:'in_progress'});assert.equal(groupCommand('/gprogress GRP-'+id+' paid'),null);assert.match(frameworkNotice('payment_submitted',{reference:'GRP-'+id,transaction_hash:'0x123'}),/not yet verified/);assert.match(frameworkNotice('payment_verified',{reference:'GRP-'+id,due_cents:4500,transaction_hash:'0x123'}),/45.00/);console.log('PASS  Group references, safe progress commands, payment alert wording and legacy routing');
+
+assert.deepEqual(groupCommand('/deliver biz-'+id),{action:'deliver',orderId:id,site:'biz'});assert.deepEqual(groupCommand('/deliver AGN-'+id),{action:'deliver',orderId:id,site:'agency'});assert.equal(groupCommand('/gprogress BIZ-'+id+' paid'),null);

@@ -8,7 +8,8 @@
 // mistake away from a client triggering one.
 //
 // This prompt cannot express those actions at all. That is the point.
-import { claudeChat } from './claude.ts';
+import {aiChat} from './ai.ts';
+const claudeChat=(...args:Parameters<typeof aiChat> extends [string,...infer T]?T:never)=>aiChat('clientConversation',...args);
 import { catalogMenu } from './catalog.ts';
 
 export type ClientIntent =

@@ -441,7 +441,7 @@ export async function currentBlock(): Promise<bigint> {
  * Chunked, because public nodes cap the range of a single eth_getLogs and
  * the window is now wide enough to exceed that cap.
  */
-export async function recentTransfers(oldestPendingBlock: bigint | null = null): Promise<Transfer[]> {
+export async function recentTransfers(oldestPendingBlock: bigint | null = null, tokenContract: string = USDT_CONTRACT): Promise<Transfer[]> {
   const head = await currentBlock();
   const from = scanStart({ oldestPendingBlock, head });
 
@@ -450,7 +450,7 @@ export async function recentTransfers(oldestPendingBlock: bigint | null = null):
   for (const range of chunkRanges(from, head)) {
     const logs = await rpc('eth_getLogs', [
       {
-        address: USDT_CONTRACT,
+        address: tokenContract,
         fromBlock: '0x' + range.from.toString(16),
         toBlock: '0x' + range.to.toString(16),
         // [event, from (any), to (us)]. Filtering on the recipient at the
@@ -505,4 +505,9 @@ export function toLogTransfer(log: Record<string, unknown>, head: bigint): Trans
     confirmations,
     blockNumber: BigInt(blockHex)
   };
+}
+
+/** Additional, explicitly allowlisted payment token; existing USDT behaviour stays unchanged. */
+export async function verifyAdditionalToken(contract:string):Promise<{decimals:number;symbol:string}>{
+ const [d,s]=await Promise.all([ethCall(contract,'0x313ce567'),ethCall(contract,'0x95d89b41')]);const decimals=Number(BigInt(d)),symbol=decodeStringResult(s);if(decimals!==18||symbol.toUpperCase()!=='AC')throw Error('AC contract metadata did not match the configured token');return{decimals,symbol};
 }

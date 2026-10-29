@@ -1,3 +1,4 @@
+import {handleGroupMessage} from '../_shared/frameworkBridge.ts';
 // AgenticCore Click — the Telegram bot. Two audiences through one chat.
 //
 // The OWNER gets the control channel this file has always been: watch the
@@ -106,6 +107,8 @@ function helpText(): string {
     '/routes — which products go to an external agent',
     '/jobs — open external jobs',
     '/fallback <task id> — take a job back from an external agent',
+    '/gorders — list Group orders; /deliver GRP-<UUID> + file — deliver to Group',
+    '/gprogress GRP-<UUID> in_progress — update Group work progress',
     '/manual [on|off] — hold every order for you, or let the workers run',
     '',
     'Send /products for the numbered list.',
@@ -875,6 +878,8 @@ export async function handleRequest(req: Request): Promise<Response> {
     return new Response('ok');
   }
 
+  // Group commands only reach this branch after the existing owner-ID check.
+  try{const groupReply=await handleGroupMessage(message);if(groupReply!==null){await sendBotMessage(chatId,groupReply);return new Response('ok')}}catch(error){await sendBotMessage(chatId,error instanceof Error?error.message:'Group operation failed');return new Response('ok')}
   let text: string;
   const attachmentUrls: string[] = [];
 

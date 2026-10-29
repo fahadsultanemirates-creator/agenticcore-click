@@ -1,3 +1,4 @@
+import {syncGroupAlerts} from '../_shared/frameworkBridge.ts';
 // Claims queued tasks and hands each one to the supervisor, which decides
 // which agent owns it. Called three ways: (1) fired-and-forgotten by
 // submit-task/telegram-webhook right after a task is created, so it doesn't
@@ -76,6 +77,7 @@ export async function handleRequest(req: Request): Promise<Response> {
   // Read once per invocation, not per task: three tasks in a batch cannot
   // meaningfully disagree about it, and three round trips to say so is
   // three round trips wasted.
+  try{await syncGroupAlerts()}catch(error){console.error('Group alert sync failed',error instanceof Error?error.message:'unknown')}
   const manual = await manualModeOn();
 
   let processed = 0;

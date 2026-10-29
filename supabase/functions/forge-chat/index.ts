@@ -11,7 +11,8 @@
 // questions it needs, the same way a human intake person would.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { claudeChat } from '../_shared/claude.ts';
+import {aiChat} from '../_shared/ai.ts';
+const claudeChat=(...args:Parameters<typeof aiChat> extends [string,...infer T]?T:never)=>aiChat('index',...args);
 import { calculatePriceUsd, FULL_BUSINESS_SETUP_USD } from '../_shared/pricing.ts';
 import { catalogMenu, expandSku } from '../_shared/catalog.ts';
 import { accountBriefForPrompt, resolveOrderReference } from '../_shared/accounts.ts';

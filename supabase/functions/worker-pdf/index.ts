@@ -17,7 +17,9 @@
 // honest PDF. Flagged in task_events so this isn't a silent gap.
 
 import { supabaseAdmin, uploadDeliverable } from '../_shared/storage.ts';
-import { claudeChat, claudeVisionChat } from '../_shared/claude.ts';
+import {aiChat,aiVisionChat} from '../_shared/ai.ts';
+const claudeChat=(...args:Parameters<typeof aiChat> extends [string,...infer T]?T:never)=>aiChat('worker-pdf',...args);
+const claudeVisionChat=(...args:Parameters<typeof aiVisionChat> extends [string,...infer T]?T:never)=>aiVisionChat('worker-pdf',...args);
 import { fetchAttachments } from '../_shared/attachments.ts';
 import { generateBrandVisual } from '../_shared/images.ts';
 import { generateQrSvg } from '../_shared/qrcode.ts';

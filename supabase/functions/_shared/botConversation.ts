@@ -7,7 +7,8 @@
 // only the NLU layer gained memory, task-creation logic didn't change.
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { claudeChat } from './claude.ts';
+import {aiChat} from './ai.ts';
+const claudeChat=(...args:Parameters<typeof aiChat> extends [string,...infer T]?T:never)=>aiChat('botConversation',...args);
 import { catalogMenu } from './catalog.ts';
 import { ownerTaskBriefForPrompt } from './accounts.ts';
 import type { BotIntent } from './intent.ts';

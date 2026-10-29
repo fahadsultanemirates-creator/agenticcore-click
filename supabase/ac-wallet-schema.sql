@@ -1,0 +1,12 @@
+begin;
+create sequence public.ac_payment_nonce minvalue 1 maxvalue 999999 no cycle;
+create table public.ac_invoices(id uuid primary key default gen_random_uuid(),user_id uuid not null,base_usd numeric(10,2) not null,tier text not null,amount text not null unique,from_block bigint not null,status text not null default 'pending' check(status in ('pending','paid','expired','cancelled')),tx_hash text unique,created_at timestamptz not null default now(),expires_at timestamptz not null,paid_at timestamptz);
+create unique index ac_invoices_user_tier_pending on public.ac_invoices(user_id,tier) where status='pending';
+alter table public.ac_invoices enable row level security;
+revoke all on public.ac_invoices from public,anon,authenticated;grant select on public.ac_invoices to authenticated;grant all on public.ac_invoices to service_role;grant usage on sequence public.ac_payment_nonce to service_role;
+create policy ac_invoice_self_read on public.ac_invoices for select to authenticated using(user_id=(select auth.uid()));
+create function public.next_ac_nonce() returns bigint language plpgsql security invoker set search_path='' as $$declare n bigint;begin n:=nextval('public.ac_payment_nonce');while n%100=0 loop n:=nextval('public.ac_payment_nonce');end loop;return n;end $$;
+revoke all on function public.next_ac_nonce() from public,anon,authenticated;grant execute on function public.next_ac_nonce() to service_role;
+create function public.credit_ac_invoice(p_invoice_id uuid,p_tx_hash text) returns boolean language plpgsql security invoker set search_path='' as $$declare i public.ac_invoices;begin if p_tx_hash !~ '^0x[0-9a-f]{64}$' then raise exception 'Invalid transaction';end if;update public.ac_invoices set status='paid',tx_hash=p_tx_hash,paid_at=now() where id=p_invoice_id and status='pending' returning * into i;if not found then return false;end if;perform public.increment_wallet_balance(i.user_id,i.base_usd,i.tier);return true;exception when unique_violation then return false;end $$;
+revoke all on function public.credit_ac_invoice(uuid,text) from public,anon,authenticated;grant execute on function public.credit_ac_invoice(uuid,text) to service_role;
+commit;

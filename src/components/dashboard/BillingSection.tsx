@@ -16,6 +16,7 @@ import { supabase } from "../../lib/supabase";
 // the panel and has its own copy button.
 
 type Invoice = {
+  asset?: "AC" | "USDT";
   invoiceId: string;
   amount: string;
   address: string;
@@ -30,6 +31,7 @@ const POLL_INTERVAL_MS = 5000;
 
 export function BillingSection() {
   const [selectedWallet, setSelectedWallet] = useState("wallet-10");
+  const [paymentAsset, setPaymentAsset] = useState<"USDT" | "AC">("USDT");
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
   const [invoice, setInvoice] = useState<Invoice | null>(null);
@@ -74,12 +76,12 @@ export function BillingSection() {
   // timeout fires later is the kind of thing that holds until somebody
   // calls it one tick earlier.
   const poll = useCallback(
-    (invoiceId: string, creditUsd: number) => {
+    (invoiceId: string, creditUsd: number, asset: "AC" | "USDT" = "USDT") => {
       async function tick(): Promise<void> {
         const accessToken = await getAccessToken();
         if (!accessToken) return;
 
-        const { data } = await supabase.functions.invoke<CheckResult>("usdt-check", {
+        const { data } = await supabase.functions.invoke<CheckResult>(asset === "AC" ? "ac-invoice" : "usdt-check", {
           body: { invoiceId },
           headers: { Authorization: `Bearer ${accessToken}` },
         });
@@ -133,7 +135,7 @@ export function BillingSection() {
       }
 
       const { data, error: invokeError } = await supabase.functions.invoke<Invoice & { error?: string }>(
-        "usdt-invoice",
+        paymentAsset === "AC" ? "ac-invoice" : "usdt-invoice",
         { body: { tier: selectedWallet }, headers: { Authorization: `Bearer ${accessToken}` } },
       );
 
@@ -144,7 +146,7 @@ export function BillingSection() {
 
       setInvoice(data);
       if (pollRef.current) clearTimeout(pollRef.current);
-      poll(data.invoiceId, data.creditUsd);
+      poll(data.invoiceId, data.creditUsd, data.asset ?? "USDT");
     } catch (err) {
       console.error("usdt-invoice threw:", err);
       setError("Could not reach the payment service. Please try again.");
@@ -253,11 +255,12 @@ export function BillingSection() {
         </div>
 
         <div className="mt-8 rounded-2xl border border-border bg-surface p-6">
-          <p className="font-display text-lg font-semibold text-fg">Pay with USDT</p>
+          <p className="font-display text-lg font-semibold text-fg">Pay with USDT or AC Token</p>
           <p className="mt-1 text-sm text-fg-muted">
             BNB Smart Chain (BEP-20). Confirmation usually takes under a minute.
           </p>
 
+          {!invoice && <label className="mt-4 block text-sm text-fg">Payment token<select aria-label="Payment token" value={paymentAsset} onChange={e=>setPaymentAsset(e.target.value as "USDT" | "AC")} className="mt-2 block rounded-lg border border-border bg-surface p-3 text-fg"><option value="USDT">USDT — BNB Smart Chain</option><option value="AC">AC Token — 10% off</option></select>{paymentAsset === "AC" && <span className="mt-2 block text-xs text-fg-muted">1 AC = $0.0000006 until 29 April 2027. Pay 10% less for the selected USD wallet credit. Existing service and tier conditions still apply. <a href="https://actoken.org" target="_blank" rel="noopener noreferrer" className="underline">AC Token details ↗</a></span>}</label>}
           {!invoice ? (
             <>
               <p className="mt-4 text-sm text-fg-muted">
@@ -292,7 +295,7 @@ export function BillingSection() {
                   <p className="font-display text-3xl font-semibold text-fg tabular-nums">
                     {invoice.amount}
                   </p>
-                  <span className="text-sm font-semibold text-fg-muted">USDT</span>
+                  <span className="text-sm font-semibold text-fg-muted">{invoice.asset ?? "USDT"}</span>
                   <button
                     type="button"
                     onClick={() => copy(invoice.amount, "amount")}
@@ -330,14 +333,14 @@ export function BillingSection() {
               <div className="flex items-start gap-2 rounded-xl border border-orange-400/30 bg-orange-400/5 px-3 py-2.5 text-xs text-fg-muted">
                 <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-orange-400" />
                 <span>
-                  Only send USDT on BNB Smart Chain to this address. Another coin, or USDT on
+                  Only send {invoice.asset ?? "USDT"} on BNB Smart Chain to this address. Another coin, or a transfer on
                   another network, cannot be recovered.
                 </span>
               </div>
 
               {wrongAmount && (
                 <p className="text-sm text-yellow-400">
-                  {wrongAmount} USDT arrived, but this invoice is for {invoice.amount}. It hasn't
+                  {wrongAmount} {invoice.asset ?? "USDT"} arrived, but this invoice is for {invoice.amount}. It hasn't
                   been credited automatically — we've been notified and will sort it out.
                 </p>
               )}

@@ -9,7 +9,9 @@
 
 import { supabaseAdmin } from '../_shared/storage.ts';
 import { getBrandProfile, brandFactsForPrompt, brandStyleForPrompt, extractUrl, normalizeUrl } from '../_shared/brandProfile.ts';
-import { claudeChat, claudeVisionChat } from '../_shared/claude.ts';
+import {aiChat,aiVisionChat} from '../_shared/ai.ts';
+const claudeChat=(...args:Parameters<typeof aiChat> extends [string,...infer T]?T:never)=>aiChat('worker-website',...args);
+const claudeVisionChat=(...args:Parameters<typeof aiVisionChat> extends [string,...infer T]?T:never)=>aiVisionChat('worker-website',...args);
 import { fetchAttachments } from '../_shared/attachments.ts';
 import { generateBrandVisual, mapWithConcurrency } from '../_shared/images.ts';
 import { buildZip } from '../_shared/zip.ts';

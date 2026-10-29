@@ -13,7 +13,8 @@
 // sounds like, what the business does -- go to a vision call, which sees the
 // rendered page rather than the markup.
 
-import { claudeVisionChat } from './claude.ts';
+import {aiVisionChat} from './ai.ts';
+const claudeVisionChat=(...args:Parameters<typeof aiVisionChat> extends [string,...infer T]?T:never)=>aiVisionChat('brand-profile',...args);
 import { scrapeHtml, whatsappNumber } from './brandScrape.ts';
 
 // Parsing lives in brandScrape.ts (pure, and tested); re-exported here because

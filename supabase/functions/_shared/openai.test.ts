@@ -1,0 +1,3 @@
+import assert from 'node:assert/strict';
+import {textFromResponse} from './openai.ts';
+assert.equal(textFromResponse({status:'completed',output:[{type:'message',content:[{type:'output_text',text:'A'},{type:'output_text',text:'B'}]}]}),'AB');assert.throws(()=>textFromResponse({status:'incomplete',output:[]}),/did not complete/);assert.throws(()=>textFromResponse({status:'completed',output:[{type:'message',content:[{type:'refusal'}]}]}),/declined/);assert.throws(()=>textFromResponse({status:'completed',output:[]}),/no text/);console.log('PASS  OpenAI output parsing, incomplete-response rejection and refusal handling');

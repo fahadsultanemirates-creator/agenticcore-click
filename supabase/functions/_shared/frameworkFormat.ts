@@ -8,7 +8,7 @@ export function frameworkNotice(kind:string,p:Record<string,unknown>):string{
  const ref=String(p.reference||'Unknown reference');
  if(kind==='legacy_request')return `${p.site} · new service request\n${ref}\nService: ${p.category}\nPrice: ${p.agreed_price==null?'not quoted':p.agreed_price} · ${p.status}\n${String(p.brief||'').slice(0,2600)}\n\nAttach the finished file with caption /deliver ${ref}`;
  if(kind==='legacy_payment')return `${p.site} · payment marked paid by the website\n${ref}\nAmount: $${p.amount}\nPayment and work completion are separate.`;
- if(kind==='setup')return 'GROUP · shared framework connected. New Group orders, work requests and submitted payments now use this bot. No customer order or payment was created by this connection test.';
+ if(kind==='setup')return `${String(p.site||'GROUP')} · shared framework alert test passed. New orders, work requests and payment events are connected to this bot. This is a connection test; no customer order or payment was created.`;
  if(kind==='payment_verified')return `GROUP · payment verified on chain\n${ref}\nPaid: $${(Number(p.due_cents)/100).toFixed(2)}\nTransaction: ${p.transaction_hash}`;
  if(kind==='payment_submitted')return `GROUP · payment submitted (not yet verified)\n${ref}\nTransaction: ${p.transaction_hash}\nCheck receipt before confirming payment.`;
  if(kind==='request')return `GROUP · new work request\n${ref}\n${String(p.title||'Work request')}\n${String(p.brief||'').slice(0,2600)}`;

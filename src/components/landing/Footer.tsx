@@ -33,7 +33,7 @@ const ICONS: Record<SocialKey, ComponentType<{ className?: string }>> = {
 const ELSEWHERE = [
   { href: "https://agenticcore.group/services.html", label: "agenticcore.group — managed offices and framework builds" },
   { href: "https://agenticcore.agency", label: "agenticcore.agency — websites, applications and design" },
-  { href: "https://agenticcore.biz", label: "agenticcore.biz — business plans, documents and setup" },
+  { href: "https://agenticcore.agency/services", label: "agenticcore.biz — business plans, documents and setup" },
 ];
 
 function IconLink({

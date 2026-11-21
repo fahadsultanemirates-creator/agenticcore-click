@@ -102,7 +102,7 @@ export const SOCIAL_LINKS = [
     href: "https://www.facebook.com/people/AgenticCore/61593981579304/",
   },
   { key: "instagram", label: "Instagram", href: "https://www.instagram.com/agenticcore.agency" },
-  { key: "youtube", label: "YouTube", href: "https://www.youtube.com/@AgenticcoreAgency" },
+  { key: "youtube", label: "YouTube", href: "https://www.youtube.com/@agenticcoregroup" },
   { key: "tiktok", label: "TikTok", href: "https://www.tiktok.com/@agenticcore.agency" },
   { key: "telegram-channel", label: "Telegram channel", href: TELEGRAM_CHANNEL_URL },
 ] as const;

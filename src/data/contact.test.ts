@@ -177,7 +177,7 @@ test("the six public accounts are exactly the ones the owner gave", () => {
       ["x", "https://x.com/AgenticCoreHQ"],
       ["facebook", "https://www.facebook.com/people/AgenticCore/61593981579304/"],
       ["instagram", "https://www.instagram.com/agenticcore.agency"],
-      ["youtube", "https://www.youtube.com/@AgenticcoreAgency"],
+      ["youtube", "https://www.youtube.com/@agenticcoregroup"],
       ["tiktok", "https://www.tiktok.com/@agenticcore.agency"],
       ["telegram-channel", "https://t.me/agenticCoreHQ"],
     ],

@@ -30,3 +30,8 @@ dist-ssr
 # cli-latest marker in here; it is machine state, not project state, and
 # committing it would put one developer's CLI version in everyone's tree.
 supabase/.temp/
+
+# Local environment files: never commit (values live in Netlify/Supabase)
+.env
+.env.*
+!.env.example

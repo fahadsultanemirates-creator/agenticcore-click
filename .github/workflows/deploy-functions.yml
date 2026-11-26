@@ -109,4 +109,4 @@ jobs:
           # No --no-verify-jwt here: each function's own setting is kept as
           # configured in the dashboard. Deploying them together means the
           # shared modules can never be live in two different versions.
-          supabase functions deploy --project-ref vuutmxrunxkjydcryeoa
+          supabase functions deploy --project-ref vuutmxrunxkjydcryeoa --yes
